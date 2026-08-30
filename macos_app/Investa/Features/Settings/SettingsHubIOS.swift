@@ -1,51 +1,51 @@
 import SwiftUI
 
-/// Root Settings Hub for iOS (iPhone & compact views) designed to follow Apple HIG inset-grouped layout.
+/// Settings on iPhone (and any compact width).
+///
+/// The categories are grouped cards of touch-height rows rather than an
+/// inset-grouped `List`: same `.card()` chrome, same `SectionLabel` heads and
+/// same indigo accent as every other tab, so Settings stops being the one
+/// screen drawn in the system's grey grouped style with five coloured tiles.
 struct SettingsHubIOS: View {
     @ObservedObject var viewModel: SettingsViewModel
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var auth: AuthViewModel
 
-    private var groupsCount: Int {
-        viewModel.settings?.accountGroups?.count ?? 0
-    }
-
-    private var mappingsCount: Int {
-        viewModel.settings?.userSymbolMap?.count ?? 0
-    }
-
-    private var excludedCount: Int {
-        viewModel.settings?.userExcludedSymbols?.count ?? 0
-    }
-
-    private var overridesCount: Int {
-        viewModel.settings?.manualOverrides?.count ?? 0
-    }
-
-    private var benchmarksCount: Int {
-        appState.benchmarks.count
-    }
+    private var groupsCount: Int { viewModel.settings?.accountGroups?.count ?? 0 }
+    private var currenciesCount: Int { viewModel.settings?.availableCurrencies?.count ?? 0 }
+    private var mappingsCount: Int { viewModel.settings?.userSymbolMap?.count ?? 0 }
+    private var excludedCount: Int { viewModel.settings?.userExcludedSymbols?.count ?? 0 }
+    private var overridesCount: Int { viewModel.settings?.manualOverrides?.count ?? 0 }
+    private var benchmarksCount: Int { appState.benchmarks.count }
 
     var body: some View {
-        List {
-            // Profile Hero Section
-            Section {
-                NavigationLink {
-                    ProfileSecuritySettingsView(vm: viewModel)
-                        .environmentObject(auth)
-                } label: {
-                    profileHeroRow
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                accountsSection
+                symbolsSection
+                overridesSection
+                advancedSection
+                profileSection
+                footer
             }
+            .padding(20)
+        }
+        .navigationTitle("Settings")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.large)
+        #endif
+    }
 
-            // Section 1: Accounts
-            Section("Accounts") {
+    // MARK: - Sections
+
+    private var accountsSection: some View {
+        section("Accounts") {
+            SettingsRowGroup {
                 SettingsNavRow(
-                    icon: "person.2.fill",
-                    iconColor: .indigo,
-                    title: "Custom Account Groups",
-                    subtitle: "Group accounts for aggregate filtering",
-                    badge: groupsCount > 0 ? "\(groupsCount)" : nil
+                    icon: "person.2",
+                    title: "Account Groups",
+                    subtitle: "Aggregate filtering",
+                    count: groupsCount
                 ) {
                     AccountGroupManagerView(
                         vm: viewModel,
@@ -54,24 +54,11 @@ struct SettingsHubIOS: View {
                         appState: appState
                     )
                 }
-
-                SettingsNavRow(
-                    icon: "dollarsign.circle.fill",
-                    iconColor: .orange,
-                    title: "Currency Management",
-                    subtitle: "Add/remove available currencies"
-                ) {
-                    CurrencyManagementView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
-                }
-
+                SettingsRowDivider()
                 SettingsNavRow(
                     icon: "slider.horizontal.3",
-                    iconColor: .purple,
                     title: "Account Preferences",
-                    subtitle: "Currencies, cash modes & closure dates"
+                    subtitle: "Currency, cash mode, closure"
                 ) {
                     AccountPreferencesView(
                         vm: viewModel,
@@ -80,12 +67,20 @@ struct SettingsHubIOS: View {
                         appState: appState
                     )
                 }
-
+                SettingsRowDivider()
+                SettingsNavRow(
+                    icon: "dollarsign.circle",
+                    title: "Currencies",
+                    subtitle: "Available for manual accounts",
+                    count: currenciesCount
+                ) {
+                    CurrencyManagementView(vm: viewModel, settings: viewModel.settings)
+                }
+                SettingsRowDivider()
                 SettingsNavRow(
                     icon: "percent",
-                    iconColor: .teal,
-                    title: "Cash Yield Assumptions",
-                    subtitle: "Interest rates & exempt thresholds"
+                    title: "Cash Yield",
+                    subtitle: "Rates & exempt thresholds"
                 ) {
                     CashYieldSettingsView(
                         vm: viewModel,
@@ -95,190 +90,129 @@ struct SettingsHubIOS: View {
                     )
                 }
             }
+        }
+    }
 
-            // Section 2: Symbols
-            Section("Symbols") {
+    private var symbolsSection: some View {
+        section("Symbols") {
+            SettingsRowGroup {
                 SettingsNavRow(
                     icon: "arrow.left.arrow.right",
-                    iconColor: .blue,
                     title: "Symbol Mappings",
-                    subtitle: "Resolve custom tickers to Yahoo Finance",
-                    badge: mappingsCount > 0 ? "\(mappingsCount)" : nil
+                    count: mappingsCount
                 ) {
-                    SymbolMappingsView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
+                    SymbolMappingsView(vm: viewModel, settings: viewModel.settings)
                 }
-
+                SettingsRowDivider()
                 SettingsNavRow(
-                    icon: "xmark.circle.fill",
-                    iconColor: .red,
+                    icon: "xmark.circle",
                     title: "Excluded Symbols",
-                    subtitle: "Skip symbols from portfolio calculation",
-                    badge: excludedCount > 0 ? "\(excludedCount)" : nil
+                    count: excludedCount
                 ) {
-                    ExcludedSymbolsView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
+                    ExcludedSymbolsView(vm: viewModel, settings: viewModel.settings)
                 }
             }
+        }
+    }
 
-            // Section 3: Overrides
-            Section("Overrides") {
+    private var overridesSection: some View {
+        section("Overrides") {
+            SettingsRowGroup {
                 SettingsNavRow(
-                    icon: "pencil.and.ruler.fill",
-                    iconColor: .green,
+                    icon: "pencil.and.ruler",
                     title: "Manual Overrides",
-                    subtitle: "Manual prices & metadata overrides",
-                    badge: overridesCount > 0 ? "\(overridesCount)" : nil
+                    subtitle: "Prices & metadata",
+                    count: overridesCount
                 ) {
-                    OverridesListView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
+                    OverridesListView(vm: viewModel, settings: viewModel.settings)
                 }
             }
+        }
+    }
 
-            // Section 4: Advanced Settings
-            Section("Advanced Settings") {
+    private var advancedSection: some View {
+        section("Advanced") {
+            SettingsRowGroup {
                 SettingsNavRow(
                     icon: "chart.line.uptrend.xyaxis",
-                    iconColor: .purple,
-                    title: "Performance Benchmarks",
-                    subtitle: "Market indices & custom comparison tickers",
-                    badge: benchmarksCount > 0 ? "\(benchmarksCount)" : nil
+                    title: "Benchmarks",
+                    count: benchmarksCount
                 ) {
-                    BenchmarksSettingsView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
-                    .environmentObject(appState)
+                    BenchmarksSettingsView(vm: viewModel, settings: viewModel.settings)
+                        .environmentObject(appState)
                 }
-
+                SettingsRowDivider()
                 SettingsNavRow(
                     icon: "arrow.triangle.2.circlepath",
-                    iconColor: .blue,
-                    title: "Interactive Brokers & Webhook",
-                    subtitle: "IBKR Flex query sync & data refresh"
+                    title: "Interactive Brokers",
+                    subtitle: "Flex query sync & webhook"
                 ) {
-                    IntegrationsSettingsView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
+                    IntegrationsSettingsView(vm: viewModel, settings: viewModel.settings)
                 }
-
+                SettingsRowDivider()
                 SettingsNavRow(
-                    icon: "key.fill",
-                    iconColor: .orange,
-                    title: "API Keys (.env)",
+                    icon: "key",
+                    title: "API Keys",
                     subtitle: "Gemini, FMP, SEC TH, BOT, Tiingo"
                 ) {
-                    APIKeysSettingsView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
+                    APIKeysSettingsView(vm: viewModel, settings: viewModel.settings)
                 }
-
+                SettingsRowDivider()
                 SettingsNavRow(
                     icon: "server.rack",
-                    iconColor: .gray,
                     title: "System & Server",
                     subtitle: "Backend URL & cache purge"
                 ) {
-                    ServerSettingsView(
-                        vm: viewModel,
-                        settings: viewModel.settings
-                    )
+                    ServerSettingsView(vm: viewModel, settings: viewModel.settings)
                 }
             }
+        }
+    }
 
-            // Section 5: Profile & Security
-            Section("Profile & Security") {
+    private var profileSection: some View {
+        section("Profile & Security") {
+            SettingsRowGroup {
                 SettingsNavRow(
-                    icon: "person.crop.circle.fill",
-                    iconColor: .cyan,
-                    title: "Profile & Password",
-                    subtitle: "Display name and password change"
+                    icon: "person.crop.circle",
+                    title: auth.currentUser?.displayName ?? "Profile & Password",
+                    subtitle: "@\(auth.currentUser?.username ?? "user")"
                 ) {
                     ProfileSecuritySettingsView(vm: viewModel)
                         .environmentObject(auth)
                 }
-
-                Button(role: .destructive) {
+                SettingsRowDivider()
+                SettingsActionRow(
+                    icon: "rectangle.portrait.and.arrow.right",
+                    title: "Sign Out",
+                    tint: .down
+                ) {
                     auth.logout()
-                } label: {
-                    HStack(spacing: 12) {
-                        SettingsIconBadge(icon: "rectangle.portrait.and.arrow.right", color: .red)
-                        Text("Sign Out")
-                            .appFont(.body)
-                            .foregroundStyle(.red)
-                    }
-                    .padding(.vertical, 2)
                 }
             }
-
-            // Footer
-            Section {
-                VStack(spacing: 4) {
-                    Text("Investa • Version 0.1.0")
-                        .appFont(.caption2.bold())
-                        .foregroundStyle(.secondary)
-                    Text("FastAPI + Next.js + SwiftUI")
-                        .appFont(.system(size: 10))
-                        .foregroundStyle(.secondary.opacity(0.7))
-                }
-                .frame(maxWidth: .infinity)
-                .listRowBackground(Color.clear)
-                .padding(.vertical, 8)
-            }
         }
-        #if os(iOS)
-        .listStyle(.insetGrouped)
-        .navigationBarTitleDisplayMode(.large)
-        #else
-        .listStyle(.sidebar)
-        #endif
-        .navigationTitle("Settings")
     }
 
-    private var profileHeroRow: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.cyan, .blue],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 52, height: 52)
-                    .shadow(color: .cyan.opacity(0.35), radius: 6, x: 0, y: 3)
-
-                Text(avatarInitial)
-                    .appFont(.title3.bold())
-                    .foregroundStyle(.white)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(auth.currentUser?.displayName ?? "Investa User")
-                    .appFont(.headline.bold())
-                    .foregroundStyle(.primary)
-
-                Text("@\(auth.currentUser?.username ?? "user")")
-                    .appFont(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+    private var footer: some View {
+        VStack(spacing: 4) {
+            Text("Investa • Version 0.1.0")
+                .appFont(.caption2.bold())
+                .foregroundStyle(.secondary)
+            Text("FastAPI + Next.js + SwiftUI")
+                .appFont(.system(size: 10))
+                .foregroundStyle(.secondary.opacity(0.7))
         }
-        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
     }
 
-    private var avatarInitial: String {
-        let name = auth.currentUser?.displayName ?? auth.currentUser?.username ?? "U"
-        return String(name.prefix(1)).uppercased()
+    // MARK: - Helpers
+
+    @ViewBuilder
+    private func section<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title: title)
+                .padding(.leading, 4)
+            content()
+        }
     }
 }

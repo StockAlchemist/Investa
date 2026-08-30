@@ -112,13 +112,18 @@ struct PerfKpiStrip: View {
     }
     private func pct(_ v: Double?) -> String { v.map { "\($0 > 0 ? "+" : "")\(String(format: "%.2f%%", $0))" } ?? "–" }
     private func tile(_ label: String, _ value: String, _ sub: String?, _ tone: Color) -> some View {
+        // No inner horizontal padding: the grid's own spacing separates the
+        // tiles, and 32pt taken out of a two-column phone tile is a third of the
+        // room the figure has. One line each, shrinking before truncating —
+        // applied to the stack so a value added later can't opt out.
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(title: label)
-                .minimumScaleFactor(0.7)
-            Text(value).appFont(.title3.bold()).foregroundStyle(tone).lineLimit(1)
+            Text(value).appFont(.title3.bold()).foregroundStyle(tone)
             if let sub { Text(sub).appFont(.caption2).foregroundStyle(.secondary) }
         }
-        .padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+        .gridTile()
     }
 }
 

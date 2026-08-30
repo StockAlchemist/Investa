@@ -32,20 +32,24 @@ final class SettingsViewModel: ObservableObject {
     }
 
     /// POST a single settings field, then reload.
-    func update<T: Encodable>(_ key: String, _ value: T, note: String = "Saved.") async {
+    @discardableResult
+    func update<T: Encodable>(_ key: String, _ value: T, note: String = "Saved.") async -> Bool {
         do {
             let _: StatusResponse = try await api.send(method: "POST", path: "/settings/update", body: KV(key: key, value: value))
             status = note
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving settings", style: .error)
+            return false
         }
     }
 
     /// Save account groups and their display order together (they must stay in
     /// sync — the pickers render groups in `account_group_order`).
-    func updateGroups(_ groups: [String: [String]], order: [String]) async {
+    @discardableResult
+    func updateGroups(_ groups: [String: [String]], order: [String]) async -> Bool {
         struct Body: Encodable {
             let account_groups: [String: [String]]
             let account_group_order: [String]
@@ -56,14 +60,17 @@ final class SettingsViewModel: ObservableObject {
                 body: Body(account_groups: groups, account_group_order: order))
             status = "Groups saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving groups", style: .error)
+            return false
         }
     }
 
     /// Save account preferences in a single POST request.
-    func updateAccountPreferences(currencyMap: [String: String], cashModeMap: [String: String], closureMap: [String: String]) async {
+    @discardableResult
+    func updateAccountPreferences(currencyMap: [String: String], cashModeMap: [String: String], closureMap: [String: String]) async -> Bool {
         struct Body: Encodable {
             let account_currency_map: [String: String]
             let account_cash_mode_map: [String: String]
@@ -79,14 +86,17 @@ final class SettingsViewModel: ObservableObject {
                 ))
             status = "Account preferences saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving preferences", style: .error)
+            return false
         }
     }
 
     /// Save cash yield settings in a single POST request.
-    func updateCashYield(rates: [String: Double], thresholds: [String: Double]) async {
+    @discardableResult
+    func updateCashYield(rates: [String: Double], thresholds: [String: Double]) async -> Bool {
         struct Body: Encodable {
             let account_interest_rates: [String: Double]
             let interest_free_thresholds: [String: Double]
@@ -97,14 +107,17 @@ final class SettingsViewModel: ObservableObject {
                 body: Body(account_interest_rates: rates, interest_free_thresholds: thresholds))
             status = "Cash yield settings saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving yield settings", style: .error)
+            return false
         }
     }
 
     /// Save IBKR credentials in a single POST request.
-    func updateIBKR(token: String, queryId: String) async {
+    @discardableResult
+    func updateIBKR(token: String, queryId: String) async -> Bool {
         struct Body: Encodable {
             let ibkr_token: String
             let ibkr_query_id: String
@@ -115,83 +128,92 @@ final class SettingsViewModel: ObservableObject {
                 body: Body(ibkr_token: token, ibkr_query_id: queryId))
             status = "Credentials saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving credentials", style: .error)
+            return false
         }
     }
 
-    /// Save external API keys in a single POST request.
-    func updateAPIKeys(gemini: String, fmp: String, secTh: String, bot: String, tiingo: String) async {
-        struct Body: Encodable {
-            let gemini_api_key: String
-            let fmp_api_key: String
-            let sec_th_api_key: String
-            let bot_api_key: String
-            let tiingo_api_key: String
-        }
+    /// Save external API keys.
+    ///
+    /// Takes only the fields the user actually retyped, keyed by their wire
+    /// name. The server sends masked previews rather than the real keys and
+    /// reads "" as "clear this key", so posting all five would wipe every
+    /// stored key whenever the settings fetch had not resolved.
+    @discardableResult
+    func updateAPIKeys(_ keys: [String: String]) async -> Bool {
+        guard !keys.isEmpty else { return false }
         do {
             let _: StatusResponse = try await api.send(
-                method: "POST", path: "/settings/update",
-                body: Body(
-                    gemini_api_key: gemini,
-                    fmp_api_key: fmp,
-                    sec_th_api_key: secTh,
-                    bot_api_key: bot,
-                    tiingo_api_key: tiingo
-                )
+                method: "POST", path: "/settings/update", body: keys
             )
             status = "API keys saved."
             await load()
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error saving API keys", style: .error)
+            return false
         }
     }
 
-    func clearCache() async {
+    @discardableResult
+    func clearCache() async -> Bool {
         do {
             let _: StatusResponse = try await api.send(method: "POST", path: "/clear_cache")
             status = "Cache cleared."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error clearing cache", style: .error)
+            return false
         }
     }
 
-    func triggerRefresh(secret: String) async {
+    @discardableResult
+    func triggerRefresh(secret: String) async -> Bool {
         struct Body: Encodable { let secret: String }
         do {
             let _: StatusResponse = try await api.send(method: "POST", path: "/webhook/refresh", body: Body(secret: secret))
             status = "Refresh triggered."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error triggering refresh", style: .error)
+            return false
         }
     }
 
-    func syncIbkr() async {
-        guard !isSyncingIbkr else { return }
+    @discardableResult
+    func syncIbkr() async -> Bool {
+        guard !isSyncingIbkr else { return false }
         isSyncingIbkr = true
         defer { isSyncingIbkr = false }
         status = "Syncing IBKR…"
         do {
             let res: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr")
             status = res.message ?? "IBKR sync complete."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error syncing IBKR", style: .error)
+            return false
         }
     }
 
-    func updateProfile(alias: String) async {
+    @discardableResult
+    func updateProfile(alias: String) async -> Bool {
         struct Body: Encodable { let alias: String }
         do {
             let _: User = try await api.send(method: "PATCH", path: "/auth/me", body: Body(alias: alias))
             status = "Profile updated."
+            return true
         } catch {
             status = (error as? APIError)?.errorDescription ?? error.localizedDescription
             ToastManager.shared.show(message: status ?? "Error updating profile", style: .error)
+            return false
         }
     }
 
@@ -204,32 +226,23 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case accounts = "Accounts"
     case symbols = "Symbols"
     case overrides = "Overrides"
-    case advanced = "Advanced Settings"
+    case advanced = "Advanced"
     case account = "Profile & Security"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .accounts: return "person.2.fill"
+        case .accounts: return "person.2"
         case .symbols: return "arrow.left.arrow.right"
-        case .overrides: return "pencil.and.ruler.fill"
-        case .advanced: return "gearshape.2.fill"
-        case .account: return "person.crop.circle.fill"
+        case .overrides: return "slider.horizontal.3"
+        case .advanced: return "gearshape"
+        case .account: return "person.crop.circle"
         }
     }
 
-    var color: Color {
-        switch self {
-        case .accounts: return .indigo
-        case .symbols: return .blue
-        case .overrides: return .green
-        case .advanced: return .purple
-        case .account: return .cyan
-        }
-    }
-
-    var description: String {
+    /// Tooltip on the rail. The tab no longer draws a banner that repeats it.
+    var help: String {
         switch self {
         case .accounts: return "Account groups, per-account currency, cash automation, and yield assumptions."
         case .symbols: return "Map portfolio symbols to Yahoo Finance tickers and manage excluded symbols."
@@ -240,42 +253,55 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-struct SettingsSidebarItem: View {
+/// One row of the category rail.
+///
+/// Deliberately the sidebar's own `NavItem` anatomy — 36pt tall, 8pt radius,
+/// `brand/15` fill and a 3pt left rail when active — so the rail reads as part
+/// of the app rather than a second, differently-styled navigation.
+struct SettingsCategoryRow: View {
     let tab: SettingsTab
     let isActive: Bool
+    var count: Int? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                SettingsIconBadge(icon: tab.icon, color: tab.color, size: 26, iconSize: 13)
+            HStack(spacing: 10) {
+                SettingsIcon(icon: tab.icon, size: 18, isActive: isActive)
 
                 Text(tab.rawValue)
                     .appFont(.system(size: 14, weight: isActive ? .semibold : .medium))
-                    .foregroundStyle(isActive ? .primary : .secondary)
+                    .foregroundStyle(isActive ? Color.brandInk : Color.secondary)
 
-                Spacer()
+                Spacer(minLength: 6)
 
-                if isActive {
-                    Circle()
-                        .fill(tab.color)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: tab.color.opacity(0.8), radius: 4, x: 0, y: 0)
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .appFont(.system(size: 11, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(isActive ? Color.brandInk.opacity(0.85) : Color.secondary)
                 }
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .frame(height: Theme.controlDefault)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isActive ? Color.primary.opacity(0.06) : Color.clear)
+                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                    .fill(isActive ? Color.brand.opacity(0.15) : Color.clear)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isActive ? Color.primary.opacity(0.12) : Color.clear, lineWidth: 1)
-            )
+            .overlay(alignment: .leading) {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(Color.brand)
+                        .frame(width: 3)
+                        .padding(.vertical, 6)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(tab.help)
     }
 }
 
@@ -305,10 +331,10 @@ struct SettingsView: View {
                     SettingsHubIOS(viewModel: viewModel)
                 }
                 #else
-                desktopSplitView
+                regularLayout
                 #endif
             } else {
-                desktopSplitView
+                regularLayout
             }
         }
         .task {
@@ -316,118 +342,90 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Desktop & iPad Split View
+    // MARK: - macOS & iPad
 
-    private var desktopSplitView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    if viewModel.isLoading {
-                        ProgressView().controlSize(.small).padding(.leading, 8)
-                    }
-                    Spacer()
-                    if let s = viewModel.status {
-                        Text(s)
-                            .appFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+    /// The same shape as every other tab: the control bar names the tab, then
+    /// one scrolling column of cards — with the category rail beside it.
+    private var regularLayout: some View {
+        VStack(spacing: 0) {
+            header
+            ScrollView {
+                HStack(alignment: .top, spacing: 24) {
+                    rail
+                    content
                 }
-                Text("Manage application preferences, market data providers, and portfolio configurations.")
-                    .appFont(.subheadline)
-                    .foregroundStyle(.secondary)
+                .padding(20)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+        }
+        .macMinSize(width: 820, height: 560)
+    }
 
-            HStack(alignment: .top, spacing: 24) {
-                // Sidebar Tabs
-                VStack(spacing: 6) {
-                    ForEach(SettingsTab.allCases) { t in
-                        SettingsSidebarItem(tab: t, isActive: tab == t) {
-                            tab = t
-                        }
-                    }
-                    Spacer()
+    /// Save status and the loading spinner. The tab's name lives in the control
+    /// bar, so with nothing to report this row disappears rather than leaving a
+    /// blank band above the first card.
+    @ViewBuilder private var header: some View {
+        if viewModel.isLoading || viewModel.status != nil {
+            HStack(spacing: 10) {
+                if viewModel.isLoading { ProgressView().controlSize(.small) }
+                Spacer(minLength: 8)
+                if let status = viewModel.status {
+                    Text(status)
+                        .appFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
-                .frame(width: 220)
-
-                // Tab Content Card
-                desktopContentArea
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            Divider()
         }
     }
 
-    private var desktopContentArea: some View {
-        VStack(spacing: 0) {
-            // Active Tab Header Banner
-            HStack(alignment: .center, spacing: 16) {
-                SettingsIconBadge(icon: tab.icon, color: tab.color, size: 44, iconSize: 22)
+    private var rail: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            SectionLabel(title: "Categories")
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(tab.rawValue)
-                        .appFont(.title3.bold())
-                    Text(tab.description)
-                        .appFont(.subheadline)
-                        .foregroundStyle(.secondary)
+            ForEach(SettingsTab.allCases) { t in
+                SettingsCategoryRow(tab: t, isActive: tab == t, count: count(for: t)) {
+                    tab = t
                 }
-                Spacer()
-            }
-            .padding(20)
-            .background(Color.primary.opacity(0.02))
-            .overlay(
-                Rectangle()
-                    .frame(height: 1)
-                    .foregroundColor(Color.primary.opacity(0.06)),
-                alignment: .bottom
-            )
-
-            // Scrollable Content
-            ScrollView {
-                Group {
-                    switch tab {
-                    case .accounts:
-                        AccountsSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings,
-                            accounts: appState.allAccounts,
-                            appState: appState
-                        )
-                    case .symbols:
-                        SymbolsSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings
-                        )
-                    case .overrides:
-                        OverridesSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings
-                        )
-                    case .advanced:
-                        AdvancedSettings(
-                            vm: viewModel,
-                            settings: viewModel.settings
-                        )
-                    case .account:
-                        AccountSecuritySettings(
-                            vm: viewModel
-                        )
-                        .environmentObject(auth)
-                    }
-                }
-                .padding(24)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.primary.opacity(0.02))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .frame(width: 216, alignment: .leading)
+    }
+
+    @ViewBuilder private var content: some View {
+        VStack(spacing: 20) {
+            switch tab {
+            case .accounts:
+                AccountsSettings(
+                    vm: viewModel,
+                    settings: viewModel.settings,
+                    accounts: appState.allAccounts,
+                    appState: appState
+                )
+            case .symbols:
+                SymbolsSettings(vm: viewModel, settings: viewModel.settings)
+            case .overrides:
+                OverridesSettings(vm: viewModel, settings: viewModel.settings)
+            case .advanced:
+                AdvancedSettings(vm: viewModel, settings: viewModel.settings)
+            case .account:
+                AccountSecuritySettings(vm: viewModel).environmentObject(auth)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// Counts ride the rail so a category says how much it holds before it opens.
+    private func count(for tab: SettingsTab) -> Int? {
+        switch tab {
+        case .accounts: return viewModel.settings?.accountGroups?.count
+        case .symbols: return viewModel.settings?.userSymbolMap?.count
+        case .overrides: return viewModel.settings?.manualOverrides?.count
+        default: return nil
+        }
     }
 }

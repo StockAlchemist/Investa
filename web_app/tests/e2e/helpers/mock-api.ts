@@ -552,6 +552,50 @@ export async function setupHermeticMockApi(page: Page, options: MockApiOptions =
         });
     });
 
+    // Registered after the bare /api/strategies route: the later route wins,
+    // and /api/strategies(\/) also matches this URL - without this the
+    // allocation call receives the catalogue payload, which has no
+    // `warnings`/`sleeves`, and StrategiesView throws.
+    await page.route(/\/api\/strategies\/[^/]+\/allocation/, async (route) => {
+        return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                strategy_id: 'buffett_top10',
+                capital: 100000,
+                warnings: [],
+                ranking_age_days: 2,
+                sleeves: [
+                    {
+                        key: 'core_quality',
+                        label: 'Core Quality',
+                        weight: 1.0,
+                        amount: 100000,
+                        ranked_at: '2026-08-27',
+                        positions: [
+                            {
+                                symbol: 'AAPL',
+                                name: 'Apple Inc.',
+                                weight: 0.5,
+                                amount: 50000,
+                                shares: 260,
+                                price: 192.5,
+                            },
+                            {
+                                symbol: 'MSFT',
+                                name: 'Microsoft Corp.',
+                                weight: 0.5,
+                                amount: 50000,
+                                shares: 120,
+                                price: 415.2,
+                            },
+                        ],
+                    },
+                ],
+            }),
+        });
+    });
+
     await page.route(/\/api\/trend-signal(\/|\?|$)/, async (route) => {
         return route.fulfill({
             status: 200,

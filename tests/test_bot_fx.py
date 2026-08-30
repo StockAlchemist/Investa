@@ -159,7 +159,9 @@ def test_currency_none_asks_for_every_currency(provider):
 
 
 def test_no_token_is_its_own_error(monkeypatch):
-    monkeypatch.setattr(bot, "BOT_API_KEY", None)
+    import config
+
+    monkeypatch.setattr(config, "BOT_API_KEY", None)
     p = bot.BOTFXProvider(api_key=None)
     assert not p.is_configured()
     with pytest.raises(bot.BOTFXNotConfiguredError):

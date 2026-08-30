@@ -94,15 +94,6 @@ struct AllocationView: View {
 
     private var cur: String { appState.displayCurrency }
 
-    private var header: some View {
-        HStack {
-            Text("Portfolio").appFont(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
-            Spacer()
-        }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-    }
-
     @ViewBuilder
     private var emptyState: some View {
         if viewModel.isLoading {
@@ -124,8 +115,6 @@ struct AllocationView: View {
         GeometryReader { geo in
             ScrollView {
                 VStack(spacing: 0) {
-                    header
-                    Divider()
                     if viewModel.holdings.isEmpty {
                         emptyState
                     } else {
@@ -136,11 +125,10 @@ struct AllocationView: View {
         }
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         #else
         VStack(spacing: 0) {
-            header
-            Divider()
             if viewModel.holdings.isEmpty {
                 emptyState
             } else {
@@ -154,6 +142,7 @@ struct AllocationView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         #endif
     }

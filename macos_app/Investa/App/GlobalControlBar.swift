@@ -28,6 +28,8 @@ struct GlobalControlBar<Trailing: View>: View {
 
     private var regularBar: some View {
         HStack(spacing: 12) {
+            sectionTitle
+            barDivider
             accountMenu
             if TabLayout.hasLayout(section) { layoutMenu }
             showClosedToggle
@@ -51,6 +53,40 @@ struct GlobalControlBar<Trailing: View>: View {
         }
         .padding(.horizontal, 20).padding(.vertical, 8)
         .liquidGlass()
+    }
+
+    /// The current tab's name at the leading edge of the bar — the twin of the
+    /// web header's `navLabel(activeTab)` title (PageHeader.tsx). The tab is
+    /// named here and nowhere else, so no section repeats it at the top of its
+    /// own content. Hidden on iPhone, where the web hides it too and the tab
+    /// bar already names the tab.
+    /// The web hides its header title below `md`; the iPhone bar does the same
+    /// (`hSize` only exists on iOS, so the check is compiled per-platform).
+    private var showsSectionTitle: Bool {
+        #if os(iOS)
+        return hSize != .compact
+        #else
+        return true
+        #endif
+    }
+
+    private var sectionTitle: some View {
+        Text(section.rawValue)
+            .appFont(.headline)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            // Priority, not `fixedSize`: the title keeps its room ahead of the
+            // flexible controls without *demanding* width from the bar.
+            .layoutPriority(1)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// Hairline between the title and the controls, matching the web header's
+    /// `w-px h-5` separators.
+    private var barDivider: some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.25))
+            .frame(width: 1, height: 16)
     }
 
     /// "Live" / "Closed" market-status pill (mirrors the web header badge).
@@ -114,6 +150,10 @@ struct GlobalControlBar<Trailing: View>: View {
     private var compactBar: some View {
         HStack(spacing: 10) {
             if !searchActive {
+                if showsSectionTitle {
+                    sectionTitle.padding(.leading, 12)
+                    barDivider
+                }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         accountMenu

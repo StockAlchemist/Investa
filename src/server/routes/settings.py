@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,76 @@ project_root = os.path.dirname(
 )
 
 router = APIRouter()
+
+
+# --- API keys -------------------------------------------------------------
+# API keys live in the process-wide .env, not in per-user config, so their
+# read-modify-write cycle needs its own lock: settings_lock() is keyed on the
+# calling user's config file, which would let two users clobber each other.
+_ENV_FILE_LOCK = threading.Lock()
+
+# The masked form GET /settings hands to clients. A real key can never contain
+# U+2022, so a client echoing the preview back reads unambiguously as "leave
+# this one alone" rather than "set the key to these bullets".
+_MASK_CHAR = "\u2022"
+
+
+def _mask_secret(value: Optional[str]) -> Optional[str]:
+    """Render a stored secret as a preview: last 4 characters, the rest masked.
+
+    The full key is never sent to a client: every authenticated user shares one
+    .env, so returning plaintext hands each of them every provider secret.
+    """
+    if not value:
+        return None
+    return _MASK_CHAR * 8 + (value[-4:] if len(value) > 4 else "")
+
+
+def _clean_secret(value: str, field: str) -> str:
+    """Validate a submitted secret before it is written to .env.
+
+    dotenv writes one KEY=value line per entry, so a newline inside the value
+    injects further lines into .env - and config.py loads .env with
+    override=True, which would let any submitted key redefine AUTH_SECRET_KEY
+    (forging JWTs) or any other env-driven setting.
+    """
+    cleaned = value.strip()
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in cleaned):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field} must not contain line breaks or control characters",
+        )
+    return cleaned
+
+
+def _resolve_api_key_updates(submitted: Dict[str, Optional[str]]) -> Dict[str, str]:
+    """Narrow a settings payload to the API keys it actually means to change.
+
+    A field the payload omits (None) is left alone, and so is one holding the
+    masked preview GET handed out - otherwise a client that round-trips the
+    settings it was given would overwrite every key with bullets.
+    """
+    updates: Dict[str, str] = {}
+    for env_key, env_val in submitted.items():
+        if env_val is None or _MASK_CHAR in env_val:
+            continue
+        updates[env_key] = _clean_secret(env_val, env_key)
+    return updates
+
+
+def _write_env_keys(values: Dict[str, str]) -> None:
+    """Persist API keys to .env and make them live in this process."""
+    env_file_path = os.path.join(project_root, ".env")
+    with _ENV_FILE_LOCK:
+        for env_key, cleaned_val in values.items():
+            os.environ[env_key] = cleaned_val
+            setattr(config, env_key, cleaned_val if cleaned_val else None)
+            try:
+                # quote_mode defaults to "always", which escapes the value.
+                # Never write it raw (see _clean_secret).
+                dotenv.set_key(env_file_path, env_key, cleaned_val)
+            except Exception as e:
+                logging.warning(f"Failed to write {env_key} to .env: {e}")
 
 
 def _get_symbol_currency_map_sql(db_path: str) -> Dict[str, str]:
@@ -149,16 +220,23 @@ def get_settings(
             or getattr(config, "IBKR_TOKEN", None),
             "ibkr_query_id": config_manager.manual_overrides.get("ibkr_query_id")
             or getattr(config, "IBKR_QUERY_ID", None),
-            "gemini_api_key": getattr(config, "GEMINI_API_KEY", None)
-            or os.getenv("GEMINI_API_KEY"),
-            "fmp_api_key": getattr(config, "FMP_API_KEY", None)
-            or os.getenv("FMP_API_KEY"),
-            "sec_th_api_key": getattr(config, "SEC_TH_API_KEY", None)
-            or os.getenv("SEC_TH_API_KEY"),
-            "bot_api_key": getattr(config, "BOT_API_KEY", None)
-            or os.getenv("BOT_API_KEY"),
-            "tiingo_api_key": getattr(config, "TIINGO_API_KEY", None)
-            or os.getenv("TIINGO_API_KEY"),
+            # Masked previews only - see _mask_secret. Clients show these as a
+            # placeholder and send a field back only when the user retypes it.
+            "gemini_api_key": _mask_secret(
+                getattr(config, "GEMINI_API_KEY", None) or os.getenv("GEMINI_API_KEY")
+            ),
+            "fmp_api_key": _mask_secret(
+                getattr(config, "FMP_API_KEY", None) or os.getenv("FMP_API_KEY")
+            ),
+            "sec_th_api_key": _mask_secret(
+                getattr(config, "SEC_TH_API_KEY", None) or os.getenv("SEC_TH_API_KEY")
+            ),
+            "bot_api_key": _mask_secret(
+                getattr(config, "BOT_API_KEY", None) or os.getenv("BOT_API_KEY")
+            ),
+            "tiingo_api_key": _mask_secret(
+                getattr(config, "TIINGO_API_KEY", None) or os.getenv("TIINGO_API_KEY")
+            ),
             "target_allocation": config_manager.gui_config.get("target_allocation", {}),
         }
     except Exception as e:
@@ -209,6 +287,18 @@ def update_settings(
     """
     Updates the application settings (manual overrides, symbol map, exclude list).
     """
+    # Resolved before the lock is taken: a rejected key must not leave a
+    # half-applied settings update behind.
+    api_key_updates = _resolve_api_key_updates(
+        {
+            "GEMINI_API_KEY": settings.gemini_api_key,
+            "FMP_API_KEY": settings.fmp_api_key,
+            "SEC_TH_API_KEY": settings.sec_th_api_key,
+            "BOT_API_KEY": settings.bot_api_key,
+            "TIINGO_API_KEY": settings.tiingo_api_key,
+        }
+    )
+
     try:
         # Hold the per-user settings lock across the whole load-mutate-save cycle:
         # concurrent updates (e.g. several debounced POSTs from one device) used to
@@ -254,25 +344,8 @@ def update_settings(
                 current_overrides["ibkr_query_id"] = settings.ibkr_query_id
 
             # Update API Keys (.env and runtime environment)
-            api_keys_to_update = {
-                "GEMINI_API_KEY": settings.gemini_api_key,
-                "FMP_API_KEY": settings.fmp_api_key,
-                "SEC_TH_API_KEY": settings.sec_th_api_key,
-                "BOT_API_KEY": settings.bot_api_key,
-                "TIINGO_API_KEY": settings.tiingo_api_key,
-            }
-            env_file_path = os.path.join(project_root, ".env")
-            for env_key, env_val in api_keys_to_update.items():
-                if env_val is not None:
-                    cleaned_val = env_val.strip()
-                    os.environ[env_key] = cleaned_val
-                    setattr(config, env_key, cleaned_val if cleaned_val else None)
-                    try:
-                        dotenv.set_key(
-                            env_file_path, env_key, cleaned_val, quote_mode="never"
-                        )
-                    except Exception as e:
-                        logging.warning(f"Failed to write {env_key} to .env: {e}")
+            if api_key_updates:
+                _write_env_keys(api_key_updates)
 
             # Update GUI Config (Dashboard persistence)
             gui_config_changed = False

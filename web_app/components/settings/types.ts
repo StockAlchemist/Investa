@@ -14,10 +14,7 @@ export interface SettingsProps {
 export interface TabDefinition {
     id: Tab;
     label: string;
+    /** Tooltip on the category rail. Settings no longer draws a banner that repeats it. */
     description: string;
     icon: React.ElementType;
-    color: string;
-    badgeBg: string;
-    accentDot: string;
 }
-

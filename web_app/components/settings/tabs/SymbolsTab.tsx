@@ -1,14 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowLeftRight, Trash2, XCircle, Search } from 'lucide-react';
+import { ArrowLeftRight, Trash2, Search } from 'lucide-react';
 import { Settings as SettingsType, updateSettings } from '../../../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
 import {
     cardClassName,
+    cardHeadClassName,
     sectionTitleClassName,
+    countBadgeClassName,
     labelClassName,
     inputClassName,
-    primaryButtonClassName
+    primaryButtonClassName,
+    chipActiveClassName
 } from '../constants';
 
 interface SymbolsTabProps {
@@ -88,16 +91,13 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
     };
 
     return (
-        <div className="space-y-8 max-w-4xl">
+        <div className="space-y-6 max-w-4xl">
             {/* Symbol Mapping Section */}
             <div className={cardClassName}>
-                <div className="mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <ArrowLeftRight className="w-5 h-5 text-blue-500" />
-                        Add Symbol Mapping
-                    </h3>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Add Symbol Mapping</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-5">Resolve custom or broker-specific tickers to a real Yahoo Finance symbol.</p>
+                <p className="text-xs text-muted-foreground mb-4">Resolve custom or broker-specific tickers to a real Yahoo Finance symbol.</p>
                 <div className="flex flex-col md:flex-row gap-4 items-end">
                     <div className="flex-1 w-full space-y-1">
                         <label className={labelClassName}>Portfolio Symbol</label>
@@ -110,7 +110,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                         />
                     </div>
                     <div className="hidden md:flex pb-3 text-muted-foreground">
-                        <ArrowLeftRight className="w-5 h-5 opacity-40 text-blue-500" />
+                        <ArrowLeftRight className="w-5 h-5 opacity-40" />
                     </div>
                     <div className="flex-1 w-full space-y-1">
                         <label className={labelClassName}>Yahoo Finance Ticker</label>
@@ -126,7 +126,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                         type="button"
                         onClick={addMapping}
                         disabled={!mapFrom || !mapTo}
-                        className={`${primaryButtonClassName} w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white`}
+                        className={`${primaryButtonClassName} w-full md:w-auto`}
                     >
                         Map Symbol
                     </button>
@@ -135,14 +135,11 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
 
             {/* Active Mappings Table */}
             <div className={`${cardClassName} !p-0`}>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
-                    <h3 className={sectionTitleClassName}>
-                        <ArrowLeftRight className="w-5 h-5 text-blue-500" />
-                        Active Mappings
-                        <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">
-                            {Object.entries(symbolMap).length}
-                        </span>
-                    </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-border">
+                    <div className="flex items-center gap-2.5">
+                        <h3 className={sectionTitleClassName}>Active Mappings</h3>
+                        <span className={countBadgeClassName}>{Object.entries(symbolMap).length}</span>
+                    </div>
                     {Object.entries(symbolMap).length > 0 && (
                         <div className="relative max-w-xs w-full">
                             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -151,13 +148,13 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                                 placeholder="Filter mappings..."
                                 value={mappingSearch}
                                 onChange={(e) => setMappingSearch(e.target.value)}
-                                className="w-full h-8 pl-8 pr-3 text-xs rounded-lg border border-input bg-background/80 text-foreground outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-full h-8 pl-8 pr-3 text-xs rounded-control border border-input bg-background text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             />
                         </div>
                     )}
                 </div>
                 <table className="min-w-full text-sm">
-                    <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
+                    <thead className="bg-muted/60 border-b border-border">
                         <tr>
                             <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Portfolio Symbol</th>
                             <th className="px-6 py-3 text-center font-semibold text-muted-foreground uppercase tracking-wider text-xs w-16"></th>
@@ -165,7 +162,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                             <th className="px-6 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                    <tbody className="divide-y divide-border">
                         {sortedMapEntries.length === 0 ? (
                             <tr>
                                 <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
@@ -174,12 +171,12 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                             </tr>
                         ) : (
                             sortedMapEntries.map(([from, to]: [string, string]) => (
-                                <tr key={from} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                                <tr key={from} className="hover:bg-muted/50 transition-colors group">
                                     <td className="px-6 py-4 font-bold text-foreground font-mono">{from}</td>
                                     <td className="px-6 py-4 text-center text-muted-foreground">
-                                        <ArrowLeftRight className="w-4 h-4 inline opacity-50 text-blue-500" />
+                                        <ArrowLeftRight className="w-4 h-4 inline opacity-50" />
                                     </td>
-                                    <td className="px-6 py-4 text-blue-600 dark:text-blue-400 font-mono font-medium">{to}</td>
+                                    <td className="px-6 py-4 text-primary-ink font-mono font-medium">{to}</td>
                                     <td className="px-6 py-4 text-right">
                                         <button
                                             type="button"
@@ -199,13 +196,10 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
 
             {/* Excluded Symbols Section */}
             <div className={cardClassName}>
-                <div className="mb-2">
-                    <h3 className={sectionTitleClassName}>
-                        <XCircle className="w-5 h-5 text-rose-500" />
-                        Exclude a Symbol
-                    </h3>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Exclude a Symbol</h3>
                 </div>
-                <p className="text-sm text-muted-foreground mb-5">Excluded symbols are skipped during portfolio calculations and data fetches.</p>
+                <p className="text-xs text-muted-foreground mb-4">Excluded symbols are skipped during portfolio calculations and data fetches.</p>
                 <div className="flex gap-3 items-end">
                     <div className="flex-1 space-y-1.5">
                         <label className={labelClassName}>Symbol to Exclude</label>
@@ -221,7 +215,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                         type="button"
                         onClick={addExcluded}
                         disabled={!excludeSymbol}
-                        className="px-6 py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                        className={primaryButtonClassName}
                     >
                         Exclude
                     </button>
@@ -229,15 +223,12 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
             </div>
 
             <div className={cardClassName}>
-                <h3 className={`${sectionTitleClassName} mb-5`}>
-                    <XCircle className="w-5 h-5 text-rose-500" />
-                    Excluded Symbols
-                    <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">
-                        {excluded.length}
-                    </span>
-                </h3>
+                <div className={cardHeadClassName}>
+                    <h3 className={sectionTitleClassName}>Excluded Symbols</h3>
+                    <span className={countBadgeClassName}>{excluded.length}</span>
+                </div>
                 {excluded.length === 0 ? (
-                    <div className="py-10 text-center text-muted-foreground border border-dashed border-black/10 dark:border-white/10 rounded-xl">
+                    <div className="py-10 text-center text-sm text-muted-foreground border border-dashed border-border rounded-inset">
                         No excluded symbols.
                     </div>
                 ) : (
@@ -245,9 +236,9 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                         {excluded.map((sym, idx) => (
                             <div
                                 key={sym + idx}
-                                className="group inline-flex items-center gap-2 bg-rose-500/10 border border-rose-500/30 hover:border-rose-500/50 px-3 py-1.5 rounded-lg transition-colors"
+                                className={`group ${chipActiveClassName} hover:border-primary/40`}
                             >
-                                <span className="font-bold font-mono text-down text-sm">{sym}</span>
+                                <span className="font-bold">{sym}</span>
                                 <button
                                     type="button"
                                     onClick={() => removeExcluded(sym)}

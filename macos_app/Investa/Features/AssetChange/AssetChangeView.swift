@@ -65,21 +65,10 @@ struct AssetChangeView: View {
 
     private var cur: String { appState.displayCurrency }
 
-    private var header: some View {
-        HStack {
-            Text("Performance").appFont(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
-            Spacer()
-        }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-    }
-
     var body: some View {
         #if os(iOS)
         ScrollView {
             VStack(spacing: 0) {
-                header
-                Divider()
                 if let error = viewModel.errorMessage {
                     Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
                 }
@@ -98,11 +87,10 @@ struct AssetChangeView: View {
         }
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         #else
         VStack(spacing: 0) {
-            header
-            Divider()
             if let error = viewModel.errorMessage {
                 Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
             }
@@ -122,6 +110,7 @@ struct AssetChangeView: View {
         }
         .macMinSize(width: 820, height: 560)
         .task(id: signature) { reload() }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
         #endif
     }

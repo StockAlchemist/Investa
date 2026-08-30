@@ -33,11 +33,8 @@ struct ExcludedSymbolsView: View {
             // Add Exclude Card
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Color.red)
-                        .appFont(.title3)
-                    Text("Exclude a Symbol")
-                        .appFont(.headline.bold())
+                    SectionLabel(title: "Exclude a Symbol")
+                    Spacer(minLength: 0)
                 }
 
                 Text("Excluded tickers are completely skipped during portfolio calculations, performance returns, and market data queries.")
@@ -59,24 +56,14 @@ struct ExcludedSymbolsView: View {
                 }
             }
             .padding(18)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.primary.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+            .card()
 
             // Current Excluded Section
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Currently Excluded Symbols")
-                        .appFont(.headline.bold())
-                    Spacer()
-                    Text("\(excludedList.count) symbols")
-                        .appFont(.caption)
-                        .foregroundStyle(.secondary)
+                    SectionLabel(title: "Currently Excluded Symbols")
+                    SettingsCountBadge(value: excludedList.count)
+                    Spacer(minLength: 0)
                 }
 
                 if excludedList.isEmpty {
@@ -92,21 +79,14 @@ struct ExcludedSymbolsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
                 } else {
-                    FlowChipsRemovable(items: excludedList, color: .red) { sym in
+                    FlowChipsRemovable(items: excludedList, color: .brand) { sym in
                         removeSymbol(sym)
                     }
                     .padding(.top, 4)
                 }
             }
             .padding(18)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.primary.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            )
+            .card()
         }
     }
 
@@ -129,7 +109,7 @@ struct ExcludedSymbolsView: View {
         let current = settings?.userExcludedSymbols ?? []
         let updated = current.filter { $0 != sym }
         Task {
-            await vm.update("user_excluded_symbols", updated, note: "Removed \(sym) from exclusion list")
+            guard await vm.update("user_excluded_symbols", updated, note: "Removed \(sym) from exclusion list") else { return }
             ToastManager.shared.show(message: "Re-included \(sym)", style: .success)
         }
     }

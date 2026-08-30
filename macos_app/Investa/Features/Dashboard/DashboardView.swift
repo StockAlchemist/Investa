@@ -18,7 +18,6 @@ struct DashboardView: View {
         #if os(iOS)
         ScrollView {
             VStack(spacing: 0) {
-                if !isPhone { header; Divider() }
                 VStack(spacing: 16) {
                     if let error = viewModel.errorMessage { errorBanner(error) }
 
@@ -80,7 +79,6 @@ struct DashboardView: View {
         .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
         #else
         VStack(spacing: 0) {
-            header; Divider()
             ScrollView {
                 VStack(spacing: 16) {
                     if let error = viewModel.errorMessage { errorBanner(error) }
@@ -142,15 +140,6 @@ struct DashboardView: View {
         .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
         #endif
-    }
-
-
-    private var header: some View {
-        HStack {
-            Text("Dashboard").appFont(.title2.bold())
-            Spacer()
-        }
-        .padding(.horizontal, 20).padding(.vertical, 12)
     }
 
     private func sectionDivider(_ label: String) -> some View {

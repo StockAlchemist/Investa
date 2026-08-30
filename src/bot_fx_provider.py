@@ -56,7 +56,7 @@ from typing import Deque, Dict, List, Optional
 
 import requests
 
-from config import BOT_API_KEY
+import config
 from fx_pairs import RateTable
 from fx_pairs import pair_rate as _pair_rate
 from fx_pairs import pair_series as _pair_series
@@ -186,7 +186,10 @@ def month_windows(start: date, end: date) -> List[tuple]:
 
 class BOTFXProvider:
     def __init__(self, api_key: Optional[str] = None, timeout: int = DEFAULT_TIMEOUT):
-        self.api_key = api_key if api_key is not None else BOT_API_KEY
+        # Read through the module so a key saved from Settings takes effect
+        # now: `from config import BOT_API_KEY` would bind a copy at import
+        # time that no later update could reach.
+        self.api_key = api_key if api_key is not None else config.BOT_API_KEY
         self.timeout = timeout
         self._session = None
         # When this process made each call, so it can say how much of the

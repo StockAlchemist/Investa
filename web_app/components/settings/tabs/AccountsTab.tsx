@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash2, DollarSign, Settings as SettingsIcon } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { Settings as SettingsType, Holding, updateSettings } from '../../../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
@@ -8,10 +8,15 @@ import AccountGroupManager from '../../AccountGroupManager';
 import YieldSettings from '../../YieldSettings';
 import {
     cardClassName,
+    cardHeadClassName,
     sectionTitleClassName,
+    countBadgeClassName,
     labelClassName,
     inputClassName,
-    compactInputClassName
+    compactInputClassName,
+    primaryButtonClassName,
+    insetClassName,
+    chipActiveClassName
 } from '../constants';
 
 interface AccountsTabProps {
@@ -100,7 +105,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
     const configurableAccounts = availableAccounts.filter(a => a !== 'All Accounts');
 
     return (
-        <div className="space-y-10">
+        <div className="space-y-6">
             {/* Account Groups section */}
             {settings && (
                 <AccountGroupManager
@@ -110,28 +115,23 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                 />
             )}
 
-            <div className="space-y-8">
+            <>
                 {/* Available Currencies Section */}
                 <div className={cardClassName}>
-                    <div className="mb-2">
-                        <h3 className={sectionTitleClassName}>
-                            <DollarSign className="w-5 h-5 text-amber-500" />
-                            Available Currencies
-                            <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">
-                                {availableCurrencies.length}
-                            </span>
-                        </h3>
+                    <div className={cardHeadClassName}>
+                        <h3 className={sectionTitleClassName}>Available Currencies</h3>
+                        <span className={countBadgeClassName}>{availableCurrencies.length}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-5">Currencies you can assign to accounts below.</p>
+                    <p className="text-xs text-muted-foreground mb-4">Currencies you can assign to accounts below.</p>
 
                     {availableCurrencies.length > 0 && (
                         <div className="flex flex-wrap gap-2 mb-5">
                             {availableCurrencies.map(curr => (
                                 <div
                                     key={curr}
-                                    className="group inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/50 px-3 py-1.5 rounded-lg transition-colors"
+                                    className={`group ${chipActiveClassName} hover:border-primary/40`}
                                 >
-                                    <span className="font-bold font-mono text-amber-700 dark:text-amber-300 text-sm">{curr}</span>
+                                    <span className="font-bold tabular-nums">{curr}</span>
                                     <button
                                         onClick={() => removeCurrency(curr)}
                                         className="opacity-40 group-hover:opacity-100 text-down hover:text-down transition-opacity cursor-pointer"
@@ -144,7 +144,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                         </div>
                     )}
 
-                    <div className="flex gap-3 items-end max-w-md pt-5 border-t border-black/5 dark:border-white/5">
+                    <div className="flex gap-3 items-end max-w-md pt-5 border-t border-border">
                         <div className="flex-1 space-y-1.5">
                             <label className={labelClassName}>Add a Currency</label>
                             <input
@@ -160,7 +160,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                             type="button"
                             onClick={addCurrency}
                             disabled={!newCurrency}
-                            className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                            className={primaryButtonClassName}
                         >
                             Add
                         </button>
@@ -169,19 +169,14 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
 
                 {/* Account Preferences Section */}
                 <div className={cardClassName}>
-                    <div className="mb-2">
-                        <h3 className={sectionTitleClassName}>
-                            <SettingsIcon className="w-5 h-5 text-zinc-500" />
-                            Account Preferences
-                            <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">
-                                {configurableAccounts.length}
-                            </span>
-                        </h3>
+                    <div className={cardHeadClassName}>
+                        <h3 className={sectionTitleClassName}>Account Preferences</h3>
+                        <span className={countBadgeClassName}>{configurableAccounts.length}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-5">Configure currency, cash management mode, and closure date for each account.</p>
+                    <p className="text-xs text-muted-foreground mb-4">Base currency, cash automation and closure date, per account.</p>
 
                     {configurableAccounts.length === 0 ? (
-                        <div className="text-center text-muted-foreground py-12 border border-dashed border-black/10 dark:border-white/10 rounded-xl">
+                        <div className="text-center text-sm text-muted-foreground py-12 border border-dashed border-border rounded-inset">
                             No accounts found.
                         </div>
                     ) : (
@@ -193,17 +188,18 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                                     <div
                                         key={account}
                                         className={cn(
-                                            "bg-white/60 dark:bg-black/20 border border-black/5 dark:border-white/10 rounded-xl p-4 transition-all hover:border-black/15 dark:hover:border-white/20",
+                                            insetClassName,
+                                            "transition-colors hover:border-primary/30",
                                             isEffectivelyClosed && "opacity-70"
                                         )}
                                     >
-                                        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-black/5 dark:border-white/5">
+                                        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border">
                                             <span className={cn(
                                                 "font-bold text-foreground",
                                                 isEffectivelyClosed && "line-through"
                                             )}>{account}</span>
                                             {isEffectivelyClosed && (
-                                                <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 rounded-full">
+                                                <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 bg-muted text-muted-foreground rounded-full">
                                                     Closed
                                                 </span>
                                             )}
@@ -263,7 +259,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                         </div>
                     )}
                 </div>
-            </div>
+            </>
 
             {/* Cash Yield section */}
             {settings && (

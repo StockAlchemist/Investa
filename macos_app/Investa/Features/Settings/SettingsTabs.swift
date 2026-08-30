@@ -9,7 +9,7 @@ struct AccountsSettings: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             AccountGroupManagerView(
                 vm: vm,
                 settings: settings,
@@ -50,7 +50,7 @@ struct SymbolsSettings: View {
     let settings: AppSettings?
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             SymbolMappingsView(vm: vm, settings: settings, embedded: true)
             ExcludedSymbolsView(vm: vm, settings: settings, embedded: true)
         }
@@ -76,7 +76,7 @@ struct AdvancedSettings: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             BenchmarksSettingsView(vm: vm, settings: settings, embedded: true)
                 .environmentObject(appState)
 

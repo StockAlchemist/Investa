@@ -69,21 +69,10 @@ struct MarketsView: View {
         return news.filter { $0.title.lowercased().contains(q) || $0.provider.lowercased().contains(q) || ($0.symbol?.lowercased().contains(q) ?? false) }
     }
 
-    private var header: some View {
-        HStack {
-            Text("Markets").appFont(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
-            Spacer()
-        }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-    }
-
     var body: some View {
         #if os(iOS)
         ScrollView {
             VStack(spacing: 0) {
-                header
-                Divider()
                 VStack(alignment: .leading, spacing: 24) {
                     indicesSection
                     YourMoversSection(holdings: viewModel.holdings, currency: cur, onPick: { appState.openStock($0) })
@@ -99,12 +88,11 @@ struct MarketsView: View {
         }
         .macMinSize(width: 820, height: 560)
         .task { viewModel.reload(currency: cur) }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in viewModel.reload(currency: cur) }
         .sheet(item: $indexDetail) { idx in IndexGraphSheet(index: idx) }
         #else
         VStack(spacing: 0) {
-            header
-            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     indicesSection
@@ -121,11 +109,11 @@ struct MarketsView: View {
         }
         .macMinSize(width: 820, height: 560)
         .task { viewModel.reload(currency: cur) }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in viewModel.reload(currency: cur) }
         .sheet(item: $indexDetail) { idx in IndexGraphSheet(index: idx) }
         #endif
     }
-
 
     // MARK: - Indices
 

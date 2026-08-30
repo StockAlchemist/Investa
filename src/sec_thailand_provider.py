@@ -48,7 +48,7 @@ from typing import Any, Dict, Iterator, List, NamedTuple, Optional
 
 import requests
 
-from config import SEC_TH_API_KEY
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,10 @@ class SECThailandNotConfiguredError(SECThailandError):
 
 class SECThailandProvider:
     def __init__(self, api_key: Optional[str] = None, timeout: int = DEFAULT_TIMEOUT):
-        self.api_key = api_key or SEC_TH_API_KEY
+        # Read through the module so a key saved from Settings takes effect
+        # now: `from config import SEC_TH_API_KEY` would bind a copy at
+        # import time that no later update could reach.
+        self.api_key = api_key or config.SEC_TH_API_KEY
         self.timeout = timeout
         self._session: Optional[requests.Session] = None
         self._last_call = 0.0

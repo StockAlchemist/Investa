@@ -22,7 +22,13 @@ struct KpiRow<Content: View>: View {
         guard count > 1 else { return max(1, count) }
         // Until the first measurement lands, assume a single row.
         guard availableWidth > 0 else { return count }
-        let maxCols = max(1, Int(availableWidth / minTileWidth))
+        // A phone in Display Zoom, or at an accessibility text size, measures
+        // narrower than two comfortable tiles — but one tile per row is a list,
+        // not a strip: it leaves half the card empty and pushes everything below
+        // it off the screen. Keep two columns wherever two tiles still fit
+        // compressed; every tile's value shrinks before it truncates.
+        let floorCols = availableWidth >= minTileWidth * 1.2 ? 2 : 1
+        let maxCols = max(floorCols, Int(availableWidth / minTileWidth))
         let perRowCap = min(maxCols, count)
         // Balance: spread tiles over the fewest rows `maxCols` allows, then even
         // them out so the last row is as full as the rest (e.g. 7 tiles, 5 cols

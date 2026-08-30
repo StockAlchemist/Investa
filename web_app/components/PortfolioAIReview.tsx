@@ -222,6 +222,10 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
         <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex items-center justify-between flex-wrap gap-4">
                 <header className="space-y-1">
+                    {/* Below md the PageHeader title is hidden, so the screen names itself here. */}
+                    <h2 className="md:hidden text-2xl font-bold tracking-tight text-foreground">
+                        AI Insights
+                    </h2>
                     <p className="text-muted-foreground text-sm max-w-3xl">
                         AI-driven insights and recommendations for your portfolio.
                     </p>

@@ -179,7 +179,6 @@ struct TransactionsView: View {
 
     private var header: some View {
         HStack {
-            Text("Transactions").appFont(.title2.bold())
             if viewModel.isLoading { ProgressView().controlSize(.small) }
             Spacer()
             Text("Showing \(sorted.count) of \(viewModel.transactions.count)")

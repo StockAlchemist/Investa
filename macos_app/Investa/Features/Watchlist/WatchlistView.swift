@@ -104,21 +104,10 @@ struct WatchlistView: View {
         return q.isEmpty ? sorted : sorted.filter { $0.symbol.lowercased().contains(q) || ($0.name?.lowercased().contains(q) ?? false) }
     }
 
-    private var header: some View {
-        HStack {
-            Text("Watchlist").appFont(.title2.bold())
-            if viewModel.isLoading { ProgressView().controlSize(.small) }
-            Spacer()
-        }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-    }
-
     var body: some View {
         #if os(iOS)
         ScrollView {
             VStack(spacing: 0) {
-                header
-                Divider()
                 VStack(alignment: .leading, spacing: 16) {
                     listSelector
                     if !viewModel.items.isEmpty { WatchlistKpiStrip(items: viewModel.items) }
@@ -129,6 +118,7 @@ struct WatchlistView: View {
         }
         .macMinSize(width: 860, height: 560)
         .task { await viewModel.loadLists(); await viewModel.loadItems(currency: cur) }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onChange(of: viewModel.activeId) { _, _ in Task { await viewModel.loadItems(currency: cur) } }
         .onChange(of: cur) { _, _ in Task { await viewModel.loadItems(currency: cur) } }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in
@@ -136,8 +126,6 @@ struct WatchlistView: View {
         }
         #else
         VStack(spacing: 0) {
-            header
-            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     listSelector
@@ -149,6 +137,7 @@ struct WatchlistView: View {
         }
         .macMinSize(width: 860, height: 560)
         .task { await viewModel.loadLists(); await viewModel.loadItems(currency: cur) }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
         .onChange(of: viewModel.activeId) { _, _ in Task { await viewModel.loadItems(currency: cur) } }
         .onChange(of: cur) { _, _ in Task { await viewModel.loadItems(currency: cur) } }
         .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in
@@ -156,7 +145,6 @@ struct WatchlistView: View {
         }
         #endif
     }
-
 
     // MARK: - List selector
 

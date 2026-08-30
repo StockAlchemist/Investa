@@ -50,13 +50,14 @@ def unconfigured(monkeypatch):
     """
     A provider with no key, whatever the developer's .env holds.
 
-    The constructor falls back to the module-level SEC_TH_API_KEY, so passing
+    The constructor falls back to config.SEC_TH_API_KEY, so passing
     api_key=None is not enough once a real key exists — these tests silently
     stopped testing anything the moment the key was added.
     """
+    import config
     import sec_thailand_provider
 
-    monkeypatch.setattr(sec_thailand_provider, "SEC_TH_API_KEY", None)
+    monkeypatch.setattr(config, "SEC_TH_API_KEY", None)
     return sec_thailand_provider.SECThailandProvider(api_key=None)
 
 

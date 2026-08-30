@@ -115,7 +115,9 @@ def test_import_and_types():
     assert BENCHMARK_MAPPING["Bitcoin (BTC-USD)"] == "BTC-USD"
     assert "Total US Market (VTI)" in BENCHMARK_OPTIONS_DISPLAY
     assert "SPY (S&P 500 ETF)" not in BENCHMARK_OPTIONS_DISPLAY
-    assert len(BENCHMARK_OPTIONS_DISPLAY) == len(set(BENCHMARK_OPTIONS_DISPLAY))  # No duplicates
+    assert len(BENCHMARK_OPTIONS_DISPLAY) == len(
+        set(BENCHMARK_OPTIONS_DISPLAY)
+    )  # No duplicates
     assert COLOR_GAIN == "#198754"
 
 
@@ -148,20 +150,47 @@ def test_per_user_config_defaults_to_own_db(tmp_path):
     )
 
 
-def test_api_keys_settings_update(tmp_path, monkeypatch):
-    """Test that updating API keys through settings updates os.environ, config, and .env."""
-    import config
-    from server.routes.settings import SettingsUpdate, update_settings
-    from server.auth import User
-    from config_manager import ConfigManager
+API_KEY_ENV_NAMES = (
+    "GEMINI_API_KEY",
+    "FMP_API_KEY",
+    "SEC_TH_API_KEY",
+    "BOT_API_KEY",
+    "TIINGO_API_KEY",
+)
 
-    # Mock user and config manager
+
+@pytest.fixture
+def api_key_settings(tmp_path, monkeypatch):
+    """A settings route wired to a throwaway .env, with all global state undone.
+
+    The route writes process-wide state - os.environ, attributes on `config`
+    and the .env file - so without this every key it sets would leak into the
+    rest of the session.
+    """
+    import config
+    import server.routes.settings as settings_mod
+    from config_manager import ConfigManager
+    from server.auth import User
+
+    for name in API_KEY_ENV_NAMES:
+        # monkeypatch records the current value and restores it at teardown.
+        monkeypatch.setenv(name, os.environ.get(name, ""))
+        monkeypatch.setattr(config, name, getattr(config, name, None), raising=False)
+
+    # Don't leave a precalculation thread running past the test.
+    monkeypatch.setattr(
+        settings_mod, "trigger_background_precalculation", lambda user: None
+    )
+
     user_dir = tmp_path / "users" / "test_user"
     user_dir.mkdir(parents=True)
     (user_dir / "portfolio.db").write_bytes(b"")
-    cm = ConfigManager(str(user_dir))
 
-    fake_user = User(
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=initial_gemini\n")
+    monkeypatch.setattr(settings_mod, "project_root", str(tmp_path))
+
+    user = User(
         id=1,
         username="test_user",
         alias="Tester",
@@ -169,48 +198,105 @@ def test_api_keys_settings_update(tmp_path, monkeypatch):
         created_at="2026-01-01T00:00:00",
     )
 
-    # Point project_root .env to temporary directory
-    fake_env = tmp_path / ".env"
-    fake_env.write_text("GEMINI_API_KEY=initial_gemini\n")
+    class Harness:
+        config_manager = ConfigManager(str(user_dir))
+        env = env_file
 
-    import server.routes.settings as settings_mod
+        @staticmethod
+        def update(**fields):
+            return settings_mod.update_settings(
+                settings=settings_mod.SettingsUpdate(**fields),
+                config_manager=Harness.config_manager,
+                current_user=user,
+            )
 
-    monkeypatch.setattr(settings_mod, "project_root", str(tmp_path))
+    return Harness
 
-    update_payload = SettingsUpdate(
+
+def test_api_keys_settings_update(api_key_settings):
+    """Saved keys reach os.environ, the config module, and .env."""
+    import config
+
+    res = api_key_settings.update(
         gemini_api_key="updated_gemini_key",
         fmp_api_key="updated_fmp_key",
         sec_th_api_key="updated_sec_key",
         bot_api_key="updated_bot_key",
         tiingo_api_key="updated_tiingo_key",
     )
-
-    res = update_settings(
-        settings=update_payload,
-        config_manager=cm,
-        current_user=fake_user,
-    )
     assert res.get("status") == "success"
 
-    # Check os.environ
-    assert os.environ.get("GEMINI_API_KEY") == "updated_gemini_key"
-    assert os.environ.get("FMP_API_KEY") == "updated_fmp_key"
-    assert os.environ.get("SEC_TH_API_KEY") == "updated_sec_key"
-    assert os.environ.get("BOT_API_KEY") == "updated_bot_key"
-    assert os.environ.get("TIINGO_API_KEY") == "updated_tiingo_key"
+    expected = {
+        "GEMINI_API_KEY": "updated_gemini_key",
+        "FMP_API_KEY": "updated_fmp_key",
+        "SEC_TH_API_KEY": "updated_sec_key",
+        "BOT_API_KEY": "updated_bot_key",
+        "TIINGO_API_KEY": "updated_tiingo_key",
+    }
+    env_content = api_key_settings.env.read_text()
+    for name, value in expected.items():
+        assert os.environ.get(name) == value
+        assert getattr(config, name) == value
+        # Written quoted - see the injection test below.
+        assert f"{name}='{value}'" in env_content
 
-    # Check config module attributes
-    assert config.GEMINI_API_KEY == "updated_gemini_key"
-    assert config.FMP_API_KEY == "updated_fmp_key"
-    assert config.SEC_TH_API_KEY == "updated_sec_key"
-    assert config.BOT_API_KEY == "updated_bot_key"
-    assert config.TIINGO_API_KEY == "updated_tiingo_key"
 
-    # Check .env file content
-    env_content = fake_env.read_text()
-    assert "GEMINI_API_KEY=updated_gemini_key" in env_content
-    assert "FMP_API_KEY=updated_fmp_key" in env_content
-    assert "SEC_TH_API_KEY=updated_sec_key" in env_content
-    assert "BOT_API_KEY=updated_bot_key" in env_content
-    assert "TIINGO_API_KEY=updated_tiingo_key" in env_content
+def test_api_key_cannot_inject_env_lines(api_key_settings):
+    """A newline in a key must not smuggle a second assignment into .env.
 
+    config.py loads .env with override=True, so an injected AUTH_SECRET_KEY
+    line would hand the submitter the JWT signing key.
+    """
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as excinfo:
+        api_key_settings.update(
+            gemini_api_key="legit_key\nAUTH_SECRET_KEY=forged_signing_key"
+        )
+    assert excinfo.value.status_code == 400
+
+    env_content = api_key_settings.env.read_text()
+    assert "AUTH_SECRET_KEY" not in env_content
+    # The rejected write must not have half-applied.
+    assert os.environ.get("GEMINI_API_KEY") != "legit_key"
+
+
+def test_api_keys_are_masked_and_round_trip_safely(api_key_settings):
+    """GET hands out previews, and echoing one back leaves the key alone."""
+    from server.routes.settings import _mask_secret, _resolve_api_key_updates
+
+    api_key_settings.update(gemini_api_key="sk-secret-value-1234")
+
+    preview = _mask_secret("sk-secret-value-1234")
+    assert preview == "\u2022" * 8 + "1234"
+    assert "secret" not in preview
+
+    # A client that saves the settings it was handed must not overwrite keys.
+    assert _resolve_api_key_updates({"GEMINI_API_KEY": preview}) == {}
+    # An omitted field is likewise untouched; a retyped one is applied.
+    assert _resolve_api_key_updates({"GEMINI_API_KEY": None}) == {}
+    assert _resolve_api_key_updates({"GEMINI_API_KEY": "sk-new"}) == {
+        "GEMINI_API_KEY": "sk-new"
+    }
+
+    api_key_settings.update(gemini_api_key=preview)
+    assert os.environ.get("GEMINI_API_KEY") == "sk-secret-value-1234"
+
+
+def test_api_key_update_leaves_other_keys_alone(api_key_settings):
+    """Saving one key must not clear the four the payload omits."""
+    api_key_settings.update(
+        gemini_api_key="gemini_v1",
+        fmp_api_key="fmp_v1",
+        sec_th_api_key="sec_v1",
+        bot_api_key="bot_v1",
+        tiingo_api_key="tiingo_v1",
+    )
+
+    api_key_settings.update(fmp_api_key="fmp_v2")
+
+    assert os.environ.get("FMP_API_KEY") == "fmp_v2"
+    assert os.environ.get("GEMINI_API_KEY") == "gemini_v1"
+    assert os.environ.get("SEC_TH_API_KEY") == "sec_v1"
+    assert os.environ.get("BOT_API_KEY") == "bot_v1"
+    assert os.environ.get("TIINGO_API_KEY") == "tiingo_v1"

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Sliders, Save, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Save, Plus, Pencil, Trash2 } from 'lucide-react';
 import { Settings as SettingsType, Holding, ManualOverride, ManualOverrideData, updateSettings } from '../../../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
@@ -8,7 +8,10 @@ import {
     ASSET_TYPES,
     SECTORS,
     cardClassName,
+    cardHeadClassName,
     sectionTitleClassName,
+    countBadgeClassName,
+    secondaryButtonClassName,
     labelClassName,
     inputClassName,
     primaryButtonClassName
@@ -153,16 +156,13 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
     };
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-6">
             {isEditingOverrides ? (
                 <div className={cardClassName}>
-                    <div className="mb-2">
-                        <h3 className={sectionTitleClassName}>
-                            <Sliders className="w-5 h-5 text-up" />
-                            {overrideSymbol ? 'Edit Override' : 'Add Override'}
-                        </h3>
+                    <div className={cardHeadClassName}>
+                        <h3 className={sectionTitleClassName}>{overrideSymbol ? 'Edit Override' : 'Add Override'}</h3>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-5">Set a manual price, asset type, or any metadata field for a symbol.</p>
+                    <p className="text-xs text-muted-foreground mb-4">Set a manual price, asset type, or any metadata field for a symbol.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                         <div className="space-y-1.5">
                             <label className={labelClassName}>Symbol</label>
@@ -257,7 +257,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                                 setIsEditingOverrides(false);
                                 setOverrideSymbol(''); setOverridePrice(''); setOverrideAssetType(''); setOverrideSector(''); setOverrideGeo(''); setOverrideIndustry(''); setOverrideExchange('');
                             }}
-                            className="px-6 py-2.5 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-foreground rounded-xl font-medium shadow-sm transition-colors cursor-pointer"
+                            className={secondaryButtonClassName}
                         >
                             Cancel
                         </button>
@@ -280,7 +280,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                             setOverrideSymbol(''); setOverridePrice(''); setOverrideAssetType(''); setOverrideSector(''); setOverrideGeo(''); setOverrideIndustry(''); setOverrideExchange('');
                             setIsEditingOverrides(true);
                         }}
-                        className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
+                        className={primaryButtonClassName}
                     >
                         <Plus className="w-4 h-4" />
                         Add New Override
@@ -289,18 +289,13 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
             )}
 
             <div className={`${cardClassName} !p-0`}>
-                <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white/30 dark:bg-black/20">
-                    <h3 className={sectionTitleClassName}>
-                        <Sliders className="w-5 h-5 text-up" />
-                        Active Overrides
-                        <span className="text-xs font-medium text-muted-foreground bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full ml-1">
-                            {Object.entries(overrides).length}
-                        </span>
-                    </h3>
+                <div className="flex items-center gap-2.5 px-6 py-4 border-b border-border">
+                    <h3 className={sectionTitleClassName}>Active Overrides</h3>
+                    <span className={countBadgeClassName}>{Object.entries(overrides).length}</span>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
-                        <thead className="bg-black/5 dark:bg-white/5 border-b border-black/10 dark:border-white/10">
+                        <thead className="bg-muted/60 border-b border-border">
                             <tr>
                                 <th className="sticky left-0 z-20 px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs bg-zinc-100 dark:bg-zinc-800 shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">Symbol</th>
                                 <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Price</th>
@@ -312,7 +307,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                                 <th className="px-6 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                        <tbody className="divide-y divide-border">
                             {Object.entries(overrides).length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="px-6 py-12 text-center text-muted-foreground">
@@ -333,7 +328,7 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                                         const currency = isObj ? (data as ManualOverrideData).currency : 'USD';
 
                                         return (
-                                            <tr key={symbol} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                                            <tr key={symbol} className="hover:bg-muted/50 transition-colors group">
                                                 <td className="sticky left-0 z-10 px-6 py-4 whitespace-nowrap font-bold text-foreground bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800 transition-colors shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">{symbol}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-muted-foreground font-mono">
                                                     {(!price || price === 0)

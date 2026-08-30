@@ -43,12 +43,8 @@ struct IntegrationsSettingsView: View {
     private var ibkrSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .foregroundStyle(Color.blue)
-                    .appFont(.title3)
-                Text("Interactive Brokers (IBKR)")
-                    .appFont(.headline.bold())
-                Spacer()
+                SectionLabel(title: "Interactive Brokers (IBKR)")
+                Spacer(minLength: 0)
             }
 
             Text("Automatically sync your IBKR trades and cash movements using the Flex Web Service. Requires an active Activity Flex Query.")
@@ -111,25 +107,14 @@ struct IntegrationsSettingsView: View {
             }
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card()
     }
 
     private var webhookSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "waveform.path.ecg")
-                    .foregroundStyle(Color.cyan)
-                    .appFont(.title3)
-                Text("Webhook Integration")
-                    .appFont(.headline.bold())
-                Spacer()
+                SectionLabel(title: "Webhook Integration")
+                Spacer(minLength: 0)
             }
 
             Text("Trigger a background data refresh externally (e.g. from GitHub Actions or Cron) by providing your webhook secret key.")
@@ -160,21 +145,15 @@ struct IntegrationsSettingsView: View {
             }
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .card()
     }
 
     private func saveIBKRCredentials() {
         isSavingIBKR = true
         Task {
-            await vm.updateIBKR(token: ibkrToken, queryId: ibkrQuery)
+            let saved = await vm.updateIBKR(token: ibkrToken, queryId: ibkrQuery)
             isSavingIBKR = false
+            guard saved else { return }
             ToastManager.shared.show(message: "IBKR credentials saved", style: .success)
         }
     }
@@ -190,7 +169,7 @@ struct IntegrationsSettingsView: View {
 
     private func triggerWebhook() {
         Task {
-            await vm.triggerRefresh(secret: refreshSecret)
+            guard await vm.triggerRefresh(secret: refreshSecret) else { return }
             ToastManager.shared.show(message: "Webhook refresh triggered", style: .success)
         }
     }
