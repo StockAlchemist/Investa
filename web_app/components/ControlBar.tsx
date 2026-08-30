@@ -1,7 +1,6 @@
 import React from 'react';
 import TabNavigation from '@/components/TabNavigation';
 import CurrencySelector from '@/components/CurrencySelector';
-import ThemeToggle from '@/components/ThemeToggle';
 import UserMenu from '@/components/UserMenu';
 import { Settings as SettingsIcon, Home } from 'lucide-react';
 import type { User } from '@/lib/api';
@@ -54,8 +53,6 @@ export default function ControlBar({
 
                 {/* Right: Controls */}
                 <div className="flex items-center gap-1.5">
-                    <ThemeToggle />
-
                     <button
                         onClick={onSettingsClick}
                         className="p-2 rounded-xl text-indigo-500 hover:text-cyan-500 hover:bg-cyan-500/10 transition-all duration-300 group"

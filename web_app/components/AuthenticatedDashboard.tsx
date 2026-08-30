@@ -40,8 +40,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { MobileNav } from '@/components/layout/MobileNav';
 import dynamic from 'next/dynamic';
-import { useTheme } from 'next-themes';
-import { Home as HomeIcon, Activity, Settings as SettingsIcon, Moon, Sun } from 'lucide-react';
+import { Home as HomeIcon, Activity, Settings as SettingsIcon } from 'lucide-react';
 import { useStockModal } from '@/context/StockModalContext';
 
 const PerformanceGraph = dynamic(() => import('@/components/PerformanceGraph'), {
@@ -91,7 +90,6 @@ const TAB_NAMES: Record<string, string> = {
 };
 
 export default function AuthenticatedDashboard() {
-  const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
   const { selectedSymbol, modalCurrency, closeStockDetail, goBack, canGoBack } = useStockModal();
 
@@ -811,8 +809,6 @@ export default function AuthenticatedDashboard() {
     }
   };
 
-  const { resolvedTheme } = useTheme();
-
   if (!mounted) return <AppShellSkeleton />;
 
   const currentTheme = TAB_THEMES[activeTab] || TAB_THEMES.performance;
@@ -961,13 +957,6 @@ export default function AuthenticatedDashboard() {
           )}
         >
           <SettingsIcon className="w-5 h-5" /><span className="mt-1">Settings</span>
-        </div>
-        <div
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          className="flex flex-col items-center flex-1 cursor-pointer transition-colors text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
-        >
-          {mounted && resolvedTheme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          <span className="mt-1">{mounted && resolvedTheme === 'dark' ? 'Light' : 'Dark'}</span>
         </div>
       </div>
     </div>

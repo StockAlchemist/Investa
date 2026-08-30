@@ -196,8 +196,9 @@ struct GlobalControlBar<Trailing: View>: View {
     /// Compact bar for iPhone (and iPad portrait). The previous design crammed
     /// nine controls + a horizontal scroll into one row; this keeps only the
     /// frequently-used controls inline (account, search, currency, market status)
-    /// and folds the rest — Layout, Benchmarks, Show Closed, plus the host's
-    /// refresh/settings/account actions — into a single overflow menu.
+    /// and folds the rest — Layout, Benchmarks, Show Closed — inline behind
+    /// icon-only controls. The host's `trailing` view sits at the right edge as
+    /// itself, not behind a "•••" menu.
     /// While the search field is focused it takes over the whole bar (the other
     /// controls hide) — the standard iOS search pattern. This prevents the
     /// expanded field from shoving the currency menu off-screen and the glass
@@ -251,32 +252,13 @@ struct GlobalControlBar<Trailing: View>: View {
                 .padding(.leading, searchActive ? 12 : 0)
             if !searchActive {
                 currencyMenu
-                if Trailing.self != EmptyView.self {
-                    overflowMenu
-                }
+                trailing
             }
         }
         .padding(.trailing, 12)
         .padding(.vertical, 4)
         .liquidGlass()
     }
-
-    /// The secondary/rarely-used controls, collapsed into one "•••" menu so the
-    /// compact bar stays uncluttered. (Customize Layout sits inline next to the
-    /// account menu.) The host-supplied `trailing` (refresh / settings / account)
-    /// is appended below a divider.
-    private var overflowMenu: some View {
-        PopoverMenu {
-            trailing
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .appFont(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
-        }
-    }
-
 
 
     // MARK: - Accounts

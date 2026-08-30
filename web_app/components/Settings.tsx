@@ -9,6 +9,7 @@ import { AccountsTab } from './settings/tabs/AccountsTab';
 import { SymbolsTab } from './settings/tabs/SymbolsTab';
 import { OverridesTab } from './settings/tabs/OverridesTab';
 import { AdvancedTab } from './settings/tabs/AdvancedTab';
+import { AppearanceTab } from './settings/tabs/AppearanceTab';
 import { ProfileSecurityTab } from './settings/tabs/ProfileSecurityTab';
 
 export type { SettingsProps, Tab };
@@ -125,6 +126,10 @@ export default function Settings({
                                 benchmarks={benchmarks}
                                 onBenchmarksChange={onBenchmarksChange}
                             />
+                        )}
+
+                        {activeTab === 'appearance' && (
+                            <AppearanceTab />
                         )}
 
                         {activeTab === 'account' && (

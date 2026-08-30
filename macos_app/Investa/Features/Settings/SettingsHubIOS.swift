@@ -25,6 +25,7 @@ struct SettingsHubIOS: View {
                 symbolsSection
                 overridesSection
                 advancedSection
+                appearanceSection
                 profileSection
                 footer
             }
@@ -164,6 +165,20 @@ struct SettingsHubIOS: View {
                     subtitle: "Backend URL & cache purge"
                 ) {
                     ServerSettingsView(vm: viewModel, settings: viewModel.settings)
+                }
+            }
+        }
+    }
+
+    private var appearanceSection: some View {
+        section("Appearance") {
+            SettingsRowGroup {
+                SettingsNavRow(
+                    icon: "paintbrush",
+                    title: "Theme",
+                    subtitle: "Light, dark, or system"
+                ) {
+                    AppearanceSettingsView()
                 }
             }
         }

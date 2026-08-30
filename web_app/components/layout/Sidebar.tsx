@@ -3,8 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- small static brand logos; next/image optimization adds no value and would require extra config */
 
 import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
-import { ChevronLeft, Sun, Moon, LogOut } from 'lucide-react';
+import { ChevronLeft, LogOut } from 'lucide-react';
 import { PRIMARY_NAV, SECONDARY_NAV, SETTINGS_NAV } from '@/lib/navigation';
 
 interface SidebarProps {
@@ -59,8 +58,6 @@ function NavItem({ id, label, icon: Icon, activeTab, onTabChange, collapsed }: {
 export function Sidebar({
   activeTab, onTabChange, user, onLogout, collapsed, onToggle, onUserClick, dayChangePct,
 }: SidebarProps) {
-  const { resolvedTheme, setTheme } = useTheme();
-
   return (
     <aside
       className={cn(
@@ -105,25 +102,6 @@ export function Sidebar({
       {/* Bottom utilities */}
       <div className="border-t border-border px-2 py-2 space-y-0.5 shrink-0">
         <NavItem id={SETTINGS_NAV.id} label={SETTINGS_NAV.label} icon={SETTINGS_NAV.icon} activeTab={activeTab} onTabChange={onTabChange} collapsed={collapsed} />
-
-        <button
-          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-          title={collapsed ? (resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode') : undefined}
-          aria-label={resolvedTheme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
-          className={cn(
-            'flex items-center w-full h-9 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150',
-            collapsed ? 'justify-center' : 'px-3 gap-2.5',
-          )}
-        >
-          <div className="w-6 flex items-center justify-center shrink-0">
-            {resolvedTheme === 'dark'
-              ? <Sun className="w-4 h-4" />
-              : <Moon className="w-4 h-4" />}
-          </div>
-          {!collapsed && (
-            <span>{resolvedTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-          )}
-        </button>
 
         {/* User row */}
         <div

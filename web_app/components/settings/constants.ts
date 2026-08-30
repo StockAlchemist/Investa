@@ -1,4 +1,4 @@
-import { Users, ArrowLeftRight, SlidersHorizontal, Settings2, UserCircle } from 'lucide-react';
+import { Users, ArrowLeftRight, SlidersHorizontal, Settings2, Palette, UserCircle } from 'lucide-react';
 import { TabDefinition } from './types';
 
 export const ASSET_TYPES = [
@@ -75,6 +75,12 @@ export const TABS: TabDefinition[] = [
         label: 'Advanced',
         description: 'Benchmark comparisons, IBKR Flex Query sync, external API keys, and cache.',
         icon: Settings2,
+    },
+    {
+        id: 'appearance',
+        label: 'Appearance',
+        description: 'Light, dark, or follow the device theme.',
+        icon: Palette,
     },
     {
         id: 'account',
