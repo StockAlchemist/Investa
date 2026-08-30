@@ -137,10 +137,23 @@ enum Fmt {
     }
 
     /// `value` is treated as an already-scaled percentage (e.g. 12.3 → "12.30%").
+    ///
+    /// Grouped, like every other figure the app prints: a cumulative TWR runs
+    /// to four and five digits, and "+3196.34%" is a number the reader has to
+    /// count places in. The web formats the same figure with `toLocaleString`,
+    /// which groups it. The sign is applied by hand so `includeSign` still
+    /// yields a leading "+" for gains.
     static func percent(_ value: Double?, fractionDigits: Int = 2, includeSign: Bool = false) -> String {
         guard let value else { return "—" }
-        let fmt = includeSign ? "%+.\(fractionDigits)f%%" : "%.\(fractionDigits)f%%"
-        return String(format: fmt, value)
+        let sign = value < 0 ? "-" : (includeSign ? "+" : "")
+        let magnitude = Swift.abs(value)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.minimumFractionDigits = fractionDigits
+        f.maximumFractionDigits = fractionDigits
+        let digits = f.string(from: NSNumber(value: magnitude))
+            ?? String(format: "%.\(fractionDigits)f", magnitude)
+        return "\(sign)\(digits)%"
     }
 
     /// Color for a gain/loss figure: green positive, red negative, secondary zero/nil.

@@ -51,7 +51,9 @@ struct MainView: View {
     @State private var selection: AppSection = .performance
     @State private var visitedSections: Set<AppSection> = [.performance]
     @State private var showingPalette = false
-    /// nil = follow system; true/false = forced.
+    /// The appearance preference set in Settings ▸ Appearance
+    /// (`AppearanceSettingsView`): until the user picks a side,
+    /// `appearanceSet` is false and the app follows the system.
     @AppStorage("investa.forceDark") private var forceDark = false
     @AppStorage("investa.appearanceSet") private var appearanceSet = false
     @Environment(\.scenePhase) private var scenePhase
@@ -198,28 +200,36 @@ struct MainView: View {
             Divider()
             VStack(alignment: .leading, spacing: 2) {
                 footerNavButton(.settings)
-                footerButton("Dark mode", forceDark ? "sun.max" : "moon") {
-                    appearanceSet = true
-                    forceDark.toggle()
-                }
-                PopoverMenu {
-                    MenuRow(title: "Refresh", systemImage: "arrow.clockwise") {
-                        NotificationCenter.default.post(name: .refreshRequested, object: nil)
-                    }
-                    MenuDivider()
-                    if let user = auth.currentUser {
-                        MenuSectionHeader("Signed in as \(user.displayName)")
-                    }
-                    MenuRow(title: "Log Out", systemImage: "rectangle.portrait.and.arrow.right",
-                            role: .destructive) { auth.logout() }
-                } label: {
-                    Label(auth.currentUser?.displayName ?? "Account", systemImage: "person.crop.circle")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 6)
+                userRow
             }
             .padding(.vertical, 6)
         }
+    }
+
+    /// Who is signed in, with sign-out beside it — the web sidebar's own footer
+    /// anatomy. It used to be a popover menu that also repeated Refresh; the
+    /// control bar above every tab already carries refresh (and ⌘R), so the
+    /// footer states the account rather than hiding it behind a click.
+    private var userRow: some View {
+        HStack(spacing: 0) {
+            Label(auth.currentUser?.displayName ?? "Account", systemImage: "person.crop.circle")
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                auth.logout()
+            } label: {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .foregroundStyle(Color.down)
+                    .padding(4)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Sign out")
+            .accessibilityLabel("Sign out")
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
     private func footerNavButton(_ section: AppSection) -> some View {
@@ -237,14 +247,6 @@ struct MainView: View {
                 .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
         }
         .buttonStyle(.plain)
-    }
-
-    private func footerButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
     #if os(iOS)
@@ -279,25 +281,24 @@ struct MainView: View {
     private func phoneTabContent(_ section: AppSection) -> some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                // These render as items inside the control bar's overflow ("•••")
-                // menu, so the phone bar no longer needs standalone refresh/profile
-                // icons.
+                // Settings sits at the right edge of the bar as itself, where a
+                // "•••" menu used to hold it alongside sign-out. Settings is
+                // the one of the two that gets used; signing out stays a tap
+                // further in, on the Settings hub's Profile & Security row.
                 GlobalControlBar(section: section) {
-                    MenuRow(title: "Settings", systemImage: "gearshape") {
+                    Button {
                         appState.clearStock()
                         selection = .settings
                         visitedSections.insert(.settings)
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .appFont(.body)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
                     }
-                    MenuRow(title: forceDark ? "Light Mode" : "Dark Mode",
-                            systemImage: forceDark ? "sun.max" : "moon") {
-                        appearanceSet = true; forceDark.toggle()
-                    }
-                    MenuDivider()
-                    if let user = auth.currentUser {
-                        MenuSectionHeader("Signed in as \(user.displayName)")
-                    }
-                    MenuRow(title: "Log Out", systemImage: "rectangle.portrait.and.arrow.right",
-                            role: .destructive) { auth.logout() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
+                    .accessibilityLabel("Settings")
                 }
                 Divider()
                 // Pinned to the shell's width, so a section that momentarily

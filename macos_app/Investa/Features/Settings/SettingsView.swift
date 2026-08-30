@@ -227,6 +227,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case symbols = "Symbols"
     case overrides = "Overrides"
     case advanced = "Advanced"
+    case appearance = "Appearance"
     case account = "Profile & Security"
 
     var id: String { rawValue }
@@ -237,6 +238,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .symbols: return "arrow.left.arrow.right"
         case .overrides: return "slider.horizontal.3"
         case .advanced: return "gearshape"
+        case .appearance: return "paintbrush"
         case .account: return "person.crop.circle"
         }
     }
@@ -248,6 +250,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .symbols: return "Map portfolio symbols to Yahoo Finance tickers and manage excluded symbols."
         case .overrides: return "Manually override price, sector, asset type, and metadata for specific symbols."
         case .advanced: return "Benchmark comparisons, IBKR Flex Query sync, external API keys, and cache."
+        case .appearance: return "Light, dark, or follow the device theme."
         case .account: return "Manage user profile, login credentials, and session security."
         }
     }
@@ -412,6 +415,8 @@ struct SettingsView: View {
                 OverridesSettings(vm: viewModel, settings: viewModel.settings)
             case .advanced:
                 AdvancedSettings(vm: viewModel, settings: viewModel.settings)
+            case .appearance:
+                AppearanceSettingsView(embedded: true)
             case .account:
                 AccountSecuritySettings(vm: viewModel).environmentObject(auth)
             }

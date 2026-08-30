@@ -1,6 +1,6 @@
 import { Settings as SettingsType, Holding } from '../../lib/api';
 
-export type Tab = 'accounts' | 'symbols' | 'overrides' | 'advanced' | 'account';
+export type Tab = 'accounts' | 'symbols' | 'overrides' | 'advanced' | 'appearance' | 'account';
 
 export interface SettingsProps {
     settings: SettingsType | null;
