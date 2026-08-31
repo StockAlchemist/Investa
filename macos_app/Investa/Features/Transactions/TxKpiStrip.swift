@@ -105,7 +105,11 @@ struct TxKpiStrip: View {
             }
             #endif
             if !c.rows.isEmpty {
-                KpiRow(count: c.rows.count, minTileWidth: 240) {
+                // 260pt and no column floor, which is `minmax(260px, 1fr)` in
+                // an auto-fit grid — the web card's own rule. One card per row
+                // on a phone, two from an iPad in portrait, more on a Mac.
+                // Measured, not `#if os(iOS)`: an iPad is iOS and has the room.
+                KpiRow(count: c.rows.count, minTileWidth: 260, floorColumns: 1) {
                     ForEach(c.rows) { row in currencyCard(row) }
                 }
             }
@@ -140,8 +144,16 @@ struct TxKpiStrip: View {
                     Text("\(positive ? "+" : "−")\(compact(abs(row.netFlow)))").appFont(.title2.bold()).monospacedDigit()
                 }
                 .foregroundStyle(positive ? .green : .red)
-                Spacer()
-                Text(row.currency).appFont(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2)
+                // On the stack, so a figure added beside it can't opt out. Both
+                // parts: `lineLimit(1)` alone converts the wrap into an ellipsis,
+                // and half a net figure is a different number.
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                Spacer(minLength: 8)
+                // An unbreakable word with no line limit *demands* its width
+                // rather than preferring it.
+                Text(row.currency).appFont(.caption2.weight(.bold)).lineLimit(1)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(.quaternary, in: Capsule())
             }
             Text("net cash flow").appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
@@ -156,7 +168,10 @@ struct TxKpiStrip: View {
                 kv("Tax", row.b.tax > 0 ? compact(row.b.tax) : "—", row.b.tax > 0 ? .orange : .secondary, trailing: true)
             }
         }
-        .gridTile(alignment: .leading)
+        // Top-leading, not `.leading`: where one card in a row runs taller,
+        // centring leaves the shorter card's figures floating at a different
+        // height than its neighbour's.
+        .gridTile()
         .padding(12)
         .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
     }
@@ -166,5 +181,9 @@ struct TxKpiStrip: View {
             Text(k).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
             Text(v).appFont(.caption.bold()).foregroundStyle(tone).monospacedDigit()
         }
+        // Two of these share a line, so at an accessibility size the pair has
+        // to shrink rather than wrap into each other.
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
     }
 }
