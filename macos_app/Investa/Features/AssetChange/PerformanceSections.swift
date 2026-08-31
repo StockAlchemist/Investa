@@ -136,6 +136,10 @@ struct ReturnsChart: View {
     @State private var period = "M"
     @State private var valueMode = false
     @State private var count = 12
+    /// The width the chart was offered — how many bucket labels the axis can carry.
+    @State private var width: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
@@ -187,12 +191,34 @@ struct ReturnsChart: View {
     }
 
     /// The bucket label trimmed to what the axis can show: a month is "Mar",
-    /// or its initial when the chart is narrow, and a year "'26". The tooltip
-    /// still names it in full.
+    /// or its initial where a run of them won't fit, and a year "'26". The
+    /// tooltip still names it in full.
+    ///
+    /// Keyed on the width the chart was offered, not on the size class: a
+    /// narrow macOS window and an iPad in a split view are as short of room as
+    /// a phone, and none of them is `.compact`.
     private func axisLabel(_ dateStr: String) -> String {
-        if period == "M" { return String(dateStr.prefix(compact ? 1 : 3)) }
+        if period == "M" {
+            // From the month itself, not from cutting "Mar 2026" down: the two
+            // part company wherever an abbreviation doesn't start with the
+            // month's own initial.
+            return monthInitials ? MarketTime.monthInitial(iso(dateStr)) : String(dateStr.prefix(3))
+        }
         if compact && period == "Y" { return "'" + String(dateStr.suffix(2)) }
         return dateStr
+    }
+
+    /// Whether the month buckets are named by their initials — only where every
+    /// one of them can then be labelled. See `ChartAxis.prefersMonthInitials`.
+    private var monthInitials: Bool {
+        period == "M" && ChartAxis.prefersMonthInitials(
+            count: distinctDates.count, width: width, scale: fontScale, typeSize: typeSize
+        )
+    }
+
+    /// The ISO date behind a bucket's display label.
+    private func iso(_ label: String) -> String {
+        bars.first { $0.date == label }?.iso ?? label
     }
 
     /// The same bucket named in full. An axis may drop the year; a tooltip has
@@ -211,27 +237,26 @@ struct ReturnsChart: View {
         return out
     }
     
+    /// The buckets the axis labels.
+    ///
+    /// Thinning used to be keyed on the size class, so a compact phone strided
+    /// and everything else drew a label per bucket — but the stepper goes to
+    /// 200 buckets, and a narrow window is not a compact one: thirty
+    /// `.fixedSize()` "20 Mar" labels overprint into a smear on any platform.
+    /// Budgeted against the width the chart was actually offered instead.
     private var xAxisValues: [String] {
         let dates = distinctDates
-        guard compact else { return dates }
-        
-        switch period {
-        case "D":
-            // 30 items -> show every 5th or 6th to prevent overlapping
-            let step = max(1, dates.count / 5)
-            return dates.enumerated().compactMap { $0.offset % step == 0 ? $0.element : nil }
-        case "W":
-            // 12 items -> show every 3rd
-            let step = max(1, dates.count / 4)
-            return dates.enumerated().compactMap { $0.offset % step == 0 ? $0.element : nil }
-        case "Y":
-            // 10 items -> show every 2nd or all if formatted short
-            // We'll format short, but let's also stride if count is large
-            let step = max(1, dates.count / 5)
-            return dates.enumerated().compactMap { $0.offset % step == 0 ? $0.element : nil }
-        default:
-            return dates
-        }
+        let sample = period == "M" ? (monthInitials ? "M" : "Mar")
+                   : (period == "Y" ? "2019" : "20 Mar")
+        return ChartAxis.ticks(
+            dates,
+            count: ChartAxis.labelCapacity(
+                width: width,
+                labelWidth: ChartAxis.labelWidth(sample, scale: fontScale, typeSize: typeSize),
+                unmeasured: 4,
+                cap: 12
+            )
+        )
     }
 
     var body: some View {
@@ -282,6 +307,8 @@ struct ReturnsChart: View {
                 .frame(height: 280)
             }
         }
+        // Must be the *offered* width. See `readingContainerWidth`.
+        .readingContainerWidth { width = $0 }
     }
 
     private func formatAxis(_ v: Double, isPercent: Bool) -> String {

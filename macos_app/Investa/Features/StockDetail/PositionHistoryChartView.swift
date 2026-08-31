@@ -13,16 +13,30 @@ struct PositionHistoryChartView: View {
     /// can share a row with the period pills, and how many date labels the
     /// axis can carry.
     @State private var width: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// Eight period pills want ~350pt on their own. Below this the 155pt view
     /// switch beside them leaves room for three, and the row stops reading as a
     /// set of choices.
     private var stackedControls: Bool { prefersStackedLayout(measuredWidth: width, needs: 500) }
 
-    /// "MMM 'yy" is about 48pt at the axis font.
-    private var xLabelCount: Int {
-        guard width > 0 else { return 3 }
-        return max(2, min(5, Int((width - 60) / 56)))
+    /// The widest label the axis will draw, which is what its capacity has to
+    /// be budgeted against.
+    private var xLabelSample: String {
+        ["1m", "3m", "6m"].contains(period.lowercased()) ? "30 Sep" : "Dec 2010"
+    }
+
+    /// The dates the axis labels, picked from the series itself.
+    ///
+    /// `.automatic(desiredCount:)` asked politely and got eight overprinted
+    /// labels for an ALL-period history; see `ChartAxis`.
+    private var xTicks: [Date] {
+        ChartAxis.ticks(
+            pts.compactMap(\.parsedDate),
+            count: ChartAxis.tickCapacity(xLabelSample, width: width,
+                                          scale: fontScale, typeSize: typeSize)
+        )
     }
 
     enum ViewMode: String, CaseIterable {
@@ -408,10 +422,11 @@ struct PositionHistoryChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: xLabelCount)) { value in
+            let ticks = xTicks
+            AxisMarks(values: ticks) { value in
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.15))
                 if let date = value.as(Date.self) {
-                    AxisValueLabel {
+                    AxisValueLabel(anchor: ChartAxis.anchor(date, in: ticks)) {
                         Text(formatXDate(date))
                             .appFont(.caption2)
                             .foregroundStyle(.secondary)

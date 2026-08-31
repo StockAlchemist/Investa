@@ -16,6 +16,10 @@ struct PerformanceChartView: View {
     var dayChangePercent: Double? = nil
 
     @State private var view: PerformanceView = .value
+    /// The width the card was offered — how many date labels the axis can carry.
+    @State private var width: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private struct SeriesPoint: Identifiable {
         let date: Date
@@ -256,6 +260,8 @@ struct PerformanceChartView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(.standard)
+        // Must be the *offered* width. See `readingContainerWidth`.
+        .readingContainerWidth { width = $0 }
     }
 
     private var periodRow: some View {
@@ -317,9 +323,14 @@ struct PerformanceChartView: View {
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                    // Picked here, not by `.automatic(desiredCount:)`, which
+                    // overshoots on a time scale and overprints. See `ChartAxis`.
+                    let ticks = xTicks(dates)
+                    AxisMarks(values: ticks) { value in
                         if let date = value.as(Date.self) {
-                            AxisValueLabel { Text(xAxisLabel(for: date, period: period)).fixedSize() }
+                            AxisValueLabel(anchor: ChartAxis.anchor(date, in: ticks)) {
+                                Text(xAxisLabel(for: date, period: period)).fixedSize()
+                            }
                         }
                     }
                 }
@@ -350,9 +361,12 @@ struct PerformanceChartView: View {
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                    let ticks = xIndexTicks(dates)
+                    AxisMarks(values: ticks) { value in
                         if let idx = value.as(Int.self), idx >= 0, idx < dates.count {
-                            AxisValueLabel { Text(xAxisLabel(for: dates[idx], period: period)).fixedSize() }
+                            AxisValueLabel(anchor: ChartAxis.anchor(idx, in: ticks)) {
+                                Text(xAxisLabel(for: dates[idx], period: period)).fixedSize()
+                            }
                         }
                     }
                 }
@@ -455,6 +469,31 @@ struct PerformanceChartView: View {
             ? MarketTime.formatter("EEE, dd MMM h:mm a", timeZone: MarketTime.defaultZone)
             : MarketTime.formatter("dd MMM yyyy")
         return f.string(from: d)
+    }
+
+    /// The widest label this period draws — what the axis budgets against.
+    private var xLabelSample: String {
+        switch period {
+        case .oneDay: return "10:30 AM"
+        case .fiveDays: return "Wed"
+        case .oneMonth: return "30 Sep"
+        case .oneYear, .ytd: return "Sep"
+        default: return "2010"
+        }
+    }
+
+    private var xLabelCapacity: Int {
+        ChartAxis.tickCapacity(xLabelSample, width: width, scale: fontScale, typeSize: typeSize)
+    }
+
+    /// The dates the axis labels, on the intraday (date-scale) chart.
+    private func xTicks(_ dates: [Date]) -> [Date] {
+        ChartAxis.ticks(dates, count: xLabelCapacity)
+    }
+
+    /// The same, for the index scale every other period plots against.
+    private func xIndexTicks(_ dates: [Date]) -> [Int] {
+        ChartAxis.ticks(Array(dates.indices), count: xLabelCapacity)
     }
 
     private func xAxisLabel(for d: Date, period: Period) -> String {

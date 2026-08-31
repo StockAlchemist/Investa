@@ -30,12 +30,15 @@ struct FiledPeriodChart: View {
     let format: (Double) -> String
 
     @State private var chartWidth: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var metrics: PeriodChartMetrics {
         PeriodChartMetrics(
             containerWidth: chartWidth,
             periodCount: points.count,
-            periodType: periodType
+            periodType: periodType,
+            textScale: ChartAxis.textScale(scale: fontScale, typeSize: typeSize)
         )
     }
 

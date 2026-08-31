@@ -143,6 +143,24 @@ enum MarketTime {
         return f
     }()
 
+    /// "S" — September's initial, for an axis naming twelve months in a row
+    /// with no room for `Sep`.
+    ///
+    /// `MMMMM` is ICU's *narrow* month, which is the initial by definition
+    /// rather than `Sep` cut short — the two differ wherever a month's
+    /// abbreviation doesn't start with its own initial. Fixed English, like
+    /// `monthYearFormatter`: a localized narrow month is not always one
+    /// character, and a run of them that varies in width is the smear this
+    /// notation exists to avoid.
+    private static let monthInitialFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = gregorian
+        f.dateFormat = "MMMMM"
+        f.timeZone = utc
+        return f
+    }()
+
     /// "2026" — the axis label for a chart plotted on calendar days.
     private static let yearFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -235,5 +253,19 @@ enum MarketTime {
     /// same zone it was built in.
     static func year(_ day: Date) -> String {
         yearFormatter.string(from: day)
+    }
+
+    /// "S" for September — the month's initial, for a narrow axis. Accepts a
+    /// date-only string or a `yyyy-MM` bucket key; anything else comes back
+    /// unchanged, as the other formatters here do.
+    static func monthInitial(_ iso: String) -> String {
+        if let d = calendarDay(iso) { return monthInitial(d) }
+        if let d = calendarDay(String(iso.prefix(7)) + "-01") { return monthInitial(d) }
+        return iso
+    }
+
+    /// "S" for September, for a day already parsed by `calendarDay(_:)`.
+    static func monthInitial(_ day: Date) -> String {
+        monthInitialFormatter.string(from: day)
     }
 }

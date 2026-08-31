@@ -188,6 +188,11 @@ struct PeriodChartMetrics {
     /// Series drawn side by side at each period; 1 for a single-series chart.
     var seriesCount: Int = 1
     let periodType: StatementPeriod
+    /// How much wider text is for this reader than at the default settings —
+    /// `ChartAxis.textScale(scale:typeSize:)`. A label count budgeted at the
+    /// author's type size overprints at an accessibility one, where every
+    /// string is ~1.4× wider.
+    var textScale: CGFloat = 1
 
     /// What the y labels and the trailing inset cost before any mark is drawn.
     private static let axisOverhead: CGFloat = 90
@@ -197,7 +202,7 @@ struct PeriodChartMetrics {
 
     /// Roughly what one period end occupies at `.caption2`, plus the gap that
     /// keeps two of them from reading as one word.
-    private var labelWidth: CGFloat { periodType == .quarterly ? 62 : 44 }
+    private var labelWidth: CGFloat { (periodType == .quarterly ? 62 : 44) * max(1, textScale) }
 
     /// How many period labels the axis can carry without overprinting.
     var labelCapacity: Int {
@@ -273,13 +278,16 @@ struct StatementChartView: View {
     /// phone gives this chart about a third of a desktop's frame, and the
     /// difference is the difference between six labels and a smear.
     @State private var chartWidth: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var metrics: PeriodChartMetrics {
         PeriodChartMetrics(
             containerWidth: chartWidth,
             periodCount: periods.count,
             seriesCount: series.count,
-            periodType: periodType
+            periodType: periodType,
+            textScale: ChartAxis.textScale(scale: fontScale, typeSize: typeSize)
         )
     }
 

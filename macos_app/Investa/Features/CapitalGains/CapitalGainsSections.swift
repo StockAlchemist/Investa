@@ -406,6 +406,10 @@ struct AnnualRealizedGainsCard: View {
     let gains: [CapitalGain]
     let currency: String
     @Binding var selectedYear: String?
+    /// The width the card was offered — how many year labels the axis can carry.
+    @State private var width: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var rows: [(year: String, gain: Double)] {
         var byYear: [String: Double] = [:]
@@ -465,6 +469,8 @@ struct AnnualRealizedGainsCard: View {
                 }
             }
         }
+        // Must be the *offered* width. See `readingContainerWidth`.
+        .readingContainerWidth { width = $0 }
     }
 
     /// Bar color matching the web: emerald for gains / red for losses, a darker
@@ -503,12 +509,20 @@ struct AnnualRealizedGainsCard: View {
 
     /// Thin x-axis year labels so they don't overlap on narrow (iPhone) widths;
     /// always keeps the most recent year.
+    /// Eight four-digit years was a constant, and eight `.fixedSize()` years
+    /// want ~310pt — more than a phone card has once the y axis is paid for, so
+    /// they overprinted instead of truncating. Budgeted against the real width
+    /// now, and against the reader's type size.
     private func labeledYears(_ years: [String]) -> [String] {
-        guard years.count > 8 else { return years }
-        let step = Int(ceil(Double(years.count) / 8))
-        var out = years.enumerated().filter { $0.offset % step == 0 }.map(\.element)
-        if let last = years.last, out.last != last { out.append(last) }
-        return out
+        ChartAxis.ticks(
+            years,
+            count: ChartAxis.labelCapacity(
+                width: width,
+                labelWidth: ChartAxis.labelWidth("2019", scale: fontScale, typeSize: typeSize),
+                unmeasured: 4,
+                cap: 8
+            )
+        )
     }
 }
 

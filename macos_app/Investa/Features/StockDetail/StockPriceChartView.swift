@@ -299,6 +299,10 @@ struct StockPriceChartView: View {
     @State private var showEarnings = false
     @State private var selectedBenchmarks: [String] = []
     @State private var showTradingViewFullScreen = false
+    /// The width the chart was offered — how many date labels the axis can carry.
+    @State private var width: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var customFrom = MarketTime.localCalendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()
     @State private var customTo = Date()
 
@@ -348,6 +352,8 @@ struct StockPriceChartView: View {
         .fullScreenPresentation(isPresented: $showTradingViewFullScreen) {
             TradingViewFullScreenView(symbol: symbol, exchange: exchange)
         }
+        // Must be the *offered* width. See `readingContainerWidth`.
+        .readingContainerWidth { width = $0 }
     }
 
     private func reloadHistory() async {
@@ -613,10 +619,15 @@ struct StockPriceChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { v in
+            // Picked from the series, not by `.automatic(desiredCount:)`: this
+            // x is a raw Double (epoch seconds, or a point index), so Charts'
+            // "nice" rounding lands on arbitrary instants and overshoots the
+            // count. See `ChartAxis`.
+            let ticks = xTicks(isContinuous: isContinuous)
+            AxisMarks(values: ticks) { v in
                 AxisGridLine()
                 if let dbl = v.as(Double.self) {
-                    AxisValueLabel {
+                    AxisValueLabel(anchor: ChartAxis.anchor(dbl, in: ticks)) {
                         if isContinuous {
                             Text(xLabel(Date(timeIntervalSince1970: dbl))).fixedSize()
                         } else {
@@ -707,6 +718,20 @@ struct StockPriceChartView: View {
             }
         }
         RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.5)).lineStyle(.init(lineWidth: 1, dash: [3, 3]))
+    }
+
+    /// The x values the axis labels: epoch seconds on the intraday chart,
+    /// point indices everywhere else — the same scale the marks are plotted on.
+    private func xTicks(isContinuous: Bool) -> [Double] {
+        let all: [Double] = isContinuous
+            ? pts.map(\.date.timeIntervalSince1970)
+            : pts.indices.map(Double.init)
+        let sample = intraday ? "10:30 AM" : "30 Sep"
+        return ChartAxis.ticks(
+            all,
+            count: ChartAxis.tickCapacity(sample, width: width,
+                                          scale: fontScale, typeSize: typeSize)
+        )
     }
 
     private func xLabel(_ d: Date) -> String {

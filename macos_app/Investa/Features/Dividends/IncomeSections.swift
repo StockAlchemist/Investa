@@ -124,6 +124,8 @@ struct IncomeProjectorCard: View {
         income.flatMap { row in row.segments.map { Seg(month: row.month, symbol: $0.symbol, amount: $0.amount) } }
     }
     @State private var width: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var projectorMonths: [String] {
         var seen = Set<String>(); var out: [String] = []
@@ -131,30 +133,53 @@ struct IncomeProjectorCard: View {
         return out
     }
 
-    /// Every month that fits. A band scale draws a mark for every category it
-    /// is given, and twelve `.fixedSize()` month labels want ~310pt — more than
-    /// a phone card has once the y axis is paid for, so they overprint into a
-    /// smear rather than truncating. Thinned to alternate months when the room
-    /// isn't there; the tooltip names the month either way.
-    private var axisMonths: [String] {
-        let months = income.map(\.month)
-        let capacity = width > 0 ? max(3, Int((width - 60) / 30)) : 6
-        guard months.count > capacity else { return months }
-        let step = Int(ceil(Double(months.count) / Double(capacity)))
-        return months.enumerated().filter { $0.offset % step == 0 }.map(\.element)
+    /// Whether the twelve months are named by their initials. On a phone they
+    /// are: `Jan Feb Mar` twelve times over wants ~310pt, more than the card
+    /// has once the y axis is paid for. See `ChartAxis.prefersMonthInitials`.
+    private var monthInitials: Bool {
+        ChartAxis.prefersMonthInitials(
+            count: income.count, width: width, scale: fontScale, typeSize: typeSize
+        )
     }
 
-    /// 3-letter month labels with `.fixedSize()` so the band-scale axis doesn't
-    /// clip "Jun 2026" down to "J…".
+    /// Every month that fits. A band scale draws a mark for every category it
+    /// is given, and labels that don't fit overprint into a smear rather than
+    /// truncating — so the ones that can't be shown are dropped here. Only
+    /// reached where even the initials are too wide to run twelve deep; the
+    /// tooltip names the month in full either way.
+    private var axisMonths: [String] {
+        ChartAxis.ticks(
+            income.map(\.month),
+            count: ChartAxis.labelCapacity(
+                width: width,
+                labelWidth: ChartAxis.labelWidth(monthInitials ? "M" : "Mar",
+                                                 scale: fontScale, typeSize: typeSize),
+                unmeasured: 6,
+                cap: 12
+            )
+        )
+    }
+
+    /// `Jan Feb Mar` where there is room, `J F M` where there isn't, with
+    /// `.fixedSize()` so the band-scale axis doesn't clip either down to "J…".
     private var monthAxis: some AxisContent {
         AxisMarks(values: axisMonths) { value in
             AxisGridLine()
             AxisValueLabel {
                 if let s = value.as(String.self) {
-                    Text(String(s.prefix(3))).appFont(.caption2).fixedSize()
+                    // The bucket's own label is "Sep 2026"; the initial comes
+                    // from the month it names, not from cutting the string.
+                    Text(monthInitials ? MarketTime.monthInitial(yearMonth(s)) : String(s.prefix(3)))
+                        .appFont(.caption2)
+                        .fixedSize()
                 }
             }
         }
+    }
+
+    /// The `yyyy-MM` key behind a bucket's display label.
+    private func yearMonth(_ label: String) -> String {
+        income.first { $0.month == label }?.yearMonth ?? label
     }
 
     /// One legend entry per paying symbol, which a forty-payer portfolio turns

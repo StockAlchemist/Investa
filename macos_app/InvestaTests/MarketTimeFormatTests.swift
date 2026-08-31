@@ -30,6 +30,23 @@ final class MarketTimeFormatTests: XCTestCase {
         XCTAssertEqual(MarketTime.monthYear("2026-07-29"), "Jul 2026")
     }
 
+    func testMonthInitialIsTheInitialAndNotACutAbbreviation() {
+        XCTAssertEqual(MarketTime.monthInitial("2026-09-01"), "S")
+        XCTAssertEqual(MarketTime.monthInitial("2026-06-15"), "J")
+        // The whole run, which is what a narrow axis draws.
+        let months = (1...12).map { MarketTime.monthInitial(String(format: "2026-%02d-01", $0)) }
+        XCTAssertEqual(months, ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"])
+    }
+
+    func testMonthInitialAcceptsABucketKey() {
+        // `projected_income` keys its months "yyyy-MM", with no day to parse.
+        XCTAssertEqual(MarketTime.monthInitial("2026-09"), "S")
+    }
+
+    func testMonthInitialLeavesNonDatesAlone() {
+        XCTAssertEqual(MarketTime.monthInitial("Portfolio"), "Portfolio")
+    }
+
     func testNonDatesPassThroughUnchanged() {
         // A label that isn't a date must not be mangled into one.
         XCTAssertEqual(MarketTime.formatted("—"), "—")
