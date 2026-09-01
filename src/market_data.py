@@ -23,7 +23,7 @@ import subprocess
 import tempfile
 import queue
 from collections import OrderedDict
-from market_db import MarketDatabase
+from market_db import ADJUST_SPLIT, MarketDatabase
 
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
@@ -2261,6 +2261,48 @@ class MarketDataProvider:
 
         return results
 
+    def _archive_closes_for_prev_close(
+        self, yf_symbols: Set[str], now_utc: date
+    ) -> Dict[str, List[Tuple[date, float]]]:
+        """Recent archived daily closes, for repairing a gapped live download.
+
+        Returns ``{yf_symbol: [(session_date, close), ...]}`` over the last two
+        weeks. Read on the split-adjusted basis so the closes are comparable
+        with the live quote, which Yahoo also serves split-adjusted; today's own
+        bar is included and the caller discards it, since only sessions strictly
+        before the quote's date can be its previous close.
+
+        A failure here is never fatal — the caller falls back to the download's
+        own second-to-last bar, which is what it used before.
+        """
+        if not yf_symbols:
+            return {}
+
+        window_start = now_utc - timedelta(days=14)
+        out: Dict[str, List[Tuple[date, float]]] = {}
+        try:
+            frames = self.db.get_ohlcv_batch(
+                sorted(yf_symbols),
+                window_start,
+                now_utc,
+                interval="1d",
+                adjust=ADJUST_SPLIT,
+            )
+        except Exception as e_archive:
+            logging.warning(f"Archive previous-close lookup failed: {e_archive}")
+            return {}
+
+        for symbol, frame in frames.items():
+            if frame is None or frame.empty or "Close" not in frame.columns:
+                continue
+            series = []
+            for ts, close in frame["Close"].dropna().items():
+                day = ts.date() if hasattr(ts, "date") else ts
+                series.append((day, float(close)))
+            if series:
+                out[symbol] = series
+        return out
+
     @profile
     def get_current_quotes(
         self,
@@ -2462,6 +2504,24 @@ class MarketDataProvider:
                     # Current UTC date for filtering
                     now_utc = datetime.now(timezone.utc).date()
 
+                    # Yahoo's live window drops whole sessions. On 2026-08-31
+                    # the daily series for every US equity ran ...26, 27, 31 —
+                    # Friday the 28th simply absent — so `vals[-2]` below, which
+                    # trusts the download to be gap-free, priced the day against
+                    # Thursday and reported a two-session move as today's. NOW
+                    # read +5.1% against a real +0.6%, AMZN +1.6% against -2.3%,
+                    # and a portfolio down $25.7k showed up $1.5k, with the
+                    # index card beside it (a different fetch, which had the
+                    # Friday bar) correctly red.
+                    #
+                    # The archive is the authority on which sessions exist: it
+                    # is written from the same source but accumulated, so a bar
+                    # missing from one window is still on disk. A row it holds
+                    # between the download's last two dates is proof of a hole.
+                    archive_closes = self._archive_closes_for_prev_close(
+                        set(internal_to_yf_map_local.values()), now_utc
+                    )
+
                     # Process results
                     for internal_sym, yf_sym in internal_to_yf_map_local.items():
                         try:
@@ -2534,23 +2594,44 @@ class MarketDataProvider:
                                         if last_date >= now_utc:
                                             is_today = True
 
-                                        if is_today:
-                                            if len(vals) >= 2:
-                                                prev_close = float(vals[-2])
-                                            else:
-                                                prev_close = (
-                                                    last_val  # No history, change=0
-                                                )
+                                        # Whether the last bar is today or a
+                                        # stale close, the previous close is the
+                                        # session before it: when the market is
+                                        # shut the clients show the last open
+                                        # day's move, not a flat zero.
+                                        prev_date = None
+                                        if len(vals) >= 2:
+                                            prev_close = float(vals[-2])
+                                            prev_date = dates_idx[-2]
+                                            if hasattr(prev_date, "date"):
+                                                prev_date = prev_date.date()
                                         else:
-                                            # Stale data (Yesterday's close is the latest we have)
-                                            # User Request (Step 2730): "If the market is closed, show the day's gain/loss for the latest day when the market is open."
-                                            # So we DO want to calculate the change for that last day.
-                                            if len(vals) >= 2:
-                                                prev_close = float(vals[-2])
-                                            else:
-                                                prev_close = (
-                                                    last_val  # No history, change=0
+                                            prev_close = (
+                                                last_val  # No history, change=0
+                                            )
+
+                                        # Repair a hole: if the archive holds a
+                                        # session between the download's last two
+                                        # bars, that session is the real previous
+                                        # close and the download skipped it.
+                                        earlier = [
+                                            (d, c)
+                                            for d, c in archive_closes.get(yf_sym, ())
+                                            if d < last_date
+                                        ]
+                                        if earlier:
+                                            arch_date, arch_close = max(earlier)
+                                            if (
+                                                prev_date is None
+                                                or arch_date > prev_date
+                                            ):
+                                                logging.info(
+                                                    f"{yf_sym}: download skipped {arch_date}; "
+                                                    f"taking previous close {arch_close} from the archive "
+                                                    f"instead of {prev_close} @ {prev_date}"
                                                 )
+                                                prev_close = float(arch_close)
+                                                prev_date = arch_date
 
                                         daily_session_dates[internal_sym] = last_date
 
@@ -4811,7 +4892,11 @@ class MarketDataProvider:
                             # reach back to 1980) stranded on the old basis,
                             # turning one seam into two.
                             earliest = self.db.get_first_dates([s]).get(s)
-                            inception = min(earliest, date(2000, 1, 1)) if earliest else date(2000, 1, 1)
+                            inception = (
+                                min(earliest, date(2000, 1, 1))
+                                if earliest
+                                else date(2000, 1, 1)
+                            )
                             logging.warning(
                                 f"Market DB Integrity: {reason}. "
                                 f"Triggering full re-fetch for {s} from {inception}."
