@@ -1443,10 +1443,20 @@ def _build_summary_rows(
         # This correctly isolates market movement from capital flows (buys/sells)
         day_change_value_display = np.nan
 
+        # A holding whose local price move is unknown -- a fund priced from a
+        # published NAV, a symbol with no feed priced off its last trade --
+        # still moves in the display currency when FX does. Skipping the row
+        # outright left its whole market value in the portfolio total, and in
+        # the denominator of the day-change percentage, with none of the day's
+        # currency move charged against it: a THB book worth $210k dropped
+        # $1,915 of FX on a day the headline reported +$1,713. Price the FX leg
+        # on its own and hold the price leg at "no move known".
+        price_move_known = pd.notna(day_change_local)
+
         if (
             pd.notna(current_price_local)
             and pd.notna(fx_rate)
-            and pd.notna(day_change_local)
+            and (price_move_known or local_currency != display_currency)
         ):
             # 1. Calculate Today's Net Flow and Quantity Change for this holding
             qty_change_today = 0.0
@@ -1527,7 +1537,11 @@ def _build_summary_rows(
                 starting_qty = current_qty - qty_change_today
                 val_today = current_qty * current_price_local * fx_rate
 
-                price_yesterday_local = current_price_local - day_change_local
+                price_yesterday_local = (
+                    current_price_local - day_change_local
+                    if price_move_known
+                    else current_price_local
+                )
                 val_yesterday = starting_qty * price_yesterday_local * fx_prev
 
                 net_flow_today_display = net_flow_today_local * fx_rate
