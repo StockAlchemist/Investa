@@ -838,7 +838,7 @@ export default function AuthenticatedDashboard() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(c => !c)}
         onUserClick={handleUserIconClick}
-        dayChangePct={cardMetrics?.day_change_pct as number | undefined}
+        dayChangePct={cardMetrics?.day_change_percent as number | undefined}
       />
 
       {/* ── Mobile navigation drawer ── */}
