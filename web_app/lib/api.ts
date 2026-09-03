@@ -779,6 +779,73 @@ export async function fetchProjection(currency: string = 'USD', accounts?: strin
     return data as unknown as Projection;
 }
 
+export interface ProjectionBacktestHorizon {
+    years: number;
+    samples: number;
+    /** Spread of standardized errors; 1.0 = bands exactly the right width. */
+    std_z: number;
+    in_band_pct: number;
+    below_p10_pct: number;
+    above_p90_pct: number;
+    mean_u: number;
+    median_actual_return_pct: number;
+    median_projected_return_pct: number;
+    verdict: 'calibrated' | 'narrow' | 'wide';
+}
+
+export interface ProjectionReplayPoint {
+    date: string;
+    years: number;
+    actual: number | null;
+    median: number;
+    p10: number;
+    p25: number;
+    p75: number;
+    p90: number;
+}
+
+export interface ProjectionReplay {
+    anchor_date: string;
+    years: number;
+    start_value: number;
+    /** True when the portfolio's value then was unknown, so the replay starts at 100. */
+    indexed: boolean;
+    fit_years: number;
+    annual_return_pct: number;
+    annual_volatility_pct: number;
+    final_actual: number;
+    final_median: number;
+    final_p10: number;
+    final_p90: number;
+    outcome: 'inside' | 'below' | 'above';
+    points: ProjectionReplayPoint[];
+}
+
+export interface ProjectionBacktest {
+    available: boolean;
+    reason?: string | null;
+    currency?: string;
+    market_timezone?: string;
+    history_years?: number;
+    history_start?: string | null;
+    history_end?: string | null;
+    min_history_years?: number;
+    required_years?: number;
+    horizons?: ProjectionBacktestHorizon[];
+    replay?: ProjectionReplay | null;
+}
+
+export async function fetchProjectionBacktest(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<ProjectionBacktest> {
+    const { data, error } = await apiClient.GET("/api/projection/backtest", {
+        params: {
+            query: { currency, accounts: accounts || undefined }
+        },
+        signal
+    });
+    if (error) throw new Error('Failed to fetch projection backtest');
+    return data as unknown as ProjectionBacktest;
+}
+
 export interface AttributionData {
     sectors: {
         sector: string;

@@ -18,7 +18,7 @@ from portfolio_analyzer import (
     extract_realized_capital_gains_history,
     generate_cash_interest_events,
 )
-from projections import compute_projection
+from projections import backtest_projection, compute_projection
 from risk_metrics import calculate_all_risk_metrics, calculate_benchmark_scoreboard
 from server.auth import User
 from server.calendar_events import (
@@ -666,6 +666,66 @@ async def get_risk_metrics(
         return {"error": str(e)}
 
 
+async def _projection_history(currency: str, accounts, data: tuple):
+    """Long daily history (TWR + S&P 500) behind both projection endpoints."""
+    (
+        df,
+        manual_overrides,
+        user_symbol_map,
+        user_excluded_symbols,
+        account_currency_map,
+        account_cash_mode_map,
+        original_csv_path,
+        db_mtime,
+    ) = data
+    if df.empty:
+        return None
+    daily_df, _, _, _ = await _get_historical_performance_cached(
+        df=df,
+        manual_overrides_dict=manual_overrides,
+        user_symbol_map=user_symbol_map,
+        user_excluded_symbols=user_excluded_symbols,
+        account_currency_map=account_currency_map,
+        original_csv_file_path=original_csv_path,
+        start_date=date(2000, 1, 1),
+        end_date=get_est_today(),
+        display_currency=currency,
+        include_accounts=accounts,
+        benchmark_symbols_yf=["^GSPC"],  # matches the proven risk_metrics call path
+        interval="D",
+        account_cash_mode_map=account_cash_mode_map,
+        db_mtime=db_mtime,
+    )
+    if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
+        logging.warning(
+            "Projection: no usable history (daily_df is None: %s, cols: %s)",
+            daily_df is None,
+            None if daily_df is None else list(daily_df.columns),
+        )
+        return None
+    return daily_df
+
+
+def _benchmark_column(daily_df) -> Optional[str]:
+    """The S&P 500 wealth/price column in the history, if it came back."""
+    return next(
+        (c for c in ("^GSPC Accumulated Gain", "^GSPC Price") if c in daily_df.columns),
+        None,
+    )
+
+
+def _benchmark_log_return(daily_df) -> Optional[float]:
+    """S&P 500 trailing annual log-return over the history window — the
+    drift-shrinkage prior, so an idiosyncratic run isn't extrapolated forever."""
+    col = _benchmark_column(daily_df)
+    if not col:
+        return None
+    bench = daily_df[col].dropna()
+    if len(bench) <= 252 or float(bench.iloc[0]) <= 0 or float(bench.iloc[-1]) <= 0:
+        return None
+    return math.log(float(bench.iloc[-1]) / float(bench.iloc[0])) / (len(bench) / 252.0)
+
+
 @router.get("/projection")
 async def get_projection(
     currency: str = "USD",
@@ -678,43 +738,9 @@ async def get_projection(
     using a lognormal model parameterized by the historical annualized return
     (drift) and volatility. Returns the median plus percentile bands per horizon.
     """
-    (
-        df,
-        manual_overrides,
-        user_symbol_map,
-        user_excluded_symbols,
-        account_currency_map,
-        account_cash_mode_map,
-        original_csv_path,
-        db_mtime,
-    ) = data
-    if df.empty:
-        return {"available": False}
-
     try:
-        # Long history for stable drift/volatility estimates.
-        daily_df, _, _, _ = await _get_historical_performance_cached(
-            df=df,
-            manual_overrides_dict=manual_overrides,
-            user_symbol_map=user_symbol_map,
-            user_excluded_symbols=user_excluded_symbols,
-            account_currency_map=account_currency_map,
-            original_csv_file_path=original_csv_path,
-            start_date=date(2000, 1, 1),
-            end_date=get_est_today(),
-            display_currency=currency,
-            include_accounts=accounts,
-            benchmark_symbols_yf=["^GSPC"],  # matches the proven risk_metrics call path
-            interval="D",
-            account_cash_mode_map=account_cash_mode_map,
-            db_mtime=db_mtime,
-        )
-        if daily_df is None or "Portfolio Accumulated Gain" not in daily_df.columns:
-            logging.warning(
-                "Projection: no usable history (daily_df is None: %s, cols: %s)",
-                daily_df is None,
-                None if daily_df is None else list(daily_df.columns),
-            )
+        daily_df = await _projection_history(currency, accounts, data)
+        if daily_df is None:
             return {"available": False}
 
         # Current total value (V0) from the summary.
@@ -728,30 +754,10 @@ async def get_projection(
 
         twr_series = daily_df["Portfolio Accumulated Gain"].dropna()
 
-        # Benchmark (S&P 500) trailing annual log-return over the same window —
-        # the drift-shrinkage prior, so an idiosyncratic run isn't extrapolated forever.
-        bench_log_return = None
-        bench_col = next(
-            (
-                c
-                for c in ("^GSPC Accumulated Gain", "^GSPC Price")
-                if c in daily_df.columns
-            ),
-            None,
-        )
-        if bench_col:
-            bench = daily_df[bench_col].dropna()
-            if (
-                len(bench) > 252
-                and float(bench.iloc[0]) > 0
-                and float(bench.iloc[-1]) > 0
-            ):
-                bench_log_return = math.log(
-                    float(bench.iloc[-1]) / float(bench.iloc[0])
-                ) / (len(bench) / 252.0)
-
         result = compute_projection(
-            twr_series, current_value, benchmark_log_return=bench_log_return
+            twr_series,
+            current_value,
+            benchmark_log_return=_benchmark_log_return(daily_df),
         )
         result["currency"] = currency
         if not result.get("available"):
@@ -765,6 +771,42 @@ async def get_projection(
     except Exception as e:
         logging.error(f"Error calculating projection: {e}", exc_info=True)
         return {"available": False, "error": str(e)}
+
+
+@router.get("/projection/backtest")
+async def get_projection_backtest(
+    currency: str = "USD",
+    accounts: Optional[List[str]] = Query(None),
+    data: tuple = Depends(get_transaction_data),
+):
+    """
+    Walk-forward backtest of the projection model on this portfolio's own past:
+    at each historical anchor it refits on the data available then, projects
+    forward, and scores the result against what actually happened. Returns the
+    per-horizon calibration table plus a replay of the longest verifiable
+    horizon (the cone drawn back then, with the realized path through it).
+    """
+    try:
+        daily_df = await _projection_history(currency, accounts, data)
+        if daily_df is None:
+            return {"available": False, "reason": "no_history", "currency": currency}
+
+        bench_col = _benchmark_column(daily_df)
+        result = backtest_projection(
+            daily_df["Portfolio Accumulated Gain"].dropna(),
+            benchmark_series=daily_df[bench_col] if bench_col else None,
+            value_series=daily_df["Portfolio Value"]
+            if "Portfolio Value" in daily_df.columns
+            else None,
+        )
+        result["currency"] = currency
+        # Every date here is reckoned on the market clock, not the server's.
+        result["market_timezone"] = "America/New_York"
+        return clean_nans(result)
+
+    except Exception as e:
+        logging.error(f"Error backtesting projection: {e}", exc_info=True)
+        return {"available": False, "reason": "error", "error": str(e)}
 
 
 @router.get("/benchmark_scoreboard")

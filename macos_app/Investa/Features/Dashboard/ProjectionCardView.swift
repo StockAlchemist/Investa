@@ -4,9 +4,25 @@ import Charts
 /// Forward portfolio-value projection (mirrors the web `ProjectionCard`):
 /// a fan chart of the median + 10–90 / 25–75 percentile bands over 1/3/5/10/20y,
 /// plus a table. Driven by `GET /projection` (lognormal model).
+///
+/// The Backtest tab replays the same model against the portfolio's own past
+/// (`ProjectionBacktestView`), loaded on demand because the walk-forward refit
+/// is far heavier than the forecast.
 struct ProjectionCardView: View {
     let projection: Projection?
     let currency: String
+    var backtest: ProjectionBacktest? = nil
+    var isLoadingBacktest: Bool = false
+    /// Called when the Backtest tab is first opened.
+    var onShowBacktest: (() async -> Void)? = nil
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case forecast = "Forecast"
+        case backtest = "Backtest"
+        var id: String { rawValue }
+    }
+    @State private var tab: Tab = .forecast
+
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
     private var isPhone: Bool { hSize == .compact }
@@ -32,10 +48,16 @@ struct ProjectionCardView: View {
             Divider()
 
             if let p = projection, p.available, !horizons.isEmpty {
-                assumptions(p)
-                chart
-                table
-                footnote
+                tabPicker
+                if tab == .backtest {
+                    ProjectionBacktestView(backtest: backtest, currency: cur,
+                                           isLoading: isLoadingBacktest)
+                } else {
+                    assumptions(p)
+                    chart
+                    table
+                    footnote
+                }
             } else {
                 ContentUnavailableView(
                     "Not enough history",
@@ -48,6 +70,19 @@ struct ProjectionCardView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(.standard)
+        .task(id: tab) {
+            guard tab == .backtest else { return }
+            await onShowBacktest?()
+        }
+    }
+
+    private var tabPicker: some View {
+        Picker("View", selection: $tab) {
+            ForEach(Tab.allCases) { t in Text(t.rawValue).tag(t) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 240, alignment: .leading)
     }
 
     private var header: some View {

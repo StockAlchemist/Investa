@@ -638,6 +638,7 @@ export default function AuthenticatedDashboard() {
                 isLoading={projectionQuery.isLoading && !projectionQuery.data}
                 isRefreshing={projectionQuery.isFetching}
                 currency={currency}
+                accounts={selectedAccounts}
               />
             )}
             {visibleItems.includes('riskMetrics') && (

@@ -1006,6 +1006,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projection/backtest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Projection Backtest
+         * @description Walk-forward backtest of the projection model on this portfolio's own past:
+         *     at each historical anchor it refits on the data available then, projects
+         *     forward, and scores the result against what actually happened. Returns the
+         *     per-horizon calibration table plus a replay of the longest verifiable
+         *     horizon (the cone drawn back then, with the realized path through it).
+         */
+        get: operations["get_projection_backtest_api_projection_backtest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/benchmark_scoreboard": {
         parameters: {
             query?: never;
@@ -2557,6 +2581,30 @@ export interface paths {
          *     (drift) and volatility. Returns the median plus percentile bands per horizon.
          */
         get: operations["get_projection_projection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projection/backtest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Projection Backtest
+         * @description Walk-forward backtest of the projection model on this portfolio's own past:
+         *     at each historical anchor it refits on the data available then, projects
+         *     forward, and scores the result against what actually happened. Returns the
+         *     per-horizon calibration table plus a replay of the longest verifiable
+         *     horizon (the cone drawn back then, with the realized path through it).
+         */
+        get: operations["get_projection_backtest_projection_backtest_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4964,6 +5012,38 @@ export interface operations {
             };
         };
     };
+    get_projection_backtest_api_projection_backtest_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_benchmark_scoreboard_api_benchmark_scoreboard_get: {
         parameters: {
             query?: {
@@ -7282,6 +7362,38 @@ export interface operations {
         };
     };
     get_projection_projection_get: {
+        parameters: {
+            query?: {
+                currency?: string;
+                accounts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_projection_backtest_projection_backtest_get: {
         parameters: {
             query?: {
                 currency?: string;

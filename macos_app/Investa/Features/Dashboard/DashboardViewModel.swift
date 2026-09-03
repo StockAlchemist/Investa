@@ -16,6 +16,10 @@ final class DashboardViewModel: ObservableObject {
     @Published var heroWTD: [PerformancePoint] = []
     @Published var risk: RiskMetrics?
     @Published var projection: Projection?
+    /// Loaded only when the user opens the projection card's Backtest tab —
+    /// the walk-forward refit is far too heavy to run on every dashboard load.
+    @Published var projectionBacktest: ProjectionBacktest?
+    @Published var isLoadingBacktest = false
     @Published var health: PortfolioHealth?
     @Published var attribution: Attribution?
     @Published var dividendEvents: [DividendEvent] = []
@@ -27,6 +31,11 @@ final class DashboardViewModel: ObservableObject {
 
     private let api: APIClient
     private var loadTask: Task<Void, Never>?
+    /// Selection the loaded backtest belongs to, so re-opening the tab doesn't refetch.
+    private var backtestKey: String?
+    /// Whether the user has opened the Backtest tab this session — once they
+    /// have, a reload refetches it instead of leaving the tab empty.
+    private var backtestRequested = false
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -47,6 +56,11 @@ final class DashboardViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
+
+        // A new selection invalidates the backtest; it is refetched below if the
+        // user is looking at it, and otherwise on demand.
+        projectionBacktest = nil
+        backtestKey = nil
 
         let accountItems = APIClient.arrayQuery("accounts", accounts)
         let closedItem = URLQueryItem(name: "show_closed", value: showClosed ? "true" : "false")
@@ -127,5 +141,30 @@ final class DashboardViewModel: ObservableObject {
         heroHistory = (await hero1YResult) ?? []
         heroIntraday = (await hero1DResult) ?? []
         heroWTD = (await heroWTDResult) ?? []
+
+        if backtestRequested, !Task.isCancelled {
+            await loadProjectionBacktest(currency: currency, accounts: accounts)
+        }
+    }
+
+    /// Fetch the projection backtest for the current selection, once. The walk-
+    /// forward refit is expensive, so this runs only when the Backtest tab is open.
+    func loadProjectionBacktest(currency: String, accounts: [String]?) async {
+        backtestRequested = true
+        let key = "\(currency)|\((accounts ?? []).joined(separator: ","))"
+        if backtestKey == key, projectionBacktest != nil { return }
+        if isLoadingBacktest { return }
+        isLoadingBacktest = true
+        defer { isLoadingBacktest = false }
+        let query = [URLQueryItem(name: "currency", value: currency)] + APIClient.arrayQuery("accounts", accounts)
+        let result: ProjectionBacktest? = try? await api.get("/projection/backtest", query: query)
+        guard !Task.isCancelled else { return }
+        // A failed request still has to resolve the card's spinner, so it lands
+        // as an explicit unavailable-with-reason rather than staying nil.
+        projectionBacktest = result ?? ProjectionBacktest(
+            available: false, reason: "error", currency: currency, marketTimezone: nil,
+            historyYears: nil, historyStart: nil, historyEnd: nil, requiredYears: nil,
+            horizons: nil, replay: nil)
+        backtestKey = result == nil ? nil : key
     }
 }

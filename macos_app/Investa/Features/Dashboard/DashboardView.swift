@@ -54,7 +54,10 @@ struct DashboardView: View {
                                              dayChangePercent: viewModel.metrics?.dayChangePercent)
                     }
                     if vis("projection") {
-                        ProjectionCardView(projection: viewModel.projection, currency: cur)
+                        ProjectionCardView(projection: viewModel.projection, currency: cur,
+                                           backtest: viewModel.projectionBacktest,
+                                           isLoadingBacktest: viewModel.isLoadingBacktest,
+                                           onShowBacktest: { await viewModel.loadProjectionBacktest(currency: cur, accounts: appState.accountsQuery) })
                     }
                     if vis("riskMetrics") {
                         if let health = viewModel.health {
@@ -116,7 +119,10 @@ struct DashboardView: View {
                                              dayChangePercent: viewModel.metrics?.dayChangePercent)
                     }
                     if vis("projection") {
-                        ProjectionCardView(projection: viewModel.projection, currency: cur)
+                        ProjectionCardView(projection: viewModel.projection, currency: cur,
+                                           backtest: viewModel.projectionBacktest,
+                                           isLoadingBacktest: viewModel.isLoadingBacktest,
+                                           onShowBacktest: { await viewModel.loadProjectionBacktest(currency: cur, accounts: appState.accountsQuery) })
                     }
                     if vis("riskMetrics") {
                         if let health = viewModel.health {

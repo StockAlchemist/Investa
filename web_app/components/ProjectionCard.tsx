@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+'use client';
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2, TrendingUp } from 'lucide-react';
 import {
     ComposedChart,
@@ -11,14 +13,18 @@ import {
     ResponsiveContainer,
 } from 'recharts';
 
-import { Projection } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import { Projection, fetchProjectionBacktest } from '../lib/api';
 import { formatCurrency, formatPercent } from '../lib/utils';
+import ProjectionBacktest from './ProjectionBacktest';
 
 interface ProjectionCardProps {
     data?: Projection;
     isLoading?: boolean;
     isRefreshing?: boolean;
     currency: string;
+    /** Account filter, so the backtest covers the same portfolio as the forecast. */
+    accounts?: string[];
 }
 
 function compactCurrency(value: number, currency: string): string {
@@ -32,8 +38,21 @@ function compactCurrency(value: number, currency: string): string {
 // Horizons tabulated below the chart (the chart itself plots every year).
 const MILESTONES = [1, 3, 5, 10, 20];
 
-export default function ProjectionCard({ data, isLoading, isRefreshing, currency }: ProjectionCardProps) {
+type Tab = 'forecast' | 'backtest';
+
+export default function ProjectionCard({ data, isLoading, isRefreshing, currency, accounts }: ProjectionCardProps) {
     const cur = data?.currency || currency;
+    const { user } = useAuth();
+    const [tab, setTab] = useState<Tab>('forecast');
+
+    // The walk-forward backtest refits the model at every month in the past, so
+    // it only runs once the user actually asks to see it.
+    const backtestQuery = useQuery({
+        queryKey: ['projectionBacktest', user?.username, currency, accounts],
+        queryFn: ({ signal }) => fetchProjectionBacktest(currency, accounts, signal),
+        enabled: tab === 'backtest',
+        staleTime: 10 * 60 * 1000,
+    });
 
     // Top of the y-axis: the final horizon's p90 (the band's true max) plus a
     // little headroom, so the whole band fits without being clipped but the axis
@@ -64,7 +83,8 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                     Projected Value
                     {isRefreshing && <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500 opacity-70" />}
                 </h3>
-                {data?.available && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                {data?.available && tab === 'forecast' && (
                     <div className="flex items-baseline gap-4 text-sm">
                         <span className="text-muted-foreground">
                             Assumed return{' '}
@@ -76,6 +96,26 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                         </span>
                     </div>
                 )}
+                {data?.available && (
+                    <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-0.5 text-xs font-semibold">
+                        {(['forecast', 'backtest'] as Tab[]).map(t => (
+                            <button
+                                key={t}
+                                type="button"
+                                onClick={() => setTab(t)}
+                                aria-pressed={tab === t}
+                                className={`px-3 py-1 rounded-md whitespace-nowrap transition-colors ${
+                                    tab === t
+                                        ? 'bg-background text-foreground shadow-sm'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                {t === 'forecast' ? 'Forecast' : 'Backtest'}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                </div>
             </div>
 
             {isLoading && !data ? (
@@ -87,6 +127,14 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                     Not enough history yet to project a return. Projections appear once the
                     portfolio has a longer track record.
                 </div>
+            ) : tab === 'backtest' ? (
+                <ProjectionBacktest
+                    data={backtestQuery.data}
+                    isLoading={backtestQuery.isLoading}
+                    error={backtestQuery.isError}
+                    currency={cur}
+                    compact={compactCurrency}
+                />
             ) : (
                 <>
                     <div className="h-[280px] w-full">
