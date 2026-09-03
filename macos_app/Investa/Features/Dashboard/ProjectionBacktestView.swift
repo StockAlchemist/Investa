@@ -146,9 +146,14 @@ struct ProjectionBacktestView: View {
                         .interpolationMethod(.monotone)
                 }
             }
+            // `series:` is what keeps these two apart. Without it Swift Charts
+            // reads both loops as one series — every point sharing an x with the
+            // other line — and paints the whole thing in the first mark's style,
+            // so the realized path came out dashed indigo like the median.
             ForEach(points) { p in
                 if let d = p.day {
-                    LineMark(x: .value("Date", d), y: .value("Projected", p.median))
+                    LineMark(x: .value("Date", d), y: .value("Value", p.median),
+                             series: .value("Series", "Projected"))
                         .foregroundStyle(modelColor)
                         .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 4]))
                         .interpolationMethod(.monotone)
@@ -156,7 +161,8 @@ struct ProjectionBacktestView: View {
             }
             ForEach(points) { p in
                 if let d = p.day, let actual = p.actual {
-                    LineMark(x: .value("Date", d), y: .value("Actual", actual))
+                    LineMark(x: .value("Date", d), y: .value("Value", actual),
+                             series: .value("Series", "Actual"))
                         .foregroundStyle(Self.actualColor)
                         .lineStyle(StrokeStyle(lineWidth: 2.5))
                         .interpolationMethod(.monotone)
