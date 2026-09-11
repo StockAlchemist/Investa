@@ -663,6 +663,7 @@ def _process_transactions_to_holdings(
     Dict[str, float],
     Dict[str, float],
     Dict[str, float],
+    Dict[str, float],
     Set[int],
     Dict[int, str],
     Dict[int, float],
@@ -671,7 +672,9 @@ def _process_transactions_to_holdings(
     logging.debug("Starting Numba-optimized transaction processing (Array-based)...")
 
     if transactions_df.empty:
-        return {}, {}, {}, {}, set(), {}, {}, False
+        # Shape must match the full return below: holdings, realized, dividends,
+        # commissions, taxes, ignored indices, ignored reasons, transfer costs, warned.
+        return {}, {}, {}, {}, {}, set(), {}, {}, False
 
     if account_cash_mode_map is None:
         account_cash_mode_map = {}

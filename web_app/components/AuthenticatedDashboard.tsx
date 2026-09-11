@@ -558,7 +558,28 @@ export default function AuthenticatedDashboard() {
   const assetChangeData  = assetChangeQuery.data || null;
   const capitalGainsData = capitalGainsQuery.data || null;
   const dividendData     = dividendsQuery.data || null;
-  const availableAccounts = (summary?.metrics?._available_accounts as string[]) || [];
+  const availableAccounts = useMemo(
+    () => (summary?.metrics?._available_accounts as string[]) || [],
+    [summary?.metrics?._available_accounts],
+  );
+
+  // Drop selected accounts that no longer exist (renamed, merged or split away).
+  // The selection is restored verbatim from localStorage, so a rename leaves a
+  // filter that matches nothing; the backend then has no transactions to work
+  // with and the dashboard reads as empty. _available_accounts is computed from
+  // the unfiltered transaction set, so it is authoritative even in that case.
+  // Pruning to empty means "all accounts", which is the sane fallback.
+  useEffect(() => {
+    if (availableAccounts.length === 0 || selectedAccounts.length === 0) return;
+    const known = new Set(availableAccounts);
+    if (selectedAccounts.every(acc => known.has(acc))) return;
+    const pruned = selectedAccounts.filter(acc => known.has(acc));
+    console.warn(
+      'Dropping unknown accounts from the saved selection:',
+      selectedAccounts.filter(acc => !known.has(acc)),
+    );
+    setSelectedAccounts(pruned);
+  }, [availableAccounts, selectedAccounts]);
   const closedAccounts = (() => {
     const dates = settingsQuery.data?.account_closure_dates;
     if (!dates) return [];
