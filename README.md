@@ -20,6 +20,8 @@ Investa is a comprehensive portfolio management solution with a modern **Web Das
 * **Apple Ecosystem:** Native client application for **macOS, iOS, and iPadOS** written in SwiftUI. It connects to the Investa backend to provide a seamless, high-performance native experience with real-time charts and dynamic portfolio views.
 * **Market Screener:** identify opportunities across your Watchlist, Holdings, or the **entire database ("All Stocks")** with quantitative intrinsic value filters.
 * **AI Score:** Intelligent **scorecard-based rankings** in the Watchlist and Screener to help prioritize high-probability investments.
+* **Buffett/Value Rankings:** A batch pipeline ranks US-listed stocks on a **quality-value composite** computed from **SEC EDGAR** filings (~19 years of filed fundamentals per company, not a 5-year vendor window), and stores dated snapshots you can screen and sort.
+* **Model Strategies:** Six rule-based model portfolios built on that ranking — from **Buffett Quality 20** (the default) through tighter, uncapped, large-cap-only and quality-value blends — each shipping its **backtested CAGR, volatility, max drawdown and Sharpe** over 2013-2025, its **training vs. held-out** returns, and a plainly stated list of **its own risks**.
 * **Custom Groups (Tags):** Organize holdings with custom tags (e.g., "Core", "Speculative") for personalized grouping.
 * **Contribution Analysis:** See exactly how much each holding contributes to your total portfolio return.
 * **Customizable Layouts:** A **Layout Configurator** on every tab lets you toggle and arrange widgets (including "Sector Contribution" and "Top Contributors") to build your own views; your layout persists across sessions.
@@ -119,6 +121,25 @@ Requires **Python 3.11+** (SciPy 1.16 needs 3.11, Numba 0.61 needs 3.10) and
     cd web_app && npm install && cd ..
     ```
 
+5. **Add API Keys (Optional)**
+
+    Create a `.env` file in the project root. Investa runs without it — only
+    the features listed below go dark — and the file is gitignored, so your
+    keys stay local.
+
+    ```bash
+    GEMINI_API_KEY=...     # AI Review, AI Score, AI statement import
+    FMP_API_KEY=...        # fundamentals fallback for misclassified/ADR tickers
+    TIINGO_API_KEY=...     # alternative price source
+    AUTH_SECRET_KEY=...    # JWT signing; auto-generated if unset
+    CORS_ALLOW_ORIGINS=... # extra origins, comma-separated
+    INVESTA_LOG_LEVEL=...  # default WARNING; INFO or DEBUG when debugging
+    ```
+
+    Without `GEMINI_API_KEY` the AI panels return "GEMINI_API_KEY not found"
+    and everything else — holdings, performance, valuation, the screener and
+    the ranking — works normally.
+
 ## Quick Usage
 
 **Run the full stack (backend on :8000, frontend on :3000):**
@@ -159,15 +180,26 @@ data/
 │   ├── market_data.db            cached prices and fundamentals
 │   ├── edgar_facts.db            SEC XBRL fundamentals (~800 MB when built)
 │   └── buffett_ranks.db          ranking snapshots
+├── config/
+│   └── auth_secret.key           signs session tokens (auto-generated)
 ├── screener/screener_cache.db    shared screener valuations
 ├── exports/                      CSV exports
 └── cache/                        derived caches, safe to delete
 ```
 
 Each user gets their own `portfolio.db`; nothing is shared between accounts
-except the market and screener caches. The four databases under `db/` and
-everything under `cache/` are derived and rebuild themselves — only
-`users/` needs backing up.
+except the market and screener caches.
+
+**What to back up.** Two things cannot be regenerated:
+
+* `users/` — every account's transactions, layout and overrides.
+* `db/global.db` — the account registry itself, usernames and password hashes.
+  Lose it and the portfolios survive but nobody can log in to reach them.
+
+Keep `config/auth_secret.key` too if you can: it signs session tokens, so
+replacing it costs no data but logs everyone out. The rest genuinely is
+derived — `market_data.db`, `edgar_facts.db`, `buffett_ranks.db`, `screener/`
+and `cache/` all rebuild themselves, slowly the first time and normally after.
 
 For details on `gui_config.json`, `manual_overrides.json`, and input formats,
 consult the **[Tutorial](TUTORIAL.md#configuration-persistence-gui_configjson--manual_overridesjson)**.
@@ -185,7 +217,10 @@ Common issues regarding market data loading or CSV imports are addressed in the 
 
 ## Contributing
 
-See **[CONTRIBUTING.md](CONTRIBUTING.md)** and **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)**.
+Issues and pull requests are welcome on
+[GitHub](https://github.com/StockAlchemist/Investa). Run `pytest tests/` and
+`ruff check src/` before opening one; the CI workflow runs the backend tests,
+the frontend build, Playwright E2E and an API type-drift check.
 
 ## License
 

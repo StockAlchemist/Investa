@@ -14,7 +14,9 @@ Let's dive in!
 Before you can start crunching numbers, there are a couple of preliminary steps:
 
 1. **Installation (If you haven't already):**
-    * Make sure you have Python (3.8 or newer) on your system.
+    * Make sure you have **Python 3.11 or newer** on your system (SciPy 1.16
+      requires 3.11), and **Node 20.9+** for the web dashboard (Next.js 16).
+      Investa is developed and tested on Python 3.12 and Node 22.
     * Clone the Investa project from its GitHub repository.
     * It's a good idea to set up a virtual environment for Python projects. In your terminal, navigate to the cloned project folder and run:
 
@@ -36,6 +38,18 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
         cd web_app && npm install && cd ..
         ```
 
+    * **Optional: API keys.** Create a `.env` file in the project root if you
+      want the AI features. Investa runs fine without it.
+
+        ```bash
+        GEMINI_API_KEY=...   # AI Review (Part 17), AI Score (Part 18), AI statement import
+        FMP_API_KEY=...      # fundamentals fallback for misclassified and ADR tickers
+        ```
+
+        Without `GEMINI_API_KEY` those panels report the key is missing and the
+        rest of the app — holdings, performance, valuation, screener, rankings
+        — is unaffected. The file is gitignored, so keys stay on your machine.
+
 2. **Understanding Data Storage: The SQLite Databases**
     Investa stores everything it owns in a `data/` folder beside the code — the
     same path on every operating system. Backing Investa up is copying that one
@@ -55,14 +69,24 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
     │   ├── market_data.db            cached prices and fundamentals
     │   ├── edgar_facts.db            SEC filings data
     │   └── buffett_ranks.db          ranking snapshots
+    ├── config/
+    │   └── auth_secret.key           signs session tokens (auto-generated)
     ├── screener/screener_cache.db    shared screener valuations
     └── exports/                      your CSV exports
     ```
 
     * **`portfolio.db` is the one that matters.** It holds your transactions and
-      is the only file that cannot be regenerated. Everything under `db/` and
-      `cache/` is a cache: delete any of it and Investa rebuilds it, slowly the
-      first time and normally after.
+      is the only file that cannot be regenerated.
+    * **`db/global.db` is the second one.** It is not a cache — it stores the
+      accounts themselves, usernames and password hashes. Delete it and the
+      portfolios are all still on disk, but there is no login left that reaches
+      them. Back it up alongside `users/`.
+    * **The rest of `db/` really is a cache.** `market_data.db`,
+      `edgar_facts.db`, `buffett_ranks.db`, `screener/` and `cache/` rebuild
+      themselves: delete any of them and Investa refills them, slowly the first
+      time and normally after.
+    * `config/auth_secret.key` signs session tokens. Replacing it costs no data
+      but signs everyone out.
     * **Nothing is shared between accounts** except the market and screener
       caches, which contain no personal data.
     * You never create or open a database by hand — registering an account
@@ -73,8 +97,8 @@ Before you can start crunching numbers, there are a couple of preliminary steps:
 
     **Preferred (Cleaned) CSV Headers for Import:**
     1. `Date`: e.g., *Jan 01, 2023* (common date formats are supported)
-    2. `Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees*
-    3. `Type`: *Buy, Sell, Dividend, Split, Deposit, Withdrawal, Fees, Transfer*
+    2. `Type`: one of *Buy, Sell, Dividend, Transfer, Interest, Fees, Tax,
+       Deposit, Withdrawal, Spin-off, Split, Short Sell, Buy To Cover*
     3. `Symbol`: e.g., *AAPL, VTI*. Use the special symbol **`$CASH`** for all cash transactions.
     4. `Quantity`
     5. `Price/Share`
@@ -1004,9 +1028,9 @@ To enable this, you must first configure a "Flex Query" in your IBKR Portal:
     *   Save the query and take note of its **Query ID**.
 
 ### 2. Configuring Investa
-1.  Open the Web Dashboard and go to **Settings → Advanced Settings → Interactive Brokers Sync**, and enter your **Flex Token** and **Query ID**. Click **Save Credentials**, then **Sync Transactions Now**.
-2.  Enter your **Flex Token** and **Flex Query ID**.
-3.  Click **Save Configuration**.
+1.  Open the Web Dashboard and go to **Settings → Advanced Settings → Interactive Brokers Sync**.
+2.  Enter your **Flex Token** and **Flex Query ID** from the previous step.
+3.  Click **Save Credentials**.
 
 ### 3. Syncing Transactions
 1.  Navigate to the **Sync** tab (or click the Sync icon in the sidebar).
@@ -1082,7 +1106,78 @@ The **AI Score** helps you quickly prioritize which opportunities to investigate
 *   **Growth Outliers:** Flags companies priced with unrealistic growth expectations (e.g., >30% sustained growth needed to justify current price).
 *   **Deep Value:** A high-conviction screen combining a strong AI score, a large margin of safety, and consistent historical profitability.
 
-## Part 19: Apple Native Apps (macOS, iOS, iPadOS)
+## Part 19: Rankings & Model Strategies
+
+Two sidebar destinations sit on top of the same engine: **Rankings** scores the
+market, and **Strategies** turns those scores into model portfolios.
+
+### Rankings
+
+A batch pipeline scores US-listed companies on a **quality-value composite**
+built from **SEC EDGAR** filings rather than a data vendor's short window — on
+the order of nineteen years of filed fundamentals per company, so the history
+behind a score is the company's own filings.
+
+The table gives each company a **Score** split into its **Quality** and
+**Value** halves (the header tooltips state the weighting in force), alongside
+**Mkt Cap**, **Years** of usable history, the **Model** that produced the
+valuation, and **Reasons** — the short explanation of why a company scored as
+it did. Above the table, three counters say how many names were in the
+**Universe**, how many were **Ranked**, and how many were **Excluded** for
+missing or unusable fundamentals.
+
+Rankings come from scheduled batch runs, so the page shows dated snapshots. If
+you have never run the pipeline it says **"No ranking run yet"** rather than
+inventing a list.
+
+### Strategies
+
+Each strategy is a rule applied to the newest finished ranking — a top-N cut,
+an equal weighting, and usually a cap of three names per industry:
+
+| Strategy | Rule | Backtested CAGR |
+|---|---|---|
+| **Buffett Quality 20** (default) | Top 20, 80/20 quality-value, max 3/industry | 16.9% |
+| **Buffett Quality 15** | Tighter, higher-conviction top 15 | 17.1% |
+| **Buffett Quality 20 (uncapped)** | Raw top 20, no industry cap | 17.9% |
+| **Buffett Large-Cap Leaders** | Top 20 above $10B market cap | 14.1% |
+| **Quality-Value Balanced** | 60/40 quality-to-value blend | 15.2% |
+| **Buffett Quality (price-blind)** | Quality only, valuation ignored | 15.6% |
+
+Pick one and Investa shows its **allocation** — Symbol, Industry, Weight,
+Shares and Amount for a portfolio of the size you enter — which you can
+**Apply** as a target. Because the book is recomputed from the newest finished
+ranking rather than stored, a run that produced too few names **warns you**
+instead of quietly under-allocating.
+
+### Read the numbers with their caveats attached
+
+The backtest figures come from point-in-time runs over 2013-2025 using the same
+parameters the app applies, and the app reports them with their weak spots
+rather than only their headline:
+
+* **Train vs. held-out.** The search was fitted on 2013-2019 and checked on
+  2020-2025, and every strategy earned less in the held-out window than in the
+  one it was fitted on — Quality 20 makes 20.7% training against 12.4% held
+  out. Expect the lower number, not the headline.
+* **Survivorship.** The universe is built from *today's* listing files, so
+  companies that delisted never appear. Every CAGR here is flattered by an
+  unknown amount.
+* **Always invested.** None of these strategies has a defensive mode. A
+  market-wide fall is taken in full.
+* **2013 is the floor.** It is the earliest year the point-in-time EDGAR
+  coverage supports, so the testing window starts there and no strategy has
+  been tested across the 2008 crisis.
+
+Each strategy lists its own specific risks in the app — concentration, single
+name weight, or the cost of ignoring price — and those are worth reading before
+you act on an allocation.
+
+> [!IMPORTANT]
+> These are research tools, not investment advice. A backtest describes a past
+> that was searched over; it is not a forecast.
+
+## Part 20: Apple Native Apps (macOS, iOS, iPadOS)
 
 Investa includes a comprehensive native Apple client application built entirely in SwiftUI. This single codebase runs seamlessly across Mac, iPhone, and iPad, adapting its layout to the device (sidebar navigation on Mac/iPad, bottom tab bar on iPhone).
 
