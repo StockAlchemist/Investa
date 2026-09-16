@@ -18,7 +18,7 @@ time, so a session missing from one window is still on disk; a bar it holds
 between the download's last two dates is proof the download skipped one.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
 import pandas as pd
@@ -35,6 +35,15 @@ THU_CLOSE = 138.43
 FRI_CLOSE = 144.71
 MON_PRICE = 145.33
 
+# Monday the 31st, mid-session in New York. The archive lookup reads a window
+# reckoned back from *now*, so these fixed session dates only sit inside it
+# while the real clock is near them: pinned to the wall clock, this file went
+# green until 11 Sep 2026 and red from the 12th, when the 14-day window first
+# opened past Friday the 28th and the two repair tests lost the bar they are
+# about. The dates are the incident's own and worth keeping — so the clock
+# moves to them instead.
+INCIDENT_NOW = datetime(2026, 8, 31, 17, 0, tzinfo=timezone.utc)
+
 
 def _daily_frame(rows):
     """MultiIndex (ticker, field) daily frame, shaped like yf.download."""
@@ -43,11 +52,21 @@ def _daily_frame(rows):
 
 
 @pytest.fixture
-def provider(tmp_path):
+def provider(tmp_path, monkeypatch):
     mdp = MarketDataProvider(
         current_cache_file=str(tmp_path / "quotes.json"),
         db_path=str(tmp_path / "market.db"),
     )
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (
+                INCIDENT_NOW.astimezone(tz) if tz else INCIDENT_NOW.replace(tzinfo=None)
+            )
+
+    monkeypatch.setattr(market_data, "datetime", _Now)
+
     with (
         patch.object(
             MarketDataProvider,
