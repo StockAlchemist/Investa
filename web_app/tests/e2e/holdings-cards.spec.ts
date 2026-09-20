@@ -14,12 +14,23 @@ import { MOCK_HOLDINGS } from './helpers/mock-data';
  */
 const PHONE = { width: 390, height: 844 };
 
-/** A fund ticker long enough to crowd its amount, with a big value beside it. */
+/**
+ * A fund ticker long enough to crowd its amount, with a big value beside it.
+ *
+ * The value is in the billions so the row overflows by ~26px rather than by a
+ * hair. The amount is drawn in the platform's own UI face (`.tabular-nums` in
+ * globals.css asks for SF Pro and takes whatever the machine has), so its width
+ * is not the same on a Mac as on the Linux box CI runs on. At $61.7M the two
+ * ends of this row missed each other by 1.5px here and met on CI, where the
+ * fallback face is a shade narrower — the row stopped overflowing and the rule
+ * under test correctly declined to fire. A margin wider than any face
+ * substitution is what keeps this about the rule.
+ */
 const LONG_SYMBOL = {
     ...MOCK_HOLDINGS[0],
     Symbol: 'SCBRMS&P500',
     Quantity: 12345,
-    'Market Value': 61705355.42,
+    'Market Value': 6170535542.18,
 };
 
 /** Opens Portfolio on a phone, where cards are what the tab opens in. */
@@ -77,11 +88,11 @@ test.describe('Holdings cards on a phone', () => {
 
         const amount = symbol.locator('xpath=ancestor::div[contains(@class,"justify-between")][1]')
             .locator('div.text-\\[15px\\]');
-        await expect(amount).toHaveText(/^\$[\d.]+M$/);
+        await expect(amount).toHaveText(/^\$[\d.]+[KMB]$/);
 
         // And it stays there: stepping down frees the width that forced the step,
         // so a rule that re-measured freely would flip back and oscillate.
         await page.waitForTimeout(1200);
-        await expect(amount).toHaveText(/^\$[\d.]+M$/);
+        await expect(amount).toHaveText(/^\$[\d.]+[KMB]$/);
     });
 });
