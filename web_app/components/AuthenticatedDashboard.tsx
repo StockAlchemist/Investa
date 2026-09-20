@@ -38,9 +38,11 @@ import { EmptyState } from '@/components/EmptyState';
 import AppShellSkeleton from '@/components/skeletons/AppShellSkeleton';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { MobileNav } from '@/components/layout/MobileNav';
+import { MobileTopBar } from '@/components/layout/mobile/MobileTopBar';
+import { MobileControlBar } from '@/components/layout/mobile/MobileControlBar';
+import { MobileTabBar, isMoreTab } from '@/components/layout/mobile/MobileTabBar';
+import { MobileMoreList } from '@/components/layout/mobile/MobileMoreList';
 import dynamic from 'next/dynamic';
-import { Home as HomeIcon, Activity, Settings as SettingsIcon } from 'lucide-react';
 import { useStockModal } from '@/context/StockModalContext';
 
 const PerformanceGraph = dynamic(() => import('@/components/PerformanceGraph'), {
@@ -104,7 +106,10 @@ export default function AuthenticatedDashboard() {
   const [isIndexGraphModalOpen, setIsIndexGraphModalOpen] = useState(false);
   const [indexGraphFocus, setIndexGraphFocus]             = useState<string | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen]   = useState(false);
-  const [isMobileNavOpen, setIsMobileNavOpen]             = useState(false);
+  // The phone's More screen. It is a screen, not a drawer: iOS's own More tab
+  // lists the sections the tab bar has no room for, and stays selected while
+  // you are inside one of them (see MobileTabBar).
+  const [isMoreOpen, setIsMoreOpen]                       = useState(false);
   const [benchmarks, setBenchmarks]                 = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
   const [graphPeriod, setGraphPeriod]               = useState('1y');
   const [graphView, setGraphView]                   = useState<'return' | 'value' | 'drawdown'>('return');
@@ -116,11 +121,12 @@ export default function AuthenticatedDashboard() {
   const [visibleItems, setVisibleItems]             = useState<string[]>(INITIAL_VISIBLE_ITEMS);
   const [tabLayouts, setTabLayouts]                 = useState<Record<string, string[]>>({});
 
-  const handleUserIconClick = () => { closeStockDetail(); setSettingsInitialTab('account'); setActiveTab('settings'); };
+  const handleUserIconClick = () => { closeStockDetail(); setSettingsInitialTab('account'); setActiveTab('settings'); setIsMoreOpen(false); };
   const handleTabChange = (tab: string) => {
     closeStockDetail();
     if (tab === 'settings') setSettingsInitialTab(undefined);
     setActiveTab(tab);
+    setIsMoreOpen(false);
   };
 
 
@@ -553,6 +559,8 @@ export default function AuthenticatedDashboard() {
     : (cardMetrics ? { metrics: cardMetrics, account_metrics: null } : undefined);
   const cardLoading = (summaryQuery.isLoading && !summary) && (headlineQuery.isLoading && !headlineMetrics);
   const cardRefreshing = summaryQuery.isFetching || headlineQuery.isFetching;
+  const lastUpdatedAt = Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0);
+  const lastUpdated = lastUpdatedAt ? new Date(lastUpdatedAt) : null;
   const holdings         = holdingsQuery.data || [];
   const transactions     = transactionsQuery.data || [];
   const assetChangeData  = assetChangeQuery.data || null;
@@ -863,20 +871,38 @@ export default function AuthenticatedDashboard() {
         dayChangePct={cardMetrics?.day_change_percent as number | undefined}
       />
 
-      {/* ── Mobile navigation drawer ── */}
-      <MobileNav
-        isOpen={isMobileNavOpen}
-        onClose={() => setIsMobileNavOpen(false)}
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-        user={user}
-        onLogout={logout}
-        onUserClick={handleUserIconClick}
-        currency={currency}
-      />
-
       {/* ── Main content ── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+
+        {/* ── Phone shell: navigation bar + control bar (see macos_app
+             MainView.phoneTabContent, which stacks exactly these two above the
+             section and a Divider between them) ── */}
+        <MobileTopBar
+          indices={indices}
+          onIndexClick={() => { setIndexGraphFocus(null); setIsIndexGraphModalOpen(true); }}
+        />
+        <MobileControlBar
+          currency={currency}
+          onCurrencyChange={setCurrency}
+          availableCurrencies={settingsQuery.data?.available_currencies}
+          availableAccounts={availableAccounts}
+          selectedAccounts={selectedAccounts}
+          onAccountsChange={setSelectedAccounts}
+          accountGroups={settingsQuery.data?.account_groups}
+          accountGroupOrder={settingsQuery.data?.account_group_order}
+          closedAccounts={closedAccounts}
+          showClosed={showClosed}
+          onShowClosedChange={setShowClosed}
+          layoutItems={TAB_LAYOUT_ITEMS[activeTab]}
+          layoutSectionTitle={TAB_SECTION_LABELS[activeTab]}
+          visibleItems={activeVisible}
+          onVisibleItemsChange={(items) => setTabVisible(activeTab, items)}
+          isMarketOpen={isMarketOpen}
+          lastUpdated={lastUpdated}
+          isRefreshing={cardRefreshing}
+          onRefresh={() => { void queryClient.refetchQueries({ type: 'active' }); }}
+          onOpenSettings={() => handleTabChange('settings')}
+        />
 
         <PageHeader
           activeTab={activeTab}
@@ -898,16 +924,20 @@ export default function AuthenticatedDashboard() {
           isFetching={cardRefreshing}
           onIndexClick={() => { setIndexGraphFocus(null); setIsIndexGraphModalOpen(true); }}
           isMarketOpen={isMarketOpen}
-          lastUpdated={Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0) ? new Date(Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0)) : null}
-          onMobileMenuOpen={() => setIsMobileNavOpen(true)}
+          lastUpdated={lastUpdated}
           marketValue={(cardMetrics?.market_value as number | undefined) ?? null}
           dayChangePct={(cardMetrics?.day_change_percent as number | undefined) ?? null}
           showClosed={showClosed}
           onShowClosedChange={setShowClosed}
         />
 
-        {/* Scrollable content area */}
-        <main className="flex-1 overflow-y-auto pb-20 md:pb-8">
+        {/* Scrollable content area. The phone reserves the tab bar's height at
+            the bottom (49pt + the home indicator), the way a `TabView` insets
+            its content's safe area. */}
+        <main
+          className="flex-1 overflow-y-auto md:pb-8"
+          style={{ paddingBottom: 'calc(3.25rem + env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-5 sm:py-6">
             {selectedSymbol ? (
               <StockDetailView
@@ -918,6 +948,15 @@ export default function AuthenticatedDashboard() {
                 previousViewName={canGoBack ? 'Previous Stock' : (TAB_NAMES[activeTab] || 'Dashboard')}
                 currency={currency || modalCurrency}
               />
+            ) : isMoreOpen ? (
+              <div className="md:hidden">
+                <MobileMoreList
+                  activeTab={activeTab}
+                  onTabChange={handleTabChange}
+                  user={user}
+                  onLogout={logout}
+                />
+              </div>
             ) : (
               <>
                 {renderTabContent()}
@@ -946,41 +985,13 @@ export default function AuthenticatedDashboard() {
         focusIndex={indexGraphFocus}
       />
 
-      {/* ── Mobile bottom nav ── */}
-      <div
-        className={cn("fixed bottom-0 left-0 right-0 border-t border-border px-4 py-3 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest md:hidden z-50 transition-all duration-300", isMobileNavOpen && "hidden")}
-        style={{ backgroundColor: 'var(--menu-solid)' }}
-      >
-        <div
-          onClick={() => { setActiveTab('performance'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-          className={cn(
-            'flex flex-col items-center flex-1 cursor-pointer transition-colors',
-            activeTab !== 'settings' && activeTab !== 'markets' && activeTab !== 'screener'
-              ? 'text-indigo-600 dark:text-indigo-400'
-              : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400',
-          )}
-        >
-          <HomeIcon className="w-5 h-5" /><span className="mt-1">Home</span>
-        </div>
-        <div
-          onClick={() => { setActiveTab('markets'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-          className={cn(
-            'flex flex-col items-center flex-1 cursor-pointer transition-colors',
-            activeTab === 'markets' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400',
-          )}
-        >
-          <Activity className="w-5 h-5" /><span className="mt-1">Markets</span>
-        </div>
-        <div
-          onClick={() => { setActiveTab('settings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-          className={cn(
-            'flex flex-col items-center flex-1 cursor-pointer transition-colors',
-            activeTab === 'settings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400',
-          )}
-        >
-          <SettingsIcon className="w-5 h-5" /><span className="mt-1">Settings</span>
-        </div>
-      </div>
+      {/* ── Phone tab bar ── */}
+      <MobileTabBar
+        activeTab={activeTab}
+        onTabChange={(tab) => { handleTabChange(tab); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        onMoreClick={() => { closeStockDetail(); setIsMoreOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        moreActive={isMoreOpen || isMoreTab(activeTab)}
+      />
     </div>
   );
 }

@@ -36,15 +36,42 @@ interface StockSearchBarProps {
     currency: string;
     placeholder?: string;
     fullWidth?: boolean;
+    /**
+     * Collapse to an icon-sized pill when idle and expand once focused or typed
+     * into — the phone control bar's behaviour, mirroring the native
+     * `StockSearchBar` (Features/Search/StockSearchBar.swift). Keeps the bar
+     * compact in portrait, where a permanent field would shove the controls
+     * beside it off-screen.
+     */
+    collapsible?: boolean;
+    /** When expanded, fill the available width instead of a fixed one. */
+    fillExpanded?: boolean;
+    /**
+     * Reports focus changes so a host bar can hide its other controls while the
+     * search is active (the iOS "search takes over the bar" pattern).
+     */
+    onActiveChange?: (active: boolean) => void;
 }
 
-export function StockSearchBar({ currency, placeholder = 'Search symbol…', fullWidth = false }: StockSearchBarProps) {
+export function StockSearchBar({
+    currency,
+    placeholder = 'Search symbol…',
+    fullWidth = false,
+    collapsible = false,
+    fillExpanded = false,
+    onActiveChange,
+}: StockSearchBarProps) {
     const { openStockDetail } = useStockModal();
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SymbolSearchResult[]>([]);
     const [loading, setLoading] = useState(false);
     const [open, setOpen] = useState(false);
     const [activeIdx, setActiveIdx] = useState(0);
+    const [focused, setFocused] = useState(false);
+
+    // Expanded whenever the field is focused or holds text — the native rule.
+    const expanded = !collapsible || focused || query.length > 0;
+    useEffect(() => { onActiveChange?.(expanded); }, [expanded, onActiveChange]);
 
     const inputRef = useRef<HTMLInputElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -133,15 +160,34 @@ export function StockSearchBar({ currency, placeholder = 'Search symbol…', ful
     const isSearching = query.trim().length > 0;
 
     return (
-        <div ref={containerRef} className={cn('relative', fullWidth ? 'w-full' : 'w-48 sm:w-64')}>
+        <div
+            ref={containerRef}
+            className={cn(
+                'relative transition-[width,flex] duration-200 ease-in-out',
+                fullWidth ? 'w-full'
+                    : collapsible
+                        ? (expanded ? (fillExpanded ? 'min-w-0 flex-1' : 'w-[230px]') : 'w-[38px] shrink-0')
+                        : 'w-48 sm:w-64',
+            )}
+        >
             <div className="relative flex items-center">
-                <Search className="absolute left-3 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Search className={cn(
+                    'absolute w-4 h-4 text-muted-foreground pointer-events-none',
+                    expanded ? 'left-3' : 'left-1/2 -translate-x-1/2',
+                )} />
                 <input
                     ref={inputRef}
                     type="text"
                     className={cn(
-                        'w-full pl-9 pr-8 py-1.5 text-xs rounded-xl border border-border/80 bg-muted/40 dark:bg-zinc-900/60 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-all',
+                        'w-full py-1.5 text-xs rounded-xl border border-border/80 bg-muted/40 dark:bg-zinc-900/60 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-all',
                         open && 'ring-2 ring-primary/40 border-primary/60',
+                        // The field stays in the tree while collapsed so a tap
+                        // can focus it; it is only made invisible. Its padding
+                        // goes with it: `box-sizing: border-box` cannot shrink a
+                        // box below its own padding, so pl-9 + pr-8 would hold
+                        // the collapsed pill at 70px however narrow the wrapper
+                        // is — wide enough to sit under the currency menu.
+                        expanded ? 'pl-9 pr-8' : 'px-0 text-transparent placeholder:text-transparent',
                     )}
                     placeholder={placeholder}
                     value={query}
@@ -151,16 +197,18 @@ export function StockSearchBar({ currency, placeholder = 'Search symbol…', ful
                         runSearch(e.target.value);
                     }}
                     onFocus={() => {
+                        setFocused(true);
                         if (query.trim()) setOpen(true);
                     }}
+                    onBlur={() => setFocused(false)}
                     onKeyDown={handleKeyDown}
                     autoComplete="off"
                     spellCheck={false}
                 />
-                {loading && (
+                {loading && expanded && (
                     <Loader2 className="absolute right-2.5 w-3.5 h-3.5 text-muted-foreground animate-spin pointer-events-none" />
                 )}
-                {!loading && query && (
+                {!loading && expanded && query && (
                     <button
                         onClick={() => {
                             setQuery('');

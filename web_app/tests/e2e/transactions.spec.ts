@@ -67,8 +67,13 @@ test.describe('Transactions Journey', () => {
         await page.getByRole('button', { name: 'Update Transaction' }).click();
         await expect(page.getByRole('heading', { name: 'Edit Transaction' })).not.toBeVisible();
 
-        // Verify updated quantity is rendered
-        await expect(page.getByText('180').first()).toBeVisible();
+        // Verify updated quantity is rendered — in the table, which is what the
+        // assertion means. An unscoped getByText('180') takes the first node in
+        // the DOM holding those digits, which is whatever chrome happens to
+        // print a number containing them (an index quote, a KPI).
+        await expect(
+            page.getByRole('row', { name: /Buy/i }).filter({ hasText: 'AAPL' }).first()
+        ).toContainText('180');
     });
 
     test('deletes a transaction with confirmation and removes it from table', async ({ page }) => {

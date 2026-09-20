@@ -13,6 +13,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  // The phone shell's bars pad themselves with `env(safe-area-inset-*)`, which
+  // resolves to 0 unless the viewport covers the notch and home indicator.
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {

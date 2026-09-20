@@ -454,3 +454,29 @@
     border-color: hsl(var(--border));
   }
 }
+/* ============================
+   PHONE SHELL (iOS parity)
+   ============================
+   The bars of the iPhone shell — navigation bar, control bar, tab bar — are the
+   web twin of `liquidGlass()` in Theme.swift: a translucent, blurred ground
+   that the content scrolls under, not a solid strip laid beside it.
+
+   `-webkit-backdrop-filter` is not redundant here: iOS Safari still needs the
+   prefix, and the phone shell is exactly where this runs. Without a backdrop
+   filter the fallback is the opaque bar colour, which is what Theme.swift falls
+   back to on an OS without Liquid Glass. */
+
+.ios-bar {
+  background: hsl(var(--background) / 0.72);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ios-bar { background: var(--menu-solid); }
+}
+
+/* Safe-area padding for the notch and the home indicator. These need
+   `viewport-fit=cover` (set in app/layout.tsx) to resolve to anything but 0. */
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }

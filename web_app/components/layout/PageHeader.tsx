@@ -1,10 +1,8 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element -- small static brand logos; next/image optimization adds no value and would require extra config */
-
 import dynamic from 'next/dynamic';
 import { cn, formatCompactNumber } from '@/lib/utils';
-import { Menu, ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
 import { StockSearchBar } from '@/components/StockSearchBar';
@@ -35,7 +33,6 @@ interface PageHeaderProps {
   availableCurrencies?: string[];
   isFetching?: boolean;
   onIndexClick?: () => void;
-  onMobileMenuOpen?: () => void;
   isMarketOpen?: boolean;
   lastUpdated?: Date | null;
   marketValue?: number | null;
@@ -62,7 +59,6 @@ export function PageHeader({
   availableCurrencies,
   isFetching,
   onIndexClick,
-  onMobileMenuOpen,
   isMarketOpen,
   lastUpdated,
   marketValue,
@@ -76,20 +72,16 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        'sticky top-0 z-40 flex items-center h-[52px] shrink-0 px-3 sm:px-5 gap-2 sm:gap-3',
+        // Desktop only. Below `md` the phone shell draws its own navigation bar
+        // and control bar (components/layout/mobile/), which mirror the native
+        // iPhone app's toolbar + GlobalControlBar.
+        'sticky top-0 z-40 hidden md:flex items-center h-[52px] shrink-0 px-3 sm:px-5 gap-2 sm:gap-3',
         // Glass backdrop with subtle gradient
         'border-b border-border/60',
         'bg-gradient-to-r from-background/85 via-background/75 to-background/85',
         'backdrop-blur-xl supports-[backdrop-filter]:bg-background/60',
       )}
     >
-
-      {/* Mobile: logo + name */}
-      <div className="flex items-center gap-2 md:hidden">
-        <img src="/logo-sm.webp"      alt="Investa" width={24} height={24} className="w-6 h-6 rounded-md dark:hidden" />
-        <img src="/logo-dark-sm.webp" alt="Investa" width={24} height={24} className="w-6 h-6 rounded-md hidden dark:block" />
-        <span className="text-sm font-bold text-foreground">Investa</span>
-      </div>
 
       {/* Desktop: page title */}
       <h1 className="hidden md:block text-sm font-semibold text-foreground shrink-0 select-none truncate max-w-[120px] lg:max-w-none">
@@ -222,17 +214,6 @@ export function PageHeader({
           closedAccounts={closedAccounts}
           align="right"
         />
-
-        {/* Mobile: hamburger / nav trigger */}
-        {onMobileMenuOpen && (
-          <button
-            onClick={onMobileMenuOpen}
-            aria-label="Open Navigation Menu"
-            className="md:hidden h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-        )}
       </div>
     </header>
   );
