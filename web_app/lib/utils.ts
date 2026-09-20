@@ -43,6 +43,30 @@ export function formatCurrency(value: number, currency: string = 'USD'): string 
     return formatted;
 }
 
+/**
+ * An amount with no cents: `$452,423`, `฿1,204,900`.
+ *
+ * The phone twin of `MoneyForm.whole` (macos_app HoldingsTableView.swift). A
+ * list row is where the native app gives up the cents first, because a column
+ * of whole numbers is readable where the same column with cents is not — and
+ * because the cents are what push a figure into the label beside it.
+ */
+export function formatCurrencyWhole(value: number, currency: string = 'USD'): string {
+    const formatted = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency,
+        currencyDisplay: 'narrowSymbol',
+        notation: 'standard',
+        maximumFractionDigits: 0,
+    }).format(value);
+
+    if (currency === 'THB') {
+        return formatted.replace('THB', '฿').replace(/\s/g, '');
+    }
+
+    return formatted;
+}
+
 export function formatPercent(value: number): string {
     if (value === Infinity) return '∞';
     if (value === -Infinity) return '-∞';
