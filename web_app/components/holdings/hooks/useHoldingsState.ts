@@ -67,7 +67,14 @@ export function useHoldingsState() {
 
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
     const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('table');
+    // Cards, not a table, are what a phone gets first — the native iPhone app
+    // has no table at compact width at all (`iosHoldingRow` in macos_app
+    // HoldingsTableView.swift is the only row it draws there). A table on a
+    // 390pt screen shows two of its columns and hides the rest behind a
+    // sideways scroll, so the holdings arrived unreadable and every visit
+    // started with the same toggle. Desktop is unaffected: the table there is
+    // `md:block`, and this toggle is `md:hidden`.
+    const [mobileViewMode, setMobileViewMode] = useState<'card' | 'table'>('card');
     const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
     const [isGroupByMenuOpen, setIsGroupByMenuOpen] = useState(false);
 

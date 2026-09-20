@@ -22,17 +22,34 @@ const LONG_SYMBOL = {
     'Market Value': 61705355.42,
 };
 
-async function openCardView(page: import('@playwright/test').Page) {
+/** Opens Portfolio on a phone, where cards are what the tab opens in. */
+async function openPortfolio(page: import('@playwright/test').Page) {
     await page.addInitScript(() => localStorage.setItem('investa_active_tab', 'allocation'));
     await page.setViewportSize(PHONE);
     await page.goto('/');
-    await page.locator('[title="Switch to Card View"]').first().click();
 }
 
 test.describe('Holdings cards on a phone', () => {
+    test('cards are what the tab opens in, with the table a tap away', async ({ page }) => {
+        await loginAsMockUser(page);
+        await openPortfolio(page);
+
+        // No toggle first: a phone table shows two of its columns and hides the
+        // rest behind a sideways scroll, so it is not where the tab should land.
+        await expect(page.locator('h3.text-\\[17px\\]').first()).toBeVisible();
+
+        // The table is still there for anyone who wants it. Both views stay in
+        // the DOM — the toggle switches which one is shown, so this is about
+        // visibility, not presence.
+        await page.locator('[title="Switch to Table View"]').first().click();
+        await expect(page.locator('h3.text-\\[17px\\]').first()).toBeHidden();
+        await page.locator('[title="Switch to Card View"]').first().click();
+        await expect(page.locator('h3.text-\\[17px\\]').first()).toBeVisible();
+    });
+
     test('the market value reads as money, not a bare number', async ({ page }) => {
         await loginAsMockUser(page);
-        await openCardView(page);
+        await openPortfolio(page);
         const amount = page.locator('h3.text-\\[17px\\]').first()
             .locator('xpath=ancestor::div[contains(@class,"justify-between")][1]')
             .locator('div.text-\\[15px\\]');
@@ -44,7 +61,7 @@ test.describe('Holdings cards on a phone', () => {
 
     test('a long symbol is shown in full, and the amount shortens instead', async ({ page }) => {
         await loginAsMockUser(page, { initialHoldings: [LONG_SYMBOL, ...MOCK_HOLDINGS] });
-        await openCardView(page);
+        await openPortfolio(page);
 
         const symbol = page.locator('h3.text-\\[17px\\]').first();
         await expect(symbol).toHaveText('SCBRMS&P500');
