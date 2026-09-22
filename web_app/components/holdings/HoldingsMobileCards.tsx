@@ -149,7 +149,11 @@ export const HoldingsMobileCards: React.FC<HoldingsMobileCardsProps> = ({
                 return (
                     <Card
                         key={`mobile-${holding.Symbol}-${idx}`}
-                        className="bg-card rounded-2xl border-none p-0 relative group cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
+                        /* p-3.5 is the native row's own inset (`.padding(14)` on
+                           iosHoldingRow). It was p-0, so the icon's star badge and
+                           the amount sat flush against the card's top edge with
+                           nothing above them, and the row read as cramped. */
+                        className="bg-card rounded-2xl border-none p-3.5 relative group cursor-pointer hover:border-cyan-500/50 transition-all active:scale-[0.98]"
                         onClick={() => openStockDetail(holding.Symbol, currency)}
                     >
                         <div className="space-y-3">
@@ -163,8 +167,13 @@ export const HoldingsMobileCards: React.FC<HoldingsMobileCardsProps> = ({
                                 `min-w-0` on the symbol and `shrink-0` on the amount
                                 are what keep them apart: without them neither side
                                 yields, so a long symbol runs under its own figure
-                                instead of the row giving way. */}
-                            <div className="flex justify-between items-start gap-2">
+                                instead of the row giving way.
+
+                                Centred, not top-aligned (`HStack(alignment: .center)`
+                                in the native header): the amount block is shorter
+                                than the 40px icon beside it, so `items-start` left
+                                the figure pinned to the very top of the card. */}
+                            <div className="flex justify-between items-center gap-2">
                                 <SymbolAndAmount
                                     symbol={holding.Symbol}
                                     value={getValue(holding, "Mkt Val")}
