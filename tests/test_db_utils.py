@@ -115,6 +115,52 @@ def test_update_transaction(db_conn, sample_transaction_data):
     assert row["Symbol"] == "AAPL"  # Unchanged
 
 
+def test_update_transfer_leaves_rows_sharing_its_note_alone(db_conn):
+    """A transfer is one row; editing it must not touch another row with the same Note."""
+    base = {
+        "Symbol": "$CASH",
+        "Local Currency": "USD",
+        "Note": "monthly",
+    }
+    _, transfer_id = add_transaction_to_db(
+        db_conn,
+        {
+            **base,
+            "Date": date(2026, 1, 5),
+            "Type": "Transfer",
+            "Quantity": 1000.0,
+            "Total Amount": 1000.0,
+            "Account": "A",
+            "To Account": "B",
+        },
+    )
+    _, deposit_id = add_transaction_to_db(
+        db_conn,
+        {
+            **base,
+            "Date": date(2025, 3, 1),
+            "Type": "Deposit",
+            "Quantity": 50.0,
+            "Total Amount": 50.0,
+            "Account": "C",
+        },
+    )
+
+    success = update_transaction_in_db(
+        db_conn,
+        transfer_id,
+        {"Type": "Transfer", "Date": "2026-02-01", "Total Amount": 2000.0},
+    )
+    assert success is True
+    # Commit on the same connection: any stray write would now persist.
+    db_conn.commit()
+
+    df, _ = load_all_transactions_from_db(db_conn, {}, "USD")
+    deposit = df[df["original_index"] == deposit_id].iloc[0]
+    assert deposit["Date"].date() == date(2025, 3, 1)
+    assert deposit["Total Amount"] == 50.0
+
+
 def test_delete_transaction(db_conn, sample_transaction_data):
     _, new_id = add_transaction_to_db(db_conn, sample_transaction_data)
 
