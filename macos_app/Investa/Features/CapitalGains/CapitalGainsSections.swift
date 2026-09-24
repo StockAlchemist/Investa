@@ -1,11 +1,6 @@
 import SwiftUI
 import Charts
 
-private let cgDayFormatter: DateFormatter = {
-    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
-}()
-private func cgParseDay(_ s: String) -> Date? { cgDayFormatter.date(from: String(s.prefix(10))) }
-
 /// "28 Aug" for an acquisition, with the year only when it falls outside the
 /// current market year — a lot bought last December is still short-term, and
 /// a bare "12 Dec" would read as this year's.
@@ -72,19 +67,19 @@ struct UnrealizedTaxSection: View {
         var out: [CLot] = []
         for h in holdings {
             for raw in h.raw["lots"]?.arrayValue ?? [] {
-                guard let dStr = raw["Date"]?.stringValue, cgParseDay(dStr) != nil else { continue }
                 // Counted on the market's clock, never the device's. Investa runs
                 // on a Bangkok calendar that is up to a day ahead of New York, and
                 // a day is the whole margin this card is about: it decides both
-                // `isLT` and the countdown to the 365-day boundary.
-                let heldDays = -(MarketTime.dayDiff(dStr, timeZone: nil) ?? 0)
+                // `isLT` and the countdown to the long-term date.
+                guard let dStr = raw["Date"]?.stringValue,
+                      let remaining = MarketTime.daysUntilLongTerm(dStr) else { continue }
                 out.append(CLot(symbol: h.symbol, account: h.account, date: String(dStr.prefix(10)),
                                 qty: raw["Quantity"]?.doubleValue ?? 0,
                                 cost: raw["Cost Basis"]?.doubleValue ?? 0,
                                 value: raw["Market Value"]?.doubleValue ?? 0,
                                 gain: raw["Unreal. Gain"]?.doubleValue ?? 0,
                                 gainPct: raw["Unreal. Gain %"]?.doubleValue ?? 0,
-                                isLT: heldDays >= 365, daysToLong: max(0, 365 - heldDays)))
+                                isLT: remaining <= 0, daysToLong: max(0, remaining)))
             }
         }
         return out

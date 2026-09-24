@@ -110,3 +110,31 @@ final class MarketTimeFormatTests: XCTestCase {
         XCTAssertEqual(tx.displayDate, "15 Jan 2024")
     }
 }
+
+/// Long-term means held *more than* a year — the twin of the web's
+/// `tests/unit/tax_lots.test.ts`, so both clients flip a lot on the same day.
+final class MarketTimeLongTermTests: XCTestCase {
+
+    private func day(_ iso: String) -> Date { MarketTime.calendarDay(iso)! }
+    private func iso(_ d: Date?) -> String? { d.map { MarketTime.isoFormatter(timeZone: MarketTime.utc).string(from: $0) } }
+
+    func testLongTermBeginsTheDayAfterTheAnniversary() {
+        XCTAssertEqual(iso(MarketTime.longTermDate("2025-03-10")), "2026-03-11")
+        XCTAssertEqual(iso(MarketTime.longTermDate("2025-12-31")), "2027-01-01")
+    }
+
+    func testALeapDayInTheHoldingYearCostsNothing() {
+        // 365 days after 1 Feb 2024 is 31 Jan 2025 — two days early.
+        XCTAssertEqual(iso(MarketTime.longTermDate("2024-02-01")), "2025-02-02")
+    }
+
+    func testALeapDayPurchaseAnchorsOn28February() {
+        XCTAssertEqual(iso(MarketTime.longTermDate("2024-02-29")), "2025-03-01")
+    }
+
+    func testTheAnniversaryItselfIsStillShortTerm() {
+        XCTAssertEqual(MarketTime.daysUntilLongTerm("2025-03-10", from: day("2026-03-10")), 1)
+        XCTAssertEqual(MarketTime.daysUntilLongTerm("2025-03-10", from: day("2026-03-11")), 0)
+        XCTAssertNil(MarketTime.daysUntilLongTerm("not a date", from: day("2026-03-11")))
+    }
+}

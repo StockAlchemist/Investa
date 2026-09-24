@@ -224,6 +224,32 @@ enum MarketTime {
         return utcCalendar.dateComponents([.day], from: today, to: target).day
     }
 
+    /// The day a lot bought on `iso` turns long-term, at UTC midnight — the twin
+    /// of the web's `lib/tax_lots.ts`. Long-term means held *more than* a year,
+    /// so it is the day after the first anniversary: a lot bought 10 Mar 2025 is
+    /// still short-term on 10 Mar 2026. Counting 365 days flipped it a day early,
+    /// and two across a 29 February. Adding a year clamps a 29 Feb purchase to
+    /// 28 Feb, so that lot turns long-term on 1 Mar.
+    static func longTermDate(_ iso: String) -> Date? {
+        guard let bought = calendarDay(iso),
+              let anniversary = utcCalendar.date(byAdding: .year, value: 1, to: bought)
+        else { return nil }
+        return utcCalendar.date(byAdding: .day, value: 1, to: anniversary)
+    }
+
+    /// Whole days from today on a market's clock until the lot bought on `iso` is
+    /// long-term: positive while short-term, zero or negative once long-term.
+    static func daysUntilLongTerm(_ iso: String, timeZone identifier: String? = nil) -> Int? {
+        guard let today = today(timeZone: identifier) else { return nil }
+        return daysUntilLongTerm(iso, from: today)
+    }
+
+    /// `daysUntilLongTerm` against an explicit `today` (a UTC-midnight calendar day).
+    static func daysUntilLongTerm(_ iso: String, from today: Date) -> Int? {
+        guard let lt = longTermDate(iso) else { return nil }
+        return utcCalendar.dateComponents([.day], from: today, to: lt).day
+    }
+
     /// Whether a calendar date falls no later than `months` months past today on a
     /// market's own clock — the horizon behind the "3 Months / 1 Year" calendar
     /// toggles. A month is a calendar month, clamped to the month's last day.
