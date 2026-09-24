@@ -955,7 +955,12 @@ export async function triggerRefresh(secret: string): Promise<StatusResponse> {
     const { data, error, response } = await apiClient.POST("/api/webhook/refresh", {
         body: { secret } as never,
     });
-    if (error) throw new Error(`Failed to trigger refresh: ${response.statusText}`);
+    if (error) {
+        // The server names the reason (unset secret vs wrong secret); a bare
+        // statusText would hide which one it is.
+        const detail = (error as { detail?: string }).detail;
+        throw new Error(detail || `Failed to trigger refresh: ${response.statusText}`);
+    }
     return data as unknown as StatusResponse;
 }
 

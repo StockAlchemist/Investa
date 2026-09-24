@@ -99,7 +99,7 @@ struct AccountPreferencesView: View {
 
     private func accountCard(_ acc: String) -> some View {
         let closureDateStr = closureMap[acc] ?? ""
-        let isClosed = !closureDateStr.isEmpty && closureDateStr <= ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let isClosed = !closureDateStr.isEmpty && closureDateStr <= MarketTime.todayISO()
 
         return VStack(alignment: .leading, spacing: 14) {
             // Account Title & Status

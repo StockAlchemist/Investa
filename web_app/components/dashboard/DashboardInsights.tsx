@@ -7,15 +7,14 @@ import { useAuth } from '../../context/AuthContext';
 import { Holding, fetchSettings } from '../../lib/api';
 import { cn, formatCurrency } from '../../lib/utils';
 import { useStockModal } from '@/context/StockModalContext';
-import { formatCalendarDate } from '../../lib/market_time';
+import { formatCalendarDate, marketToday } from '../../lib/market_time';
+import { daysUntilLongTerm } from '../../lib/tax_lots';
 
 interface DashboardInsightsProps {
     holdings: Holding[];
     currency: string;
 }
 
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const ONE_YEAR_DAYS = 365;
 const RIPENING_WINDOW_DAYS = 30;
 const DRIFT_ALERT_PCT = 10;
 const MOS_SIGNIFICANT = 10; // margin of safety > 10% counts as "significantly undervalued"
@@ -73,7 +72,7 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
     const settingsQuery = useQuery({ queryKey: ['settings', user?.username], queryFn: fetchSettings, staleTime: 5 * 60 * 1000 });
     const targets = settingsQuery.data?.target_allocation;
     // Freeze "now" at mount — re-renders shouldn't shift the ripening window mid-session.
-    const [now] = useState<number>(() => Date.now());
+    const [today] = useState<string>(() => marketToday());
     const [openKind, setOpenKind] = useState<InsightKind | 'all' | null>(null);
 
     const { insights, details } = useMemo<{ insights: Insight[]; details: InsightDetails }>(() => {
@@ -84,18 +83,15 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
         // 1) Lots ripening to long-term within 30 days, with a positive gain.
         for (const h of holdings) {
             for (const lot of h.lots || []) {
-                if (!lot.Date) continue;
-                const lotMs = new Date(lot.Date).getTime();
-                if (isNaN(lotMs)) continue;
-                const heldDays = (now - lotMs) / ONE_DAY_MS;
-                const remaining = ONE_YEAR_DAYS - heldDays;
+                const remaining = daysUntilLongTerm(lot.Date, today);
+                if (remaining === null) continue;
                 const gain = (lot['Unreal. Gain'] as number) || 0;
                 if (remaining > 0 && remaining <= RIPENING_WINDOW_DAYS && gain > 0) {
                     det.ripening.push({
                         symbol: h.Symbol,
                         account: h.Account,
-                        date: lot.Date,
-                        daysRemaining: Math.ceil(remaining),
+                        date: lot.Date!,
+                        daysRemaining: remaining,
                         quantity: lot.Quantity,
                         gain,
                     });
@@ -203,7 +199,7 @@ export default function DashboardInsights({ holdings, currency }: DashboardInsig
         }
 
         return { insights: out, details: det };
-    }, [holdings, targets, currency, now]);
+    }, [holdings, targets, currency, today]);
 
     const hasAny = insights.length > 0;
 

@@ -864,7 +864,9 @@ def build_allocation(
         "strategy_id": strategy.id,
         "name": strategy.name,
         "capital": capital,
-        "as_of": str(today or date.today()),
+        # A market date (the day the quotes are from), so the market's clock —
+        # not the server's, which in Bangkok is up to a day ahead.
+        "as_of": str(today or get_est_today()),
         "ranking_age_days": age_days,
         "ranking_is_stale": bool(
             age_days is not None and age_days >= STALE_RANKING_DAYS

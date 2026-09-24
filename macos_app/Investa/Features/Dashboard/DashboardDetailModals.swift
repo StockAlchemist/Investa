@@ -69,21 +69,18 @@ private func isUnknownCategory(_ v: String?) -> Bool {
 /// Compute the insight summaries + underlying detail records (matches the web).
 func computeInsights(holdings: [Holding], currency: String,
                      targets: [String: [String: Double]]) -> (summaries: [InsightSummary], details: InsightDetails) {
-    let oneYear = 365.0, window = 30.0, driftAlert = 10.0, mosSignificant = 10.0
-    let now = Date()
+    let window = 30, driftAlert = 10.0, mosSignificant = 10.0
     var det = InsightDetails()
 
     // 1) Lots ripening to long-term within 30 days, with a positive gain.
     for h in holdings {
         for lot in h.raw["lots"]?.arrayValue ?? [] {
             guard let dStr = lot["Date"]?.stringValue,
-                  let d = insightDateFmt.date(from: String(dStr.prefix(10))) else { continue }
-            let heldDays = now.timeIntervalSince(d) / 86_400
-            let remaining = oneYear - heldDays
+                  let remaining = MarketTime.daysUntilLongTerm(dStr) else { continue }
             let gain = lot["Unreal. Gain"]?.doubleValue ?? 0
             if remaining > 0, remaining <= window, gain > 0 {
                 det.ripening.append(RipeningLot(symbol: h.symbol, account: h.account, date: dStr,
-                                                daysRemaining: Int(ceil(remaining)),
+                                                daysRemaining: remaining,
                                                 quantity: lot["Quantity"]?.doubleValue ?? 0, gain: gain))
             }
         }

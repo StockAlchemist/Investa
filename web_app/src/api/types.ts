@@ -1215,6 +1215,11 @@ export interface paths {
         /**
          * Clear Cache
          * @description Clears all application caches (files and in-memory).
+         *
+         *     Requires a login: the caches are shared, and clearing them forces every
+         *     user's next request to re-download decades of price history. Unguarded, any
+         *     device on the network could trigger that, and so could any web page — a
+         *     bodiless POST needs no CORS preflight.
          */
         post: operations["clear_cache_api_clear_cache_post"];
         delete?: never;
@@ -2798,6 +2803,11 @@ export interface paths {
         /**
          * Clear Cache
          * @description Clears all application caches (files and in-memory).
+         *
+         *     Requires a login: the caches are shared, and clearing them forces every
+         *     user's next request to re-download decades of price history. Unguarded, any
+         *     device on the network could trigger that, and so could any web page — a
+         *     bodiless POST needs no CORS preflight.
          */
         post: operations["clear_cache_clear_cache_post"];
         delete?: never;

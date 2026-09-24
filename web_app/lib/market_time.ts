@@ -17,9 +17,8 @@ function calendarDay(iso: string | null | undefined): string | null {
     return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
 }
 
-/** Today's `YYYY-MM-DD` in a market's own timezone. */
-export function marketToday(timeZone?: string | null): string {
-    const now = new Date();
+/** Today's `YYYY-MM-DD` in a market's own timezone. `now` is for tests. */
+export function marketToday(timeZone?: string | null, now: Date = new Date()): string {
     for (const tz of [timeZone, DEFAULT_MARKET_TIMEZONE]) {
         if (!tz) continue;
         try {
@@ -124,4 +123,55 @@ function pad2(n: number): string {
 
 function shortMonth(d: Date): string {
     return d.toLocaleDateString(undefined, { calendar: 'gregory', month: 'short', timeZone: 'UTC' });
+}
+
+/**
+ * Milliseconds for a chart point's date, whichever shape the API sends it in:
+ * an ISO instant with an offset, a bare `YYYY-MM-DD` (UTC midnight), or the
+ * zoneless `YYYY-MM-DD HH:MM:SS` that /market_history uses for intraday bars,
+ * which is UTC. `new Date()` reads that last shape on the *device* clock,
+ * which puts a New York open at 02:30 for a reader in Bangkok.
+ */
+export function chartInstant(value: string | number | Date): number {
+    if (typeof value === 'number') return value;
+    if (value instanceof Date) return value.getTime();
+    const zoneless = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(value);
+    return Date.parse(zoneless ? `${value.replace(' ', 'T')}Z` : value);
+}
+
+/**
+ * The calendar day (`YYYY-MM-DD`) of a *daily* chart point. Daily bars sit at
+ * UTC midnight, so their day is read in UTC: on New York's clock they fall on
+ * the evening before, and a tooltip formatted there shows the previous day.
+ */
+export function chartDay(value: string | number | Date): string {
+    const t = chartInstant(value);
+    return isNaN(t) ? '' : new Date(t).toISOString().slice(0, 10);
+}
+
+/**
+ * An intraday instant on the market's clock, in the app's notation:
+ * `Wed, 05 Aug 10:30 AM`. The weekday and year are opt-in, as on the native
+ * charts (`EEE, dd MMM h:mm a`).
+ */
+export function formatMarketTime(
+    value: string | number | Date,
+    { weekday = false, year = false }: { weekday?: boolean; year?: boolean } = {},
+    timeZone: string = DEFAULT_MARKET_TIMEZONE,
+): string {
+    const t = chartInstant(value);
+    if (isNaN(t)) return typeof value === 'string' ? value : '';
+    const d = new Date(t);
+    const parts = new Intl.DateTimeFormat(undefined, {
+        calendar: 'gregory',
+        timeZone,
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    }).formatToParts(d);
+    const at = (type: string) => parts.find(p => p.type === type)?.value ?? '';
+    const time = d.toLocaleTimeString(undefined, { timeZone, hour: 'numeric', minute: '2-digit' });
+    const day = `${at('day')} ${at('month')}${year ? ` ${at('year')}` : ''}`;
+    return `${weekday ? `${at('weekday')}, ` : ''}${day} ${time}`;
 }

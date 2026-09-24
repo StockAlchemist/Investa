@@ -258,7 +258,8 @@ final class AppState: ObservableObject {
             }
             targetAllocation = settings.targetAllocation ?? [:]
             // Accounts with a closure date on/before today are "closed".
-            let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
+            // On the market's clock, as the backend decides it (`get_est_today`).
+            let today = MarketTime.todayISO()
             closedAccounts = Set((settings.accountClosureDates ?? [:]).compactMap { acc, date in
                 String(date.prefix(10)) <= today ? acc : nil
             })

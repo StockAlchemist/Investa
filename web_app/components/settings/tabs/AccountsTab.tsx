@@ -4,6 +4,7 @@ import { Settings as SettingsType, Holding, updateSettings } from '../../../lib/
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
 import { cn } from '../../../lib/utils';
+import { marketToday } from '../../../lib/market_time';
 import AccountGroupManager from '../../AccountGroupManager';
 import YieldSettings from '../../YieldSettings';
 import {
@@ -183,7 +184,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                         <div className="space-y-3">
                             {configurableAccounts.map(account => {
                                 const closureDate = settings?.account_closure_dates?.[account] || '';
-                                const isEffectivelyClosed = closureDate && closureDate <= new Date().toISOString().slice(0, 10);
+                                const isEffectivelyClosed = closureDate && closureDate <= marketToday();
                                 return (
                                     <div
                                         key={account}

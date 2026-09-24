@@ -19,6 +19,7 @@ import PeriodSelector from './PeriodSelector';
 
 import { PerformanceData } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
+import { chartDay, formatCalendarDate, formatCalendarDayMonth, formatMarketTime } from '../lib/market_time';
 
 
 
@@ -399,28 +400,25 @@ export default function PerformanceGraph({
         );
     }
 
-    const formatXAxis = (tickItem: string) => {
-        const date = new Date(tickItem);
-        // For short periods, show time. For 1M (hourly), maybe show Day + Time?
-        // Let's simple check:
+    // 1D and 5D carry real instants, read on the market clock. Every other
+    // period is daily bars at UTC midnight, whose day is read in UTC — on New
+    // York's clock they fall on the evening before (see `chartDay`).
+    const isIntraday = period === '1d' || period === '5d';
+
+    const formatXAxis = (tickItem: number) => {
         if (period === '1d') {
-            return date.toLocaleTimeString(undefined, { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+            return new Date(tickItem).toLocaleTimeString(undefined, { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
         } else if (period === '5d') {
-            // Show Day + Time for context
-            return date.toLocaleString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', weekday: 'short', hour: '2-digit' });
-        } else if (period === '1m') {
-            // Hourly for 1 month. Date + maybe Hour? Too crowded.
-            // Just Date is probably fine, or Day.
-            return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
-        } else if (['3y', '5y', '10y', 'all', 'custom'].includes(period)) {
+            // Day + hour for context; no date, so no ordering to get wrong.
+            return new Date(tickItem).toLocaleString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', weekday: 'short', hour: '2-digit' });
+        }
+        const day = chartDay(tickItem);
+        if (['3y', '5y', '10y', 'all', 'custom'].includes(period)) {
             // Long periods or custom range: Show Month + Year if range is large
             const showYear = period !== 'custom' || !customToDate || !customFromDate || (new Date(customToDate).getTime() - new Date(customFromDate).getTime() > 1000 * 60 * 60 * 24 * 365);
-            if (showYear) {
-                return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', year: 'numeric' });
-            }
-            return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+            if (showYear) return formatCalendarDate(day, { month: 'short', year: 'numeric' });
         }
-        return date.toLocaleDateString(undefined, { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+        return formatCalendarDayMonth(day);
     };
 
     const formatYAxis = (tickItem: number) => {
@@ -437,31 +435,11 @@ export default function PerformanceGraph({
         if (active && payload && payload.length) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const dataPoint = payload[0].payload as any;
-            const dateObj = new Date(dataPoint.date);
-
-            let dateStr;
-            // For intraday periods (1d, 5d), show time
-            if (period === '1d' || period === '5d' || period === '1m') { // 1M is hourly, so show time too? Yes.
-                // Actually 1M is 60m interval.
-                dateStr = dateObj.toLocaleString(undefined, {
-                    calendar: 'gregory',
-                    timeZone: 'America/New_York',
-                    weekday: 'short',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-            } else {
-                dateStr = dateObj.toLocaleDateString(undefined, {
-                    calendar: 'gregory',
-                    timeZone: 'America/New_York',
-                    weekday: 'short',
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                });
-            }
+            // `05 Aug 2026`, or `Wed, 05 Aug 10:30 AM` for an intraday point —
+            // the native chart's notation.
+            const dateStr = isIntraday
+                ? formatMarketTime(dataPoint.date, { weekday: true })
+                : formatCalendarDate(chartDay(dataPoint.date));
 
             // Find benchmark keys present in this data point
             const allKeys = Object.keys(dataPoint);

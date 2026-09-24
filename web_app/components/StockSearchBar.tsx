@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import dynamic from 'next/dynamic';
 import { Search, X, TrendingUp, BarChart3, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fetchSymbolSearch, type SymbolSearchResult } from '@/lib/api';

@@ -109,18 +109,28 @@ struct TransactionsView: View {
         return viewModel.transactions.filter { !isInternalCash($0) && keys.contains(dupKey($0)) }.count
     }
 
+    /// Presets start on the market's day, as on the web (`computeDateRange`),
+    /// and stay open-ended so a SET trade dated ahead of New York still lists.
     private var dateRange: (from: String?, to: String?) {
-        let cal = MarketTime.localCalendar; let now = Date()
-        func iso(_ d: Date) -> String { MarketTime.isoFormatter().string(from: d) }
-        switch datePreset {
-        case .all: return (nil, nil)
-        case .mtd: return (iso(cal.date(from: cal.dateComponents([.year, .month], from: now))!), nil)
-        case .ytd: return (iso(cal.date(from: cal.dateComponents([.year], from: now))!), nil)
-        case .d30: return (iso(cal.date(byAdding: .day, value: -30, to: now)!), nil)
-        case .d90: return (iso(cal.date(byAdding: .day, value: -90, to: now)!), nil)
-        case .y1: return (iso(cal.date(byAdding: .year, value: -1, to: now)!), nil)
-        case .custom: return (iso(customFrom), iso(customTo))
+        if datePreset == .all { return (nil, nil) }
+        if datePreset == .custom {
+            let iso = MarketTime.isoFormatter()
+            return (iso.string(from: customFrom), iso.string(from: customTo))
         }
+        // `today` is a calendar day at UTC midnight; reckon and print it in UTC.
+        let utc = TimeZone(identifier: "UTC")!
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = utc
+        guard let today = MarketTime.today(timeZone: nil) else { return (nil, nil) }
+        let from: Date?
+        switch datePreset {
+        case .mtd: from = cal.date(from: cal.dateComponents([.year, .month], from: today))
+        case .ytd: from = cal.date(from: cal.dateComponents([.year], from: today))
+        case .d30: from = cal.date(byAdding: .day, value: -30, to: today)
+        case .d90: from = cal.date(byAdding: .day, value: -90, to: today)
+        case .y1: from = cal.date(byAdding: .year, value: -1, to: today)
+        case .all, .custom: from = nil   // handled above
+        }
+        return (from.map { MarketTime.isoFormatter(timeZone: utc).string(from: $0) }, nil)
     }
 
     private var filtered: [Transaction] {

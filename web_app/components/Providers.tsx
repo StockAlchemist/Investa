@@ -8,6 +8,7 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 import { ThemeProvider } from 'next-themes';
 import { StockModalProvider } from '@/context/StockModalContext';
 import { WatchlistProvider } from '@/context/WatchlistContext';
+import { QUERY_CACHE_STORAGE_KEY } from '@/lib/user_storage';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
     const [queryClient] = useState(() => new QueryClient({
@@ -25,7 +26,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         if (typeof window !== 'undefined') {
             return createSyncStoragePersister({
                 storage: window.localStorage,
-                key: 'INVESTA_QUERY_CACHE', // Unique key for this app
+                key: QUERY_CACHE_STORAGE_KEY,
                 throttleTime: 1000,
             });
         }

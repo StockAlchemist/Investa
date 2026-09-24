@@ -11,7 +11,11 @@ enum MarketTime {
     /// Fallback zone for events that do not name their exchange's (Investa is US-first).
     static let defaultTimeZoneIdentifier = "America/New_York"
 
-    private static let utc = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
+    /// The zone a *daily* chart point is read in. The API ships daily bars at
+    /// UTC midnight (or as a bare day, parsed there), so on New York's clock
+    /// they fall on the evening before: a tooltip formatted in `defaultZone`
+    /// shows the previous day. Intraday instants stay on `defaultZone`.
+    static let utc = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
 
     /// Calendar days are compared in UTC so that no exchange's DST transition can
     /// land between the two dates being subtracted.
@@ -195,11 +199,55 @@ enum MarketTime {
         return utcCalendar.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day))
     }
 
+    /// Today on a market's clock as the wire's `yyyy-MM-dd` — for comparing
+    /// against dates the API ships (an account's closure date, say). The
+    /// device's date is up to a day ahead of New York in Bangkok, and UTC's
+    /// half a day, so neither agrees with the backend's `get_est_today()`.
+    static func todayISO(timeZone identifier: String? = nil) -> String {
+        guard let day = today(timeZone: identifier) else { return isoFormatter().string(from: Date()) }
+        return isoFormatter(timeZone: utc).string(from: day)
+    }
+
+    /// Today on a market's clock as a `Date` a `DatePicker` shows as that day:
+    /// the market's year/month/day at midnight on the device's own calendar,
+    /// which is the zone a picker (and `isoFormatter()`) reads it back in.
+    static func todayForPicker(timeZone identifier: String? = nil) -> Date {
+        guard let day = today(timeZone: identifier) else { return Date() }
+        let parts = utcCalendar.dateComponents([.year, .month, .day], from: day)
+        return localCalendar.date(from: parts) ?? Date()
+    }
+
     /// Whole days from today-on-the-market to `iso`. Negative for the past, nil if
     /// the date can't be read.
     static func dayDiff(_ iso: String, timeZone identifier: String?) -> Int? {
         guard let target = calendarDay(iso), let today = today(timeZone: identifier) else { return nil }
         return utcCalendar.dateComponents([.day], from: today, to: target).day
+    }
+
+    /// The day a lot bought on `iso` turns long-term, at UTC midnight — the twin
+    /// of the web's `lib/tax_lots.ts`. Long-term means held *more than* a year,
+    /// so it is the day after the first anniversary: a lot bought 10 Mar 2025 is
+    /// still short-term on 10 Mar 2026. Counting 365 days flipped it a day early,
+    /// and two across a 29 February. Adding a year clamps a 29 Feb purchase to
+    /// 28 Feb, so that lot turns long-term on 1 Mar.
+    static func longTermDate(_ iso: String) -> Date? {
+        guard let bought = calendarDay(iso),
+              let anniversary = utcCalendar.date(byAdding: .year, value: 1, to: bought)
+        else { return nil }
+        return utcCalendar.date(byAdding: .day, value: 1, to: anniversary)
+    }
+
+    /// Whole days from today on a market's clock until the lot bought on `iso` is
+    /// long-term: positive while short-term, zero or negative once long-term.
+    static func daysUntilLongTerm(_ iso: String, timeZone identifier: String? = nil) -> Int? {
+        guard let today = today(timeZone: identifier) else { return nil }
+        return daysUntilLongTerm(iso, from: today)
+    }
+
+    /// `daysUntilLongTerm` against an explicit `today` (a UTC-midnight calendar day).
+    static func daysUntilLongTerm(_ iso: String, from today: Date) -> Int? {
+        guard let lt = longTermDate(iso) else { return nil }
+        return utcCalendar.dateComponents([.day], from: today, to: lt).day
     }
 
     /// Whether a calendar date falls no later than `months` months past today on a

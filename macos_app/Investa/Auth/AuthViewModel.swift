@@ -102,13 +102,22 @@ final class AuthViewModel: ObservableObject {
 
     func logout() {
         KeychainStore.deleteToken()
+        forgetUserData()
         state = .loggedOut
     }
 
     private func handleExpiry() {
         guard case .loggedIn = state else { return }
         KeychainStore.deleteToken()
+        forgetUserData()
         errorMessage = "Your session expired. Please log in again."
         state = .loggedOut
+    }
+
+    /// Drop what this device kept for the signed-out user. The in-memory state
+    /// goes with the signed-in view tree; the chat history is on disk and would
+    /// otherwise open in the next user's session.
+    private func forgetUserData() {
+        UserDefaults.standard.removeObject(forKey: AIChatViewModel.storageKey)
     }
 }

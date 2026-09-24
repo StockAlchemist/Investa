@@ -4,14 +4,14 @@ import { TrendingUp, TrendingDown, AlertCircle, Info } from 'lucide-react';
 import { Holding, Lot } from '../lib/api';
 import { formatCurrency, cn } from '../lib/utils';
 import { useStockModal } from '@/context/StockModalContext';
-import { formatCalendarDate } from '@/lib/market_time';
+import { formatCalendarDate, marketToday } from '@/lib/market_time';
+import { daysUntilLongTerm } from '@/lib/tax_lots';
 
 interface Props {
     holdings: Holding[];
     currency: string;
 }
 
-const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 const MIN_HARVEST_LOSS = 100; // ignore lots with tiny losses below this absolute threshold
 
 type LotClass = 'ST' | 'LT';
@@ -21,30 +21,24 @@ interface ClassifiedLot {
     account?: string;
     lot: Lot;
     cls: LotClass;
-    holdingPeriodDays: number;
-    /** Days until this short-term lot graduates to long-term (negative if already LT) */
+    /** Days until this short-term lot graduates to long-term (0 once it has) */
     daysToLongTerm: number;
 }
 
 function classifyLots(holdings: Holding[]): ClassifiedLot[] {
-    const now = Date.now();
+    const today = marketToday();
     const out: ClassifiedLot[] = [];
     for (const h of holdings) {
         if (!h.lots) continue;
         for (const lot of h.lots) {
-            if (!lot.Date) continue;
-            const lotMs = new Date(lot.Date).getTime();
-            if (isNaN(lotMs)) continue;
-            const held = now - lotMs;
-            const heldDays = Math.floor(held / (24 * 60 * 60 * 1000));
-            const cls: LotClass = held >= ONE_YEAR_MS ? 'LT' : 'ST';
+            const remaining = daysUntilLongTerm(lot.Date, today);
+            if (remaining === null) continue;
             out.push({
                 symbol: h.Symbol,
                 account: h.Account,
                 lot,
-                cls,
-                holdingPeriodDays: heldDays,
-                daysToLongTerm: Math.max(0, 365 - heldDays),
+                cls: remaining <= 0 ? 'LT' : 'ST',
+                daysToLongTerm: Math.max(0, remaining),
             });
         }
     }
