@@ -205,7 +205,7 @@ struct ProjectionCardView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     Text(Fmt.percent(h.medianReturnPct, includeSign: true))  // Fmt.percent already prefixes +/-
                         .fontWeight(.semibold).monospacedDigit()
-                        .foregroundStyle(h.medianReturnPct >= 0 ? Color.green : .red)
+                        .foregroundStyle(h.medianReturnPct >= 0 ? Color.up : .down)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     if !isPhone {
                         Text("\(Fmt.compact(h.p10, code: cur)) – \(Fmt.compact(h.p90, code: cur))")

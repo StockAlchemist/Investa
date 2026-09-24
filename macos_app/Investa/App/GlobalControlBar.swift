@@ -76,8 +76,9 @@ struct GlobalControlBar<Trailing: View>: View {
     }
 
     private var sectionTitle: some View {
+        // Instrument Serif, as the web header's `page-title`.
         Text(section.rawValue)
-            .appFont(.headline)
+            .appFont(.display(size: 26))
             .lineLimit(1)
             .minimumScaleFactor(0.85)
             // Priority, not `fixedSize`: the title keeps its room ahead of the
@@ -157,9 +158,9 @@ struct GlobalControlBar<Trailing: View>: View {
                 Text(open ? "LIVE" : "CLOSED")
                     .appFont(.system(size: 11, weight: .bold)).tracking(0.5)
             }
-            .foregroundStyle(open ? Color.green : .secondary)
+            .foregroundStyle(open ? Color.up : .secondary)
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .background((open ? Color.green : Color.secondary).opacity(0.12), in: Capsule())
+            .background((open ? Color.up : Color.secondary).opacity(0.12), in: Capsule())
         }
     }
 
@@ -181,7 +182,7 @@ struct GlobalControlBar<Trailing: View>: View {
                 Image(systemName: "circle.fill")
                     .appFont(.system(size: 7))
                     .symbolEffect(.pulse, options: .repeating, isActive: open)
-                    .foregroundStyle(open ? Color.green : .secondary)
+                    .foregroundStyle(open ? Color.up : .secondary)
                 if let ts = appState.lastUpdated {
                     Text(ts.formatted(date: .omitted, time: .shortened))
                         .appFont(.system(size: 11, weight: .medium)).monospacedDigit()

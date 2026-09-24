@@ -139,7 +139,7 @@ function TrendRow({ signal, label }: { signal: TrendSignal; label: string }) {
                     <span className="text-sm font-semibold truncate">
                         {signal.signal_name || label}
                     </span>
-                    <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                         {signal.signal_symbol}
                     </span>
                 </div>
@@ -253,7 +253,7 @@ export default function MarketTrendPanel({
     const header = (
         <div className="flex items-baseline justify-between gap-3">
             <span className="section-label">Market trend</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-600 dark:text-slate-400">
                 {smaMonths}-month average
             </span>
         </div>

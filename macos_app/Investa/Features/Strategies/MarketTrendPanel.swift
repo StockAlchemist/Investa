@@ -182,7 +182,7 @@ struct MarketTrendRow: View {
     let label: String
 
     private var isUp: Bool { signal.state == .up }
-    private var accent: Color { isUp ? .up : .orange }
+    private var accent: Color { isUp ? .up : .warn }
 
     /// The margin of the *active* reading: the month-end close that set it,
     /// against the average it was compared with. Same comparison as the state

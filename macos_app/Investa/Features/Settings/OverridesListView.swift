@@ -80,7 +80,7 @@ struct OverridesListView: View {
                     .padding(.vertical, 8)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .tint(.up)
             }
             .padding(.horizontal, embedded ? 0 : 16)
             .padding(.top, embedded ? 0 : 12)
@@ -212,7 +212,7 @@ struct OverridesListView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .tint(.red)
+                .tint(.down)
             }
         }
         .padding(16)
@@ -254,7 +254,7 @@ struct OverridesListView: View {
                         .fontWeight(.semibold)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .tint(.up)
                 .padding(.top, 8)
             }
         }

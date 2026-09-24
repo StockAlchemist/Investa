@@ -488,7 +488,7 @@ struct StockDetailView: View {
         let reported = status == "reported"
         let confirmed = status == "confirmed"
         let badgeText = reported ? "reported" : (confirmed ? "confirmed" : "est.")
-        let badgeTint: Color = reported ? Theme.earnings : (confirmed ? Color.up : .orange)
+        let badgeTint: Color = reported ? Theme.earnings : (confirmed ? Color.up : .warn)
 
         let heading = HStack(spacing: 6) {
             Image(systemName: icon).foregroundStyle(tint).appFont(.system(size: 14))
@@ -555,10 +555,10 @@ struct StockDetailView: View {
     @ViewBuilder private var aiScorecardSection: some View {
         if let sc = viewModel.analysis?.scorecard {
             let topics: [(id: String, name: String, icon: String, score: Double?, tint: Color)] = [
-                ("moat", "Moat & Edge", "shield.fill", sc.moat, .blue),
-                ("strength", "Financial Strength", "bolt.fill", sc.financialStrength, .orange),
-                ("predictability", "Predictability", "target", sc.predictability, .green),
-                ("growth", "Growth Pace", "chart.line.uptrend.xyaxis", sc.growth, .purple),
+                ("moat", "Moat & Edge", "shield.fill", sc.moat, .brand),
+                ("strength", "Financial Strength", "bolt.fill", sc.financialStrength, .warn),
+                ("predictability", "Predictability", "target", sc.predictability, .up),
+                ("growth", "Growth Pace", "chart.line.uptrend.xyaxis", sc.growth, .plum),
             ]
             
             let validScores = topics.compactMap(\.score)
@@ -569,10 +569,10 @@ struct StockDetailView: View {
             
             let compositeTierColor: Color = {
                 guard let cs = compositeScore else { return .secondary }
-                if cs >= 8.5 { return .green }
-                if cs >= 7.0 { return .indigo }
-                if cs >= 5.5 { return .orange }
-                return .red
+                if cs >= 8.5 { return .up }
+                if cs >= 7.0 { return .brand }
+                if cs >= 5.5 { return .warn }
+                return .down
             }()
             
             VStack(alignment: .leading, spacing: 12) {
@@ -582,7 +582,7 @@ struct StockDetailView: View {
                         .foregroundStyle(.white)
                         .frame(width: 26, height: 26)
                         .background(
-                            LinearGradient(colors: [.purple, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            LinearGradient(colors: [.plum, .brand], startPoint: .topLeading, endPoint: .bottomTrailing),
                             in: RoundedRectangle(cornerRadius: 7)
                         )
                     
@@ -594,9 +594,9 @@ struct StockDetailView: View {
                     
                     Text("Gemini AI")
                         .appFont(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.purple)
+                        .foregroundStyle(.plum)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.12), in: Capsule())
+                        .background(Color.plum.opacity(0.12), in: Capsule())
                 }
                 
                 if let cs = compositeScore {
@@ -705,7 +705,7 @@ struct StockDetailView: View {
                     Text("Refresh")
                 }
                 .appFont(.caption2.weight(.bold))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(.dataTeal)
             }
             .buttonStyle(.plain)
         }
@@ -731,11 +731,11 @@ struct StockDetailView: View {
             let cols = hSizeClass == .regular ? 2 : 1
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: cols), spacing: 12) {
                 if let bestFitVal, bestFitVal > 0 {
-                    ivCard("Best-Fit: \(rec?.name ?? "Valuation Method")", bestFitVal, upside: upside(bestFitVal, iv.currentPrice), range: bestFitRange, tint: .indigo, icon: "sparkles")
+                    ivCard("Best-Fit: \(rec?.name ?? "Valuation Method")", bestFitVal, upside: upside(bestFitVal, iv.currentPrice), range: bestFitRange, tint: .brand, icon: "sparkles")
                 }
                 if let blendedVal, blendedVal > 0 {
                     let title = iv.valuationStatus == "nav" ? "Net Asset Value (NAV)" : "Blended Intrinsic Value"
-                    ivCard(title, blendedVal, upside: upside(blendedVal, iv.currentPrice), range: blendedRange, tint: .indigo, icon: "scalemass")
+                    ivCard(title, blendedVal, upside: upside(blendedVal, iv.currentPrice), range: blendedRange, tint: .brand, icon: "scalemass")
                 }
             }
         }
@@ -747,15 +747,15 @@ struct StockDetailView: View {
     @ViewBuilder private var marketStatsSection: some View {
         let cols = hSizeClass == .regular ? 3 : 1
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: cols), spacing: 12) {
-            statCard("Market Cap", Fmt.compact(f?.marketCap ?? 0, code: nativeCur), icon: "globe", iconTint: .indigo)
+            statCard("Market Cap", Fmt.compact(f?.marketCap ?? 0, code: nativeCur), icon: "globe", iconTint: .brand)
             fiftyTwoWeekCard
             if let e = f?.expenseRatio {
-                statCard("Expense Ratio", Fmt.percent(e), icon: "receipt", iconTint: .orange)
+                statCard("Expense Ratio", Fmt.percent(e), icon: "receipt", iconTint: .warn)
             } else {
                 // A fund has no dividend yield of its own worth leading with; a
                 // company does, and it is the third thing a reader looks for
                 // after size and range.
-                statCard("Dividend Yield", Fmt.percent(f?.dividendYield), icon: "dollarsign", iconTint: .orange)
+                statCard("Dividend Yield", Fmt.percent(f?.dividendYield), icon: "dollarsign", iconTint: .warn)
             }
         }
     }
@@ -771,7 +771,7 @@ struct StockDetailView: View {
         let usable = (low != nil && high != nil && high! > low!)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "arrow.left.and.right").foregroundStyle(.blue).appFont(.system(size: 16))
+                Image(systemName: "arrow.left.and.right").foregroundStyle(.brand).appFont(.system(size: 16))
                 Text("52-Week Range").appFont(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
             }
             if usable, let low, let high {
@@ -788,7 +788,7 @@ struct StockDetailView: View {
                     let t = min(max(((f?.price ?? low) - low) / (high - low), 0), 1)
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(LinearGradient(colors: [Color.down.opacity(0.4), .orange.opacity(0.4), Color.up.opacity(0.5)],
+                            .fill(LinearGradient(colors: [Color.down.opacity(0.4), .warn.opacity(0.4), Color.up.opacity(0.5)],
                                                  startPoint: .leading, endPoint: .trailing))
                             .frame(height: 4)
                         Capsule().fill(Color.primary)
@@ -824,7 +824,7 @@ struct StockDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .appFont(.caption.weight(.bold))
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(.brand)
                 }
             }
             .padding(20).frame(maxWidth: .infinity, alignment: .leading)
@@ -844,30 +844,30 @@ struct StockDetailView: View {
             
             let cols = hSizeClass == .regular ? 3 : 2
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: cols), spacing: 12) {
-                statCard("Quantity", Fmt.number(pos.quantity), icon: "number", iconTint: .indigo)
+                statCard("Quantity", Fmt.number(pos.quantity), icon: "number", iconTint: .brand)
                 statCard("Avg Cost", Fmt.currency(pos.currencyValue("Avg Cost", currency: cur), code: cur), icon: "tag", iconTint: .secondary)
-                statCard("Market Value", Fmt.currency(pos.marketValue(currency: cur), code: cur), icon: "chart.pie", iconTint: .indigo)
+                statCard("Market Value", Fmt.currency(pos.marketValue(currency: cur), code: cur), icon: "chart.pie", iconTint: .brand)
                 
                 let urGain = pos.currencyValue("Unreal. Gain", currency: cur)
                 statCard("Unrealized G/L", Fmt.currency(urGain, code: cur),
                          sub: pos.unrealizedGainPct == .infinity ? "∞" : Fmt.percent(pos.unrealizedGainPct, includeSign: true),
                          icon: "bolt.heart",
-                         iconTint: (urGain ?? 0) >= 0 ? .green : .red,
-                         subTint: (urGain ?? 0) >= 0 ? .green : .red,
-                         bgTint: ((urGain ?? 0) >= 0 ? Color.green : Color.red).opacity(0.1))
+                         iconTint: (urGain ?? 0) >= 0 ? .up : .down,
+                         subTint: (urGain ?? 0) >= 0 ? .up : .down,
+                         bgTint: ((urGain ?? 0) >= 0 ? Color.up : Color.down).opacity(0.1))
                 
                 let tGain = pos.currencyValue("Total Gain", currency: cur)
                 statCard("Total Return", Fmt.currency(tGain, code: cur),
                          sub: pos.totalReturnPct == .infinity ? "∞" : Fmt.percent(pos.totalReturnPct, includeSign: true),
                          icon: "chart.line.uptrend.xyaxis",
-                         iconTint: (tGain ?? 0) >= 0 ? .green : .red,
-                         subTint: (tGain ?? 0) >= 0 ? .green : .red,
-                         bgTint: ((tGain ?? 0) >= 0 ? Color.green : Color.red).opacity(0.1))
+                         iconTint: (tGain ?? 0) >= 0 ? .up : .down,
+                         subTint: (tGain ?? 0) >= 0 ? .up : .down,
+                         bgTint: ((tGain ?? 0) >= 0 ? Color.up : Color.down).opacity(0.1))
                 
                 statCard("IRR %", pos.irrPct == .infinity ? "∞" : Fmt.percent(pos.irrPct, includeSign: true),
                          icon: "chart.xyaxis.line",
-                         iconTint: (pos.irrPct ?? 0) >= 0 ? .green : .red,
-                         bgTint: ((pos.irrPct ?? 0) >= 0 ? Color.green : Color.red).opacity(0.1))
+                         iconTint: (pos.irrPct ?? 0) >= 0 ? .up : .down,
+                         bgTint: ((pos.irrPct ?? 0) >= 0 ? Color.up : Color.down).opacity(0.1))
             }
             Divider()
         }
@@ -926,7 +926,7 @@ struct StockDetailView: View {
                             .appFont(.system(size: 27))
                             .foregroundStyle(.white)
                             .frame(width: 48, height: 48)
-                            .background(Color.purple, in: RoundedRectangle(cornerRadius: 12))
+                            .background(Color.plum, in: RoundedRectangle(cornerRadius: 12))
                         
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
@@ -935,7 +935,7 @@ struct StockDetailView: View {
                                 Button { Task { await viewModel.loadAnalysis(force: true) } } label: { 
                                     Label("Regenerate", systemImage: "arrow.clockwise") 
                                 }
-                                .appFont(.caption2.weight(.bold)).foregroundStyle(.purple)
+                                .appFont(.caption2.weight(.bold)).foregroundStyle(.plum)
                                 .buttonStyle(.plain)
                             }
                             if let s = a.summary { Text(Self.md(s)).appFont(.subheadline).foregroundStyle(.secondary) }
@@ -943,13 +943,13 @@ struct StockDetailView: View {
                     }
                 }
                 .padding(24).frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.purple.opacity(0.1), in: RoundedRectangle(cornerRadius: 24))
+                .background(Color.plum.opacity(0.1), in: RoundedRectangle(cornerRadius: 24))
                 
                 let topics: [(String, String, Double?, String?, Color)] = [
-                    ("Moat & Edge", "shield", a.scorecard?.moat, a.analysis?.moat, .blue),
-                    ("Financial Strength", "bolt.fill", a.scorecard?.financialStrength, a.analysis?.financialStrength, .orange),
-                    ("Predictability", "target", a.scorecard?.predictability, a.analysis?.predictability, .green),
-                    ("Growth Perspective", "chart.line.uptrend.xyaxis", a.scorecard?.growth, a.analysis?.growthPerspective, .purple),
+                    ("Moat & Edge", "shield", a.scorecard?.moat, a.analysis?.moat, .brand),
+                    ("Financial Strength", "bolt.fill", a.scorecard?.financialStrength, a.analysis?.financialStrength, .warn),
+                    ("Predictability", "target", a.scorecard?.predictability, a.analysis?.predictability, .up),
+                    ("Growth Perspective", "chart.line.uptrend.xyaxis", a.scorecard?.growth, a.analysis?.growthPerspective, .plum),
                 ]
                 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 16) {
@@ -993,7 +993,7 @@ struct StockDetailView: View {
             }
         } else {
             VStack(spacing: 12) {
-                Image(systemName: "sparkles").appFont(.largeTitle).foregroundStyle(.purple.opacity(0.4))
+                Image(systemName: "sparkles").appFont(.largeTitle).foregroundStyle(.plum.opacity(0.4))
                 Text("No analysis data available.").foregroundStyle(.secondary)
                 Button("Generate Analysis") { Task { await viewModel.loadAnalysis(force: true) } }.buttonStyle(.borderedProminent)
             }.frame(maxWidth: .infinity).padding(40)
@@ -1001,13 +1001,13 @@ struct StockDetailView: View {
     }
 
     private func sentimentCard(_ s: Double) -> some View {
-        let tone: Color = s >= 70 ? .green : (s >= 40 ? .orange : .red)
+        let tone: Color = s >= 70 ? .up : (s >= 40 ? .warn : .down)
         let label = s >= 70 ? "Bullish" : (s >= 40 ? "Neutral" : "Bearish")
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .foregroundStyle(.indigo).frame(width: 32, height: 32)
-                    .background(Color.indigo.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(.brand).frame(width: 32, height: 32)
+                    .background(Color.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 Text("Market Sentiment").appFont(.headline)
                 Spacer()
                 Text(label).appFont(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 4).background(tone.opacity(0.2), in: Capsule()).foregroundStyle(tone)
@@ -1038,15 +1038,15 @@ struct StockDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Image(systemName: "calendar")
-                    .foregroundStyle(.orange).frame(width: 32, height: 32)
-                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(.warn).frame(width: 32, height: 32)
+                    .background(Color.warn.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 Text("Upcoming Catalysts").appFont(.headline)
             }
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(catalysts.enumerated()), id: \.offset) { i, c in
                     HStack(alignment: .top, spacing: 12) {
                         VStack(spacing: 0) {
-                            Circle().fill(c.impact == "High" ? Color.red : (c.impact == "Medium" ? .orange : .blue)).frame(width: 8, height: 8).padding(.top, 4)
+                            Circle().fill(c.impact == "High" ? Color.down : (c.impact == "Medium" ? .warn : .brand)).frame(width: 8, height: 8).padding(.top, 4)
                             if i < catalysts.count - 1 {
                                 Rectangle().fill(Color.secondary.opacity(0.3)).frame(width: 1).padding(.top, 4)
                             }
@@ -1107,7 +1107,7 @@ struct StockDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .appFont(.caption.weight(.bold))
-                        .foregroundStyle(Color.indigo)
+                        .foregroundStyle(Color.brand)
                     }
                 }
                 .frame(height: 200)
@@ -1256,7 +1256,7 @@ struct StockDetailView: View {
                     Button(showAllMetrics ? "Show key items" : "+\(chartable.count - key.count) more") {
                         showAllMetrics.toggle()
                     }
-                    .buttonStyle(.plain).appFont(.caption.weight(.bold)).foregroundStyle(Color.indigo)
+                    .buttonStyle(.plain).appFont(.caption.weight(.bold)).foregroundStyle(Color.brand)
                 }
             }
         }
@@ -1335,7 +1335,7 @@ struct StockDetailView: View {
                         ForEach(Array(row.values.enumerated()), id: \.offset) { _, v in
                             Text(v.map { compact($0) } ?? "—")
                                 .appFont(.subheadline).monospacedDigit()
-                                .foregroundStyle((v ?? 0) < 0 ? .red : .primary)
+                                .foregroundStyle((v ?? 0) < 0 ? .down : .primary)
                         }
                     }
                     .contentShape(Rectangle())
@@ -1357,7 +1357,7 @@ struct StockDetailView: View {
         if data.count > 1 {
             let timeFirst = data.last ?? 0
             let timeLast = data.first ?? 0
-            let color: Color = timeLast >= timeFirst ? .green : .red
+            let color: Color = timeLast >= timeFirst ? .up : .down
             
             Chart(Array(data.reversed().enumerated()), id: \.offset) { i, v in
                 LineMark(x: .value("i", i), y: .value("v", v))
@@ -1410,8 +1410,8 @@ struct StockDetailView: View {
                                                 Text(cat)
                                                     .appFont(.caption.weight(.semibold))
                                                     .padding(.horizontal, 10).padding(.vertical, 5)
-                                                    .background(ratiosCategory == cat ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
-                                                    .foregroundStyle(ratiosCategory == cat ? Color.white : Color.secondary)
+                                                    .background(ratiosCategory == cat ? Color.brandTint : Color.inset, in: Capsule())
+                                                    .foregroundStyle(ratiosCategory == cat ? Color.brandInk : Color.ink2)
                                             }
                                             .buttonStyle(.plain)
                                         }
@@ -1448,8 +1448,8 @@ struct StockDetailView: View {
                                                 Text(cat)
                                                     .appFont(.caption.weight(.semibold))
                                                     .padding(.horizontal, 10).padding(.vertical, 5)
-                                                    .background(ratiosCategory == cat ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
-                                                    .foregroundStyle(ratiosCategory == cat ? Color.white : Color.secondary)
+                                                    .background(ratiosCategory == cat ? Color.brandTint : Color.inset, in: Capsule())
+                                                    .foregroundStyle(ratiosCategory == cat ? Color.brandInk : Color.ink2)
                                             }
                                             .buttonStyle(.plain)
                                         }
@@ -1525,14 +1525,14 @@ struct StockDetailView: View {
 
             if !record.gateFailures.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.warn)
                     Text("Not eligible for the ranking: "
                          + record.gateFailures.map { $0.replacingOccurrences(of: "_", with: " ") }
                             .joined(separator: ", "))
-                        .appFont(.caption).foregroundStyle(.orange)
+                        .appFont(.caption).foregroundStyle(.warn)
                 }
                 .padding(10)
-                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                .background(Color.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             }
 
             if let bands = record.valuationBands, !bands.isEmpty {
@@ -1607,13 +1607,13 @@ struct StockDetailView: View {
                         }
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.secondary.opacity(0.15)).frame(height: 8)
-                            Capsule().fill(Color.indigo.opacity(0.25))
+                            Capsule().fill(Color.brand.opacity(0.25))
                                 .frame(width: max(2, x(band.p75) - x(band.p25)), height: 8)
                                 .offset(x: x(band.p25))
                             Rectangle().fill(Color.secondary.opacity(0.6))
                                 .frame(width: 1, height: 8)
                                 .offset(x: x(band.median))
-                            RoundedRectangle(cornerRadius: 1).fill(Color.indigo)
+                            RoundedRectangle(cornerRadius: 1).fill(Color.brand)
                                 .frame(width: 3, height: 12)
                                 .offset(x: max(0, x(band.current) - 1.5))
                         }
@@ -1678,7 +1678,7 @@ struct StockDetailView: View {
                 let note = AppFont.caption2.resolved(scale: fontScale)
                 (Text(item.label + " ").font(label).foregroundStyle(.secondary)
                  + Text(item.display).font(value).monospacedDigit()
-                    .foregroundStyle(item.changePct < 0 ? Color.red : Color.green)
+                    .foregroundStyle(item.changePct < 0 ? Color.down : Color.up)
                  + Text(" (\(item.recoveryDisplay ?? "no fall"))")
                     .font(note).foregroundStyle(.tertiary))
                 .fixedSize(horizontal: false, vertical: true)
@@ -1710,7 +1710,7 @@ struct StockDetailView: View {
                         Text(item.display).appFont(.subheadline).monospacedDigit()
                         Text(item.changeDisplay)
                             .appFont(.subheadline.weight(.medium)).monospacedDigit()
-                            .foregroundStyle(item.changePct < 0 ? .red : .green)
+                            .foregroundStyle(item.changePct < 0 ? .down : .up)
                             .frame(width: 72, alignment: .trailing)
                         Text("\(item.firstFiled.prefix(4)) → \(item.restatedFiled.prefix(4))")
                             .appFont(.caption2).monospacedDigit().foregroundStyle(.tertiary)
@@ -1789,7 +1789,7 @@ struct StockDetailView: View {
                             appState.openStock(h.symbol)
                         } label: {
                             HStack {
-                                Text(h.symbol).appFont(.headline).foregroundStyle(.indigo)
+                                Text(h.symbol).appFont(.headline).foregroundStyle(.brand)
                                 Spacer()
                                 Text(Fmt.percent(h.percent)).appFont(.subheadline.bold()).foregroundStyle(.primary)
                             }
@@ -1842,8 +1842,8 @@ struct StockDetailView: View {
                             }
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack(spacing: 8) {
-                                    Text(item.provider).appFont(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.indigo)
-                                        .padding(.horizontal, 8).padding(.vertical, 4).background(Color.indigo.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                                    Text(item.provider).appFont(.system(size: 11, weight: .bold)).textCase(.uppercase).foregroundStyle(.brand)
+                                        .padding(.horizontal, 8).padding(.vertical, 4).background(Color.brand.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
                                     Text(item.pubDate).appFont(.caption2.weight(.medium)).foregroundStyle(.secondary)
                                 }
                                 Text(item.title).appFont(.headline).foregroundStyle(.primary).lineLimit(3)
@@ -1880,41 +1880,41 @@ struct StockDetailView: View {
                                 Text("\(Fmt.number(w, fractionDigits: 2))% of Portfolio")
                                     .appFont(.caption2.weight(.bold))
                                     .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(Color.indigo.opacity(0.12), in: Capsule())
-                                    .foregroundStyle(Color.indigo)
+                                    .background(Color.brand.opacity(0.12), in: Capsule())
+                                    .foregroundStyle(Color.brand)
                             }
                         }
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-                            statCard("Shares Held", Fmt.number(summary.quantity, fractionDigits: 4), icon: "number", iconTint: .indigo)
+                            statCard("Shares Held", Fmt.number(summary.quantity, fractionDigits: 4), icon: "number", iconTint: .brand)
                             statCard("Avg Cost", Fmt.currency(summary.avgCostPrice, currency: cur), icon: "tag", iconTint: .secondary)
-                            statCard("Market Value", Fmt.currency(summary.marketValue, currency: cur), icon: "chart.pie", iconTint: .indigo)
+                            statCard("Market Value", Fmt.currency(summary.marketValue, currency: cur), icon: "chart.pie", iconTint: .brand)
                             statCard("Cost Basis", Fmt.currency(summary.costBasis, currency: cur), icon: "scalemass", iconTint: .secondary)
                             statCard(
                                 "Unrealized G/L",
                                 Fmt.currency(unreal, currency: cur),
                                 sub: "\(unrealPct >= 0 ? "+" : "")\(Fmt.percent(unrealPct))",
                                 icon: "chart.line.uptrend.xyaxis",
-                                iconTint: unreal >= 0 ? .green : .red,
-                                subTint: unrealPct >= 0 ? .green : .red,
-                                bgTint: (unreal >= 0 ? Color.green : Color.red).opacity(0.08)
+                                iconTint: unreal >= 0 ? .up : .down,
+                                subTint: unrealPct >= 0 ? .up : .down,
+                                bgTint: (unreal >= 0 ? Color.up : Color.down).opacity(0.08)
                             )
                             statCard(
                                 "Total Return",
                                 Fmt.currency(totalG, currency: cur),
                                 sub: "\(totalRetPct >= 0 ? "+" : "")\(Fmt.percent(totalRetPct))",
                                 icon: "arrow.up.right.circle",
-                                iconTint: totalG >= 0 ? .green : .red,
-                                subTint: totalRetPct >= 0 ? .green : .red,
-                                bgTint: (totalG >= 0 ? Color.green : Color.red).opacity(0.08)
+                                iconTint: totalG >= 0 ? .up : .down,
+                                subTint: totalRetPct >= 0 ? .up : .down,
+                                bgTint: (totalG >= 0 ? Color.up : Color.down).opacity(0.08)
                             )
                         }
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-                            statCard("IRR (Annualized)", ret.irrPct != nil ? "\(ret.irrPct! >= 0 ? "+" : "")\(Fmt.percent(ret.irrPct!))" : "—", icon: "percent", iconTint: (ret.irrPct ?? 0) >= 0 ? .green : .red)
-                            statCard("Yield on Cost", ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct!) : "—", sub: ret.marketYieldPct != nil ? "Mkt: \(Fmt.percent(ret.marketYieldPct!))" : nil, icon: "dollarsign.circle", iconTint: .orange)
-                            statCard("Lifetime Dividends", Fmt.currency(ret.lifetimeDividends, currency: cur), icon: "banknote", iconTint: .orange)
-                            statCard("Realized G/L", Fmt.currency(ret.realizedGain, currency: cur), icon: "checkmark.circle", iconTint: ret.realizedGain >= 0 ? .green : .red)
+                            statCard("IRR (Annualized)", ret.irrPct != nil ? "\(ret.irrPct! >= 0 ? "+" : "")\(Fmt.percent(ret.irrPct!))" : "—", icon: "percent", iconTint: (ret.irrPct ?? 0) >= 0 ? .up : .down)
+                            statCard("Yield on Cost", ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct!) : "—", sub: ret.marketYieldPct != nil ? "Mkt: \(Fmt.percent(ret.marketYieldPct!))" : nil, icon: "dollarsign.circle", iconTint: .warn)
+                            statCard("Lifetime Dividends", Fmt.currency(ret.lifetimeDividends, currency: cur), icon: "banknote", iconTint: .warn)
+                            statCard("Realized G/L", Fmt.currency(ret.realizedGain, currency: cur), icon: "checkmark.circle", iconTint: ret.realizedGain >= 0 ? .up : .down)
                         }
                     }
 
@@ -1935,7 +1935,7 @@ struct StockDetailView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Dividend Income").appFont(.caption2).foregroundStyle(.secondary)
-                                Text("+\(Fmt.currency(ret.lifetimeDividends, currency: cur))").appFont(.subheadline.bold()).foregroundStyle(.green)
+                                Text("+\(Fmt.currency(ret.lifetimeDividends, currency: cur))").appFont(.subheadline.bold()).foregroundStyle(.up)
                                 Text("YoC: \(ret.yieldOnCostPct != nil ? Fmt.percent(ret.yieldOnCostPct!) : "—")").appFont(.caption2).foregroundStyle(.secondary)
                             }
                             .gridTile()
@@ -1944,7 +1944,7 @@ struct StockDetailView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Currency (FX) Impact").appFont(.caption2).foregroundStyle(.secondary)
-                                Text("\(ret.fxGainLoss >= 0 ? "+" : "")\(Fmt.currency(ret.fxGainLoss, currency: cur))").appFont(.subheadline.bold()).foregroundStyle(ret.fxGainLoss >= 0 ? .green : .red)
+                                Text("\(ret.fxGainLoss >= 0 ? "+" : "")\(Fmt.currency(ret.fxGainLoss, currency: cur))").appFont(.subheadline.bold()).foregroundStyle(ret.fxGainLoss >= 0 ? .up : .down)
                                 Text("\(ret.fxGainLossPct >= 0 ? "+" : "")\(Fmt.percent(ret.fxGainLossPct)) on cost").appFont(.caption2).foregroundStyle(.secondary)
                             }
                             .gridTile()
@@ -1953,7 +1953,7 @@ struct StockDetailView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Fees & Taxes Friction").appFont(.caption2).foregroundStyle(.secondary)
-                                Text("-\(Fmt.currency(ret.commissions + ret.withholdingTaxes, currency: cur))").appFont(.subheadline.bold()).foregroundStyle(.red)
+                                Text("-\(Fmt.currency(ret.commissions + ret.withholdingTaxes, currency: cur))").appFont(.subheadline.bold()).foregroundStyle(.down)
                                 Text("Fees: \(Fmt.currency(ret.commissions, currency: cur)) · Tax: \(Fmt.currency(ret.withholdingTaxes, currency: cur))").appFont(.caption2).foregroundStyle(.secondary)
                             }
                             .gridTile()
@@ -1971,15 +1971,15 @@ struct StockDetailView: View {
                                 LotDetailRow(
                                     title: MarketTime.formatted(lot.date),
                                     badge: lot.taxTerm == "long_term"
-                                        ? (text: "LT", tint: .green)
-                                        : (text: "ST", tint: .blue),
+                                        ? (text: "LT", tint: .up)
+                                        : (text: "ST", tint: .brand),
                                     headline: Fmt.currencyWhole(lot.marketValueDisplay, code: cur),
                                     detail: "\(Fmt.shares(lot.quantity)) sh @ \(Fmt.currency(lot.costPerShareLocal, currency: pos.localCurrency))",
                                     detailValue: Fmt.currencyWhole(lot.unrealizedGainDisplay, code: cur, signed: true),
-                                    detailTint: lot.unrealizedGainDisplay >= 0 ? .green : .red,
+                                    detailTint: lot.unrealizedGainDisplay >= 0 ? .up : .down,
                                     footnote: lot.account,
                                     footnoteValue: Fmt.percent(lot.unrealizedGainPct, includeSign: true),
-                                    footnoteTint: lot.unrealizedGainPct >= 0 ? .green : .red
+                                    footnoteTint: lot.unrealizedGainPct >= 0 ? .up : .down
                                 )
                             }
                         }
@@ -1996,7 +1996,7 @@ struct StockDetailView: View {
                                     headline: Fmt.currencyWhole(trade.proceedsDisplay, code: cur),
                                     detail: "\(Fmt.shares(trade.quantitySold)) sh @ \(Fmt.currency(trade.salePrice, currency: pos.localCurrency))",
                                     detailValue: "Gain \(Fmt.currencyWhole(trade.realizedGainDisplay, code: cur, signed: true))",
-                                    detailTint: trade.realizedGainDisplay >= 0 ? .green : .red,
+                                    detailTint: trade.realizedGainDisplay >= 0 ? .up : .down,
                                     footnote: trade.account
                                 )
                             }

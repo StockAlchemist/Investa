@@ -150,7 +150,6 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
             {/* Annual Gains Chart */}
             {show('annualCapitalGains') && (
             <div className="metric-card p-6 relative overflow-hidden group">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
                 <h3 className="section-label mb-4 relative z-10">Annual Realized Gains</h3>
                 <style>{`
                     .recharts-wrapper, .recharts-surface, .recharts-cartesian-grid, .recharts-layer {
@@ -190,8 +189,8 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                                     const isFaded = selectedYear != null && !isSelected;
                                     let fill: string;
                                     if (isFaded) fill = 'var(--glass-hover)';
-                                    else if (positive) fill = isSelected ? '#059669' : '#10B981';
-                                    else fill = isSelected ? '#dc2626' : '#ef4444';
+                                    else if (positive) fill = isSelected ? '#1F9D6C' : '#1F9D6C';
+                                    else fill = isSelected ? '#D2491F' : '#D2491F';
                                     return <Cell key={`cell-${index}`} fill={fill} />;
                                 })}
                             </Bar>
@@ -231,7 +230,6 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
             {/* Transactions Table */}
             {show('capitalGainsTransactions') && (
             <div className="metric-card overflow-hidden relative group">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-amber-500 opacity-80" />
                 <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 relative z-10">
                     <div className="flex items-center gap-3 flex-wrap">
                         <h3 className="section-label">Realized Gain Transactions</h3>
@@ -427,7 +425,7 @@ export default function CapitalGains({ data, currency, isLoading, visibleSection
                     <div className="flex justify-center gap-4 p-4">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[#1C8C84] transition-colors text-sm font-medium"
                         >
                             Show More
                         </button>

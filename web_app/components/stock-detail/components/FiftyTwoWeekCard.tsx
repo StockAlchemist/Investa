@@ -20,14 +20,14 @@ export const FiftyTwoWeekCard: React.FC<FiftyTwoWeekCardProps> = ({ low, high, p
                 <LucideActivity className="w-4 h-4" />
             </div>
             <div className="flex-1 min-w-0 relative z-10">
-                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">52-Week Range</p>
+                <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-[0.06em]">52-Week Range</p>
                 {usable ? (
                     <>
                         <div className="flex items-baseline justify-between gap-2 text-[13px] font-bold tabular-nums">
                             <span>{format(low)}</span>
                             <span>{format(high)}</span>
                         </div>
-                        <div className="relative h-1 rounded-full bg-gradient-to-r from-rose-500/40 via-amber-400/40 to-emerald-500/50 mt-1 mb-1">
+                        <div className="relative h-1 rounded-full bg-muted mt-1 mb-1">
                             {position !== null && (
                                 <div
                                     className="absolute top-1/2 w-1.5 h-3 -translate-y-1/2 -translate-x-1/2 rounded-full bg-foreground shadow"

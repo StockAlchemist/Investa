@@ -13,18 +13,18 @@ interface PortfolioDonutProps {
 }
 
 const COLORS = [
-    '#0097b2', // Brand Cyan
-    '#0ea5e9', // Sky
-    '#3b82f6', // Blue
-    '#6366f1', // Indigo
-    '#8b5cf6', // Violet
-    '#d946ef', // Fuchsia
-    '#ec4899', // Pink
-    '#f43f5e', // Rose
-    '#f59e0b', // Amber
-    '#10b981', // Emerald
-    '#14b8a6', // Teal
-    '#64748b', // Slate for others
+    '#259A91', // Brand Cyan
+    '#7C93E8', // Sky
+    '#4A62E0', // Blue
+    '#4A62E0', // Indigo
+    '#9A5DB8', // Violet
+    '#9A5DB8', // Fuchsia
+    '#C2588A', // Pink
+    '#D2491F', // Rose
+    '#C8921E', // Amber
+    '#1F9D6C', // Emerald
+    '#259A91', // Teal
+    '#6A6C74', // Slate for others
 ];
 
 const METRICS = [
@@ -447,7 +447,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
                 unrealizedGain: other.reduce((s, h) => s + h.unrealizedGain, 0),
                 costBasis: other.reduce((s, h) => s + h.costBasis, 0),
                 percent: otherVal / totalVal,
-                color: '#94a3b8'
+                color: '#8E9099'
             });
         }
         return processed;
@@ -512,7 +512,7 @@ export default function PortfolioDonut({ holdings, currency }: PortfolioDonutPro
                 unrealizedGain: other.reduce((s, acc) => s + acc.unrealizedGain, 0),
                 costBasis: other.reduce((s, acc) => s + acc.costBasis, 0),
                 percent: otherVal / totalVal,
-                color: '#94a3b8'
+                color: '#8E9099'
             });
         }
         

@@ -19,7 +19,7 @@ export default function WindowToggle({ value, onChange }: WindowToggleProps) {
                     onClick={() => onChange(w)}
                     className={cn(
                         'px-2.5 py-1 rounded-md text-xs font-semibold transition-all whitespace-nowrap',
-                        value === w ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                        value === w ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                     )}
                 >
                     {w === '12m' ? '12M' : 'All time'}

@@ -16,7 +16,7 @@ struct ChangePasswordView: View {
             SecureField("Current password", text: $current).textFieldStyle(.roundedBorder)
             SecureField("New password", text: $newPassword).textFieldStyle(.roundedBorder)
             SecureField("Confirm new password", text: $confirm).textFieldStyle(.roundedBorder)
-            if let error { Text(error).foregroundStyle(.red).appFont(.callout) }
+            if let error { Text(error).foregroundStyle(.down).appFont(.callout) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }

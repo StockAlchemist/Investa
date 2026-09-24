@@ -156,10 +156,10 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
                 <table className="min-w-full text-sm">
                     <thead className="bg-muted/60 border-b border-border">
                         <tr>
-                            <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Portfolio Symbol</th>
-                            <th className="px-6 py-3 text-center font-semibold text-muted-foreground uppercase tracking-wider text-xs w-16"></th>
-                            <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Mapped Ticker</th>
-                            <th className="px-6 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
+                            <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Portfolio Symbol</th>
+                            <th className="px-6 py-3 text-center font-semibold text-muted-foreground text-xs w-16"></th>
+                            <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Mapped Ticker</th>
+                            <th className="px-6 py-3 text-right font-semibold text-muted-foreground text-xs">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border">

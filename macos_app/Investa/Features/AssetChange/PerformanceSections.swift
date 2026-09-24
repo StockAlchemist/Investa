@@ -100,10 +100,10 @@ struct PerfKpiStrip: View {
             KpiRow(count: 6 + mt.vsBenchmarks.count, minTileWidth: 150) {
                 tile("YTD", pct(mt.ytd), nil, Fmt.tint(for: mt.ytd))
                 tile("1Y", pct(mt.oneYear), nil, Fmt.tint(for: mt.oneYear))
-                tile("Win Rate", mt.winRate.map { String(format: "%.0f%%", $0) } ?? "–", "of months", (mt.winRate ?? 0) >= 50 ? .green : .orange)
-                tile("Best Month", mt.best.map { pct($0.1) } ?? "–", mt.best.map { fmtMonth($0.0) }, .green)
-                tile("Worst Month", mt.worst.map { pct($0.1) } ?? "–", mt.worst.map { fmtMonth($0.0) }, .red)
-                tile("Max DD", mt.maxDD.map { String(format: "%.2f%%", $0) } ?? "–", nil, .orange)
+                tile("Win Rate", mt.winRate.map { String(format: "%.0f%%", $0) } ?? "–", "of months", (mt.winRate ?? 0) >= 50 ? .up : .warn)
+                tile("Best Month", mt.best.map { pct($0.1) } ?? "–", mt.best.map { fmtMonth($0.0) }, .up)
+                tile("Worst Month", mt.worst.map { pct($0.1) } ?? "–", mt.worst.map { fmtMonth($0.0) }, .down)
+                tile("Max DD", mt.maxDD.map { String(format: "%.2f%%", $0) } ?? "–", nil, .warn)
                 ForEach(mt.vsBenchmarks) { b in
                     tile("vs \(b.name)", pct(b.value), "last 12M", Fmt.tint(for: b.value))
                 }
@@ -432,13 +432,13 @@ struct MonthlyHeatmap: View {
 
     private func cellColor(_ v: Double?) -> Color {
         guard let v else { return .gray.opacity(0.12) }
-        if v >= 5 { return .green.opacity(0.8) }
-        if v >= 1 { return .green.opacity(0.4) }
-        if v > 0 { return .green.opacity(0.18) }
+        if v >= 5 { return .up.opacity(0.8) }
+        if v >= 1 { return .up.opacity(0.4) }
+        if v > 0 { return .up.opacity(0.18) }
         if v == 0 { return .gray.opacity(0.2) }
-        if v > -1 { return .red.opacity(0.18) }
-        if v > -5 { return .red.opacity(0.4) }
-        return .red.opacity(0.8)
+        if v > -1 { return .down.opacity(0.18) }
+        if v > -5 { return .down.opacity(0.4) }
+        return .down.opacity(0.8)
     }
 
     var body: some View {
@@ -542,17 +542,17 @@ struct DrawdownTimeline: View {
                 Text("No drawdown history available.").foregroundStyle(.secondary).frame(height: 200)
             } else {
                 HStack(spacing: 16) {
-                    stat("Max Drawdown", String(format: "%.2f%%", s.maxDD), .red)
-                    stat("Longest Underwater", "\(s.longest)d", .orange)
+                    stat("Max Drawdown", String(format: "%.2f%%", s.maxDD), .down)
+                    stat("Longest Underwater", "\(s.longest)d", .warn)
                 }
                 Chart(s.series, id: \.0) { item in
                     AreaMark(x: .value("Date", item.0), y: .value("Drawdown", item.1))
-                        .foregroundStyle(.red.opacity(0.25))
-                    LineMark(x: .value("Date", item.0), y: .value("Drawdown", item.1)).foregroundStyle(.red)
+                        .foregroundStyle(.down.opacity(0.25))
+                    LineMark(x: .value("Date", item.0), y: .value("Drawdown", item.1)).foregroundStyle(.down)
                 }
                 .chartHoverTooltip(s.series.map(\.0)) { i in
                     ChartTooltipContent(title: MarketTime.formatted(s.series[i].0),
-                                        rows: [ChartTooltipRow(color: .red, label: "Drawdown",
+                                        rows: [ChartTooltipRow(color: .down, label: "Drawdown",
                                                                value: String(format: "%.2f%%", s.series[i].1))])
                 }
                 .frame(height: 200)

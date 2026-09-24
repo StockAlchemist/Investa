@@ -62,12 +62,12 @@ interface PerformanceGraphProps {
 }
 
 const COLORS = [
-    "#ef4444", // Portfolio (Red)
-    "#0097b2", // Investa Cyan (Benchmark 1)
-    "#f59e0b", // Amber (Benchmark 2)
-    "#8b5cf6", // Violet (Benchmark 3)
-    "#e11d48", // Rose (Benchmark 4)
-    "#10b981", // Emerald (Benchmark 5)
+    "#D2491F", // Portfolio (Red)
+    "#259A91", // Investa Cyan (Benchmark 1)
+    "#C8921E", // Amber (Benchmark 2)
+    "#9A5DB8", // Violet (Benchmark 3)
+    "#D2491F", // Rose (Benchmark 4)
+    "#1F9D6C", // Emerald (Benchmark 5)
 ];
 
 export default function PerformanceGraph({
@@ -389,11 +389,10 @@ export default function PerformanceGraph({
                 ref={containerRef}
                 className="metric-card card-shine p-4 sm:p-6 mb-6 h-[400px] flex items-center justify-center w-full relative overflow-hidden"
             >
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
                 {!mounted || loading ? (
                     <div className="flex flex-col items-center gap-3">
                         <Loader2 className="animate-spin text-indigo-500 w-8 h-8" />
-                        <span className="text-[10px] font-black tracking-[0.2em] text-muted-foreground uppercase">Loading chart...</span>
+                        <span className="text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">Loading chart...</span>
                     </div>
                 ) : <span className="text-sm text-muted-foreground">No historical data available.</span>}
             </div>
@@ -460,19 +459,19 @@ export default function PerformanceGraph({
                         {/* Portfolio Section */}
                         <div className="space-y-0.5">
                             <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Value</span>
+                                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground font-semibold">Value</span>
                                 <span className="text-[13px] font-bold text-foreground">
                                     {formatCurrency(dataPoint.value, currency)}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">TWR</span>
+                                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground font-semibold">TWR</span>
                                 <span className={`text-[13px] font-bold ${dataPoint.twr >= 0 ? 'text-up' : 'text-down'}`}>
                                     {dataPoint.twr.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Drawdown</span>
+                                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground font-semibold">Drawdown</span>
                                 <span className="text-[13px] font-bold text-down">
                                     {dataPoint.drawdown.toFixed(2)}%
                                 </span>
@@ -482,13 +481,13 @@ export default function PerformanceGraph({
                         {/* Money-Weighted Metrics Section */}
                         <div className="space-y-0.5">
                             <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Gain</span>
+                                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground font-semibold">Gain</span>
                                 <span className={`text-[13px] font-bold ${dataPoint.abs_gain >= 0 ? 'text-up' : 'text-down'}`}>
                                     {formatCurrency(dataPoint.abs_gain, currency)}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Cost</span>
+                                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground font-semibold">Cost</span>
                                 <span className="text-[13px] font-bold text-foreground">
                                     {formatCurrency(dataPoint.cum_flow, currency)}
                                 </span>
@@ -502,14 +501,14 @@ export default function PerformanceGraph({
                             {dataPoint.fx_rate != null && (
                                 <div className="grid grid-cols-2 gap-x-6">
                                     <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Rate</span>
+                                        <span className="text-[11px] uppercase tracking-[0.06em] text-amber-500 font-semibold">FX Rate</span>
                                         <span className="text-[12px] font-bold text-amber-500">
                                             {typeof dataPoint.fx_rate === 'number' ? dataPoint.fx_rate.toFixed(4) : dataPoint.fx_rate}
                                         </span>
                                     </div>
                                     {dataPoint.fx_return != null && (
                                         <div className="flex items-center justify-between gap-2">
-                                            <span className="text-[10px] uppercase tracking-wider text-amber-500 font-bold">FX Ret</span>
+                                            <span className="text-[11px] uppercase tracking-[0.06em] text-amber-500 font-semibold">FX Ret</span>
                                             <span className={`text-[12px] font-bold ${dataPoint.fx_return >= 0 ? 'text-up' : 'text-down'}`}>
                                                 {dataPoint.fx_return.toFixed(2)}%
                                             </span>
@@ -526,7 +525,7 @@ export default function PerformanceGraph({
 
                                         return (
                                             <div key={bKey} className="flex items-center justify-between gap-2">
-                                                <span className="text-[10px] truncate max-w-[80px] font-bold uppercase tracking-wider" style={{ color: color }}>
+                                                <span className="text-[11px] truncate max-w-[80px] font-semibold uppercase tracking-[0.06em]" style={{ color: color }}>
                                                     {bKey}
                                                 </span>
                                                 <span className={`text-[12px] font-bold ${dataPoint[bKey] >= 0 ? 'text-up' : 'text-down'}`}>
@@ -549,7 +548,6 @@ export default function PerformanceGraph({
 
     return (
         <div ref={containerRef} className="metric-card card-shine p-4 sm:p-6 mb-6 overflow-visible relative transition-all duration-300 group/section">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
             <div className="mb-4 md:mb-6">
                 <div className="flex flex-col items-start gap-1 md:flex-row md:justify-between md:items-center md:gap-0 mb-2 md:mb-4">
@@ -587,7 +585,7 @@ export default function PerformanceGraph({
                         {period === 'custom' && (
                             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
                                 <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1">
-                                    <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">From</span>
+                                    <span className="text-[11px] uppercase tracking-[0.06em] font-semibold text-muted-foreground">From</span>
                                     <input
                                         type="date"
                                         value={customFromDate}
@@ -596,7 +594,7 @@ export default function PerformanceGraph({
                                     />
                                 </div>
                                 <div className="flex items-center gap-1.5 bg-secondary rounded-lg px-2.5 py-1">
-                                    <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">To</span>
+                                    <span className="text-[11px] uppercase tracking-[0.06em] font-semibold text-muted-foreground">To</span>
                                     <input
                                         type="date"
                                         value={customToDate}
@@ -622,7 +620,7 @@ export default function PerformanceGraph({
                                     className={cn(
                                         'px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all duration-150 whitespace-nowrap',
                                         view === v
-                                            ? 'bg-indigo-600 text-white font-bold shadow'
+                                            ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
                                     )}
                                 >
@@ -680,15 +678,15 @@ export default function PerformanceGraph({
                             <Legend verticalAlign="top" wrapperStyle={{ paddingBottom: '10px' }} />
                             <defs>
                                 <linearGradient id="colorTwr" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8} />
-                                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#D2491F" stopOpacity={0.8} />
+                                    <stop offset="95%" stopColor="#D2491F" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
                             <Line
                                 type="monotone"
                                 dataKey="twr"
                                 name="Portfolio"
-                                stroke="#ef4444"
+                                stroke="#D2491F"
                                 strokeWidth={2}
                                 dot={false}
                                 activeDot={{ r: 4, strokeWidth: 0 }}
@@ -714,7 +712,7 @@ export default function PerformanceGraph({
                                     name={`FX (${currency}/USD)`}
                                     type="monotone"
                                     dataKey="fx_return"
-                                    stroke="#f59e0b"
+                                    stroke="#C8921E"
                                     strokeWidth={1.5}
                                     strokeDasharray="5 5"
                                     dot={false}
@@ -732,8 +730,8 @@ export default function PerformanceGraph({
                         <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#4A62E0" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#4A62E0" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
@@ -766,7 +764,7 @@ export default function PerformanceGraph({
                                 <YAxis
                                     yAxisId="right"
                                     orientation="right"
-                                    tick={{ fontSize: 10, fill: '#f59e0b' }}
+                                    tick={{ fontSize: 10, fill: '#C8921E' }}
                                     axisLine={false}
                                     tickLine={false}
                                     width={40}
@@ -782,7 +780,7 @@ export default function PerformanceGraph({
                                 name="Portfolio Value"
                                 type="monotone"
                                 dataKey="value"
-                                stroke="#2563eb"
+                                stroke="#4A62E0"
                                 fillOpacity={1}
                                 fill="url(#colorValue)"
                                 strokeWidth={2}
@@ -793,7 +791,7 @@ export default function PerformanceGraph({
                                     name={`FX (${currency}/USD)`}
                                     type="monotone"
                                     dataKey="fx_rate"
-                                    stroke="#f59e0b"
+                                    stroke="#C8921E"
                                     strokeWidth={1.5}
                                     strokeDasharray="5 5"
                                     dot={false}
@@ -810,8 +808,8 @@ export default function PerformanceGraph({
                         <AreaChart syncId="portfolio-sync" data={chartedData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorDrawdown" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1} />
-                                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#D2491F" stopOpacity={0.1} />
+                                    <stop offset="95%" stopColor="#D2491F" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
@@ -844,7 +842,7 @@ export default function PerformanceGraph({
                                 name="Drawdown"
                                 type="monotone"
                                 dataKey="drawdown"
-                                stroke="#ef4444"
+                                stroke="#D2491F"
                                 fillOpacity={1}
                                 fill="url(#colorDrawdown)"
                                 strokeWidth={2}

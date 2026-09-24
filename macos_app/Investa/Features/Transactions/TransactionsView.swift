@@ -155,11 +155,11 @@ struct TransactionsView: View {
 
     private static func typeColor(_ type: String) -> Color {
         switch type.uppercased() {
-        case "BUY", "DEPOSIT", "BUY TO COVER": return .green
-        case "SELL", "WITHDRAWAL", "SHORT SELL": return .red
-        case "DIVIDEND", "INTEREST": return .indigo
-        case "FEES", "FEE", "TAX", "WITHHOLDING TAX": return .orange
-        default: return .purple  // Split, Spin-off, Transfer — distinct from unselected grey
+        case "BUY", "DEPOSIT", "BUY TO COVER": return .up
+        case "SELL", "WITHDRAWAL", "SHORT SELL": return .down
+        case "DIVIDEND", "INTEREST": return .brand
+        case "FEES", "FEE", "TAX", "WITHHOLDING TAX": return .warn
+        default: return .plum  // Split, Spin-off, Transfer — distinct from unselected grey
         }
     }
 
@@ -401,7 +401,7 @@ struct TransactionsView: View {
                     Text("Review Import (\(reviewTransactions.count))").appFont(.title2.bold())
                     if reviewDuplicateCount > 0 {
                         Label("\(reviewDuplicateCount) already in your table (highlighted)", systemImage: "exclamationmark.triangle.fill")
-                            .appFont(.caption).foregroundStyle(.orange)
+                            .appFont(.caption).foregroundStyle(.warn)
                     }
                 }
                 Spacer()
@@ -448,9 +448,9 @@ struct TransactionsView: View {
                                     if isDuplicate {
                                         Label("Duplicate", systemImage: "exclamationmark.triangle.fill")
                                             .appFont(.system(size: 10, weight: .bold))
-                                            .foregroundStyle(.orange)
+                                            .foregroundStyle(.warn)
                                             .padding(.horizontal, 5).padding(.vertical, 2)
-                                            .background(.orange.opacity(0.15), in: Capsule())
+                                            .background(.warn.opacity(0.15), in: Capsule())
                                     }
                                     Spacer()
                                     TextField("Total", text: Binding(
@@ -493,11 +493,11 @@ struct TransactionsView: View {
                                         set: { reviewTransactions[i].account = $0 }))
                                         .textFieldStyle(.roundedBorder).frame(width: 130)
                                     Button(role: .destructive) { reviewTransactions.remove(at: i) } label: { Image(systemName: "trash") }
-                                        .buttonStyle(.borderless).foregroundStyle(.red)
+                                        .buttonStyle(.borderless).foregroundStyle(.down)
                                 }
                             }
                             .padding(.vertical, 12).padding(.horizontal, 16)
-                            .background(isDuplicate ? Color.orange.opacity(0.08) : Color.clear)
+                            .background(isDuplicate ? Color.warn.opacity(0.08) : Color.clear)
                             Divider()
                             #else
                             HStack(spacing: 0) {
@@ -522,7 +522,7 @@ struct TransactionsView: View {
                                     if isDuplicate {
                                         Image(systemName: "exclamationmark.triangle.fill")
                                             .appFont(.system(size: 10))
-                                            .foregroundStyle(.orange)
+                                            .foregroundStyle(.warn)
                                             .help("This transaction already exists in your table")
                                     }
                                 }
@@ -550,10 +550,10 @@ struct TransactionsView: View {
                                     .padding(.leading, 6)
                                 Spacer()
                                 Button(role: .destructive) { reviewTransactions.remove(at: i) } label: { Image(systemName: "trash") }
-                                    .buttonStyle(.borderless).foregroundStyle(.red)
+                                    .buttonStyle(.borderless).foregroundStyle(.down)
                             }
                             .appFont(.callout).padding(.vertical, 6).padding(.horizontal, 16)
-                            .background(isDuplicate ? Color.orange.opacity(0.08) : Color.clear)
+                            .background(isDuplicate ? Color.warn.opacity(0.08) : Color.clear)
                             Divider()
                             #endif
                         }
@@ -588,7 +588,7 @@ struct TransactionsView: View {
                 Label("\(viewModel.pendingIbkr.count) pending IBKR", systemImage: "tray.full").appFont(.headline)
                 HStack {
                     Button("Approve All") { Task { await viewModel.approvePending(viewModel.pendingIbkr.compactMap { $0.id }) } }
-                        .buttonStyle(.borderedProminent).tint(.green)
+                        .buttonStyle(.borderedProminent).tint(.up)
                     Button("Reject All", role: .destructive) { Task { await viewModel.rejectPending(viewModel.pendingIbkr.compactMap { $0.id }) } }
                         .buttonStyle(.bordered)
                 }
@@ -600,7 +600,7 @@ struct TransactionsView: View {
                             Button {
                                 appState.openStock(tx.symbol)
                             } label: {
-                                Text(tx.symbol).appFont(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                                Text(tx.symbol).appFont(.headline).fontWeight(.bold).foregroundStyle(.brand)
                             }
                             .buttonStyle(.plain)
                         } else {
@@ -620,8 +620,8 @@ struct TransactionsView: View {
                         Text(tx.displayDate).appFont(.caption2).foregroundStyle(.secondary)
                         Spacer()
                         if let id = tx.id {
-                            Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.green).appFont(.title3)
-                            Button { Task { await viewModel.rejectPending([id]) } } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.red).appFont(.title3)
+                            Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.up).appFont(.title3)
+                            Button { Task { await viewModel.rejectPending([id]) } } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.borderless).foregroundStyle(.down).appFont(.title3)
                         }
                     }
                 }
@@ -632,7 +632,7 @@ struct TransactionsView: View {
                 Label("\(viewModel.pendingIbkr.count) pending IBKR transactions", systemImage: "tray.full").appFont(.headline)
                 Spacer()
                 Button("Approve All") { Task { await viewModel.approvePending(viewModel.pendingIbkr.compactMap { $0.id }) } }
-                    .buttonStyle(.borderedProminent).tint(.green)
+                    .buttonStyle(.borderedProminent).tint(.up)
                 Button("Reject All", role: .destructive) { Task { await viewModel.rejectPending(viewModel.pendingIbkr.compactMap { $0.id }) } }
                     .buttonStyle(.bordered)
             }
@@ -644,7 +644,7 @@ struct TransactionsView: View {
                         Button {
                             appState.openStock(tx.symbol)
                         } label: {
-                            Text(tx.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                            Text(tx.symbol).fontWeight(.bold).foregroundStyle(.brand)
                         }
                         .buttonStyle(.plain)
                         .frame(width: 70, alignment: .leading)
@@ -657,9 +657,9 @@ struct TransactionsView: View {
                     Spacer()
                     if let id = tx.id {
                         Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle") }
-                            .buttonStyle(.borderless).foregroundStyle(.green)
+                            .buttonStyle(.borderless).foregroundStyle(.up)
                         Button { Task { await viewModel.rejectPending([id]) } } label: { Image(systemName: "xmark.circle") }
-                            .buttonStyle(.borderless).foregroundStyle(.red)
+                            .buttonStyle(.borderless).foregroundStyle(.down)
                     }
                 }
                 .appFont(.callout).padding(.vertical, 3)
@@ -668,8 +668,8 @@ struct TransactionsView: View {
             #endif
         }
         .padding(16)
-        .background(.cyan.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.cyan.opacity(0.3), lineWidth: 1))
+        .background(.dataTeal.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.dataTeal.opacity(0.3), lineWidth: 1))
     }
 
     private var duplicateBanner: some View {
@@ -682,8 +682,8 @@ struct TransactionsView: View {
                 Text(showDuplicatesOnly ? "Showing — tap to clear" : "Review").appFont(.caption.bold())
             }
             .padding(12)
-            .background(.orange.opacity(showDuplicatesOnly ? 0.2 : 0.1), in: RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(.orange)
+            .background(.warn.opacity(showDuplicatesOnly ? 0.2 : 0.1), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(.warn)
         }
         .buttonStyle(.plain)
     }
@@ -793,7 +793,7 @@ struct TransactionsView: View {
                     } label: {
                         Text(tx.symbol)
                             .fontWeight(.bold)
-                            .foregroundStyle(.indigo)
+                            .foregroundStyle(.brand)
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -815,7 +815,7 @@ struct TransactionsView: View {
             TableColumn("") { tx in
                 HStack(spacing: 4) {
                     Button { editing = tx } label: { Image(systemName: "pencil") }.buttonStyle(.borderless)
-                    Button { pendingDelete = tx } label: { Image(systemName: "trash") }.buttonStyle(.borderless).foregroundStyle(.red)
+                    Button { pendingDelete = tx } label: { Image(systemName: "trash") }.buttonStyle(.borderless).foregroundStyle(.down)
                 }
             }
             .width(56)
@@ -849,7 +849,7 @@ struct TransactionsView: View {
                         } label: {
                             Text(Self.rowTitle(tx))
                                 .appFont(.subheadline.weight(.bold))
-                                .foregroundStyle(.indigo)
+                                .foregroundStyle(.brand)
                                 .lineLimit(1)
                         }
                         .buttonStyle(.plain)
@@ -934,7 +934,7 @@ struct TransactionsView: View {
     /// Outcome of the last IBKR sync — green on success, red on failure, with a
     /// dismiss button. Mirrors the web app's sync feedback banner.
     private func ibkrSyncBanner(_ status: TransactionsViewModel.SyncStatus) -> some View {
-        let tint: Color = status.isError ? .red : .green
+        let tint: Color = status.isError ? .down : .up
         return HStack(spacing: 10) {
             Image(systemName: status.isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
             Text(status.message).fixedSize(horizontal: false, vertical: true)
@@ -949,8 +949,8 @@ struct TransactionsView: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(message); Spacer(); Button("Retry") { reload() } }
-            .appFont(.callout).padding(12).foregroundStyle(.red)
-            .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 20).padding(.top, 12)
+            .appFont(.callout).padding(12).foregroundStyle(.down)
+            .background(.down.opacity(0.12), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 20).padding(.top, 12)
     }
 
     // MARK: - Actions

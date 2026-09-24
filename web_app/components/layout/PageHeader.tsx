@@ -75,34 +75,32 @@ export function PageHeader({
         // Desktop only. Below `md` the phone shell draws its own navigation bar
         // and control bar (components/layout/mobile/), which mirror the native
         // iPhone app's toolbar + GlobalControlBar.
-        'sticky top-0 z-40 hidden md:flex items-center h-[52px] shrink-0 px-3 sm:px-5 gap-2 sm:gap-3',
-        // Glass backdrop with subtle gradient
-        'border-b border-border/60',
-        'bg-gradient-to-r from-background/85 via-background/75 to-background/85',
-        'backdrop-blur-xl supports-[backdrop-filter]:bg-background/60',
+        'sticky top-0 z-40 hidden md:flex items-center h-16 shrink-0 px-3 sm:px-6 gap-2 sm:gap-3',
+        // Paper, lightly frosted so content scrolls under it; a hairline rule
+        // only — no gradient.
+        'border-b border-border/70 bg-background/90 backdrop-blur-md',
       )}
     >
 
       {/* Desktop: page title */}
-      <h1 className="hidden md:block text-sm font-semibold text-foreground shrink-0 select-none truncate max-w-[120px] lg:max-w-none">
+      <h1 className="hidden md:block page-title text-[28px] leading-8 text-foreground shrink-0 select-none whitespace-nowrap">
         {navLabel(activeTab)}
       </h1>
 
-      {/* ── Mini KPI: portfolio value + day change ── */}
+      {/* ── Mini KPI: portfolio value + day change. From 2xl up only: with the
+           serif title, the toolbar controls come first at laptop widths. ── */}
       {hasKpi && (
         <>
-          <span className="hidden lg:block w-px h-5 bg-border/70" />
-          <div className="hidden lg:flex items-baseline gap-2 shrink-0 select-none">
-            <span className="text-sm font-bold tabular-nums text-foreground leading-none">
+          <span className="hidden 2xl:block w-px h-5 bg-border/70" />
+          <div className="hidden 2xl:flex items-baseline gap-2 shrink-0 select-none">
+            <span className="text-sm font-semibold tabular-nums text-foreground leading-none">
               {formatCompactNumber(marketValue!, currency, true)}
             </span>
             {dayChangePct != null && (
               <span
                 className={cn(
-                  'flex items-center gap-0.5 text-[11px] font-bold tabular-nums leading-none px-1.5 py-0.5 rounded-full',
-                  dayPositive
-                    ? 'text-up bg-up/12 border border-up/25'
-                    : 'text-down bg-down/12 border border-down/25',
+                  'flex items-center gap-0.5 text-xs font-semibold tabular-nums leading-none px-1.5 py-1 rounded-md',
+                  dayPositive ? 'text-up bg-up-tint' : 'text-down bg-down-tint',
                 )}
               >
                 {dayPositive
@@ -118,24 +116,22 @@ export function PageHeader({
       {/* ── Market status + last updated ── */}
       {(isMarketOpen !== undefined || lastUpdated) && (
         <>
-          <span className="hidden xl:block w-px h-5 bg-border/70" />
-          <div className="hidden xl:flex items-center gap-2 shrink-0">
+          <span className="hidden 2xl:block w-px h-5 bg-border/70" />
+          <div className="hidden 2xl:flex items-center gap-2 shrink-0">
             {isMarketOpen !== undefined && (
               <span className={cn(
-                'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border',
-                isMarketOpen
-                  ? 'text-up border-up/25 bg-up/12'
-                  : 'text-muted-foreground border-border bg-muted/40',
+                'flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md',
+                isMarketOpen ? 'text-up bg-up-tint' : 'text-muted-foreground bg-muted',
               )}>
                 <span className={cn(
                   'w-1.5 h-1.5 rounded-full',
-                  isMarketOpen ? 'bg-up animate-pulse' : 'bg-muted-foreground/50',
+                  isMarketOpen ? 'bg-up' : 'bg-muted-foreground/50',
                 )} />
                 {isMarketOpen ? 'Live' : 'Closed'}
               </span>
             )}
             {lastUpdated && (
-              <span className="text-[10px] text-muted-foreground/70 font-medium tabular-nums">
+              <span className="text-xs text-muted-foreground tabular-nums">
                 {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
@@ -155,7 +151,7 @@ export function PageHeader({
 
         {/* Market indices ticker — hidden below xl */}
         {indices && (
-          <div className="hidden xl:block">
+          <div className="hidden 2xl:block">
             <MarketIndicesBox
               indices={indices}
               isFetching={isFetching ?? false}
@@ -193,10 +189,10 @@ export function PageHeader({
             aria-label={showClosed ? 'Hide closed positions' : 'Show closed positions'}
             aria-pressed={!!showClosed}
             className={cn(
-              'flex items-center gap-1.5 h-7 px-2.5 rounded-control text-xs font-semibold transition-colors',
+              'flex items-center gap-1.5 h-9 px-2.5 rounded-control text-[13px] font-medium border transition-colors',
               showClosed
-                ? 'bg-primary/12 text-primary-ink'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                ? 'bg-primary-tint text-primary-ink border-primary/25'
+                : 'bg-card border-border text-ink-2 hover:text-foreground hover:border-input',
             )}
           >
             {showClosed

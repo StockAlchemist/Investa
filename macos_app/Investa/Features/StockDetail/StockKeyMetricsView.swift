@@ -33,37 +33,37 @@ struct StockKeyMetricsView: View {
 
     static let chartDefs: [MetricChartDef] = [
         // 1. Valuation
-        MetricChartDef(group: "Valuation", dataKey: "P/E Ratio", title: "Price to Earnings (P/E)", color: Color(hex: 0x10b981)),
-        MetricChartDef(group: "Valuation", dataKey: "P/S Ratio", title: "Price to Sales (P/S)", color: Color(hex: 0x06b6d4)),
-        MetricChartDef(group: "Valuation", dataKey: "P/B Ratio", title: "Price to Book (P/B)", color: Color(hex: 0x8b5cf6)),
-        MetricChartDef(group: "Valuation", dataKey: "EV/EBITDA", title: "EV / EBITDA", color: Color(hex: 0xf59e0b)),
-        MetricChartDef(group: "Valuation", dataKey: "EV/Sales", title: "EV / Sales", color: Color(hex: 0xec4899)),
-        MetricChartDef(group: "Valuation", dataKey: "P/FCF Ratio", title: "Price to Free Cash Flow (P/FCF)", color: Color(hex: 0x14b8a6)),
-        MetricChartDef(group: "Valuation", dataKey: "Dividend Yield (%)", title: "Dividend Yield", color: Color(hex: 0x10b981), isPercent: true),
+        MetricChartDef(group: "Valuation", dataKey: "P/E Ratio", title: "Price to Earnings (P/E)", color: Color(hex: 0x1F9D6C)),
+        MetricChartDef(group: "Valuation", dataKey: "P/S Ratio", title: "Price to Sales (P/S)", color: Color(hex: 0x259A91)),
+        MetricChartDef(group: "Valuation", dataKey: "P/B Ratio", title: "Price to Book (P/B)", color: Color(hex: 0x9A5DB8)),
+        MetricChartDef(group: "Valuation", dataKey: "EV/EBITDA", title: "EV / EBITDA", color: Color(hex: 0xC8921E)),
+        MetricChartDef(group: "Valuation", dataKey: "EV/Sales", title: "EV / Sales", color: Color(hex: 0xC2588A)),
+        MetricChartDef(group: "Valuation", dataKey: "P/FCF Ratio", title: "Price to Free Cash Flow (P/FCF)", color: Color(hex: 0x259A91)),
+        MetricChartDef(group: "Valuation", dataKey: "Dividend Yield (%)", title: "Dividend Yield", color: Color(hex: 0x1F9D6C), isPercent: true),
 
         // 2. Profitability
-        MetricChartDef(group: "Profitability", dataKey: "Return on Invested Capital (ROIC) (%)", title: "Return on Invested Capital (ROIC)", color: Color(hex: 0xec4899), isPercent: true),
-        MetricChartDef(group: "Profitability", dataKey: "Return on Equity (ROE) (%)", title: "Return on Equity (ROE)", color: Color(hex: 0x10b981), isPercent: true),
-        MetricChartDef(group: "Profitability", dataKey: "Return on Assets (ROA) (%)", title: "Return on Assets (ROA)", color: Color(hex: 0x06b6d4), isPercent: true),
-        MetricChartDef(group: "Profitability", dataKey: "Gross Profit Margin (%)", title: "Gross Margin", color: Color(hex: 0x8b5cf6), isPercent: true),
-        MetricChartDef(group: "Profitability", dataKey: "Net Profit Margin (%)", title: "Net Margin", color: Color(hex: 0xf59e0b), isPercent: true),
-        MetricChartDef(group: "Profitability", dataKey: "Free Cash Flow Margin (%)", title: "Free Cash Flow Margin", color: Color(hex: 0x14b8a6), isPercent: true),
+        MetricChartDef(group: "Profitability", dataKey: "Return on Invested Capital (ROIC) (%)", title: "Return on Invested Capital (ROIC)", color: Color(hex: 0xC2588A), isPercent: true),
+        MetricChartDef(group: "Profitability", dataKey: "Return on Equity (ROE) (%)", title: "Return on Equity (ROE)", color: Color(hex: 0x1F9D6C), isPercent: true),
+        MetricChartDef(group: "Profitability", dataKey: "Return on Assets (ROA) (%)", title: "Return on Assets (ROA)", color: Color(hex: 0x259A91), isPercent: true),
+        MetricChartDef(group: "Profitability", dataKey: "Gross Profit Margin (%)", title: "Gross Margin", color: Color(hex: 0x9A5DB8), isPercent: true),
+        MetricChartDef(group: "Profitability", dataKey: "Net Profit Margin (%)", title: "Net Margin", color: Color(hex: 0xC8921E), isPercent: true),
+        MetricChartDef(group: "Profitability", dataKey: "Free Cash Flow Margin (%)", title: "Free Cash Flow Margin", color: Color(hex: 0x259A91), isPercent: true),
 
         // 3. Balance Sheet
-        MetricChartDef(group: "Balance Sheet", dataKey: "Current Ratio", title: "Current Ratio", color: Color(hex: 0x10b981)),
-        MetricChartDef(group: "Balance Sheet", dataKey: "Quick Ratio", title: "Quick Ratio", color: Color(hex: 0x06b6d4)),
-        MetricChartDef(group: "Balance Sheet", dataKey: "Debt-to-Equity Ratio", title: "Debt to Equity", color: Color(hex: 0xf59e0b)),
-        MetricChartDef(group: "Balance Sheet", dataKey: "Long-Term Debt to Equity", title: "LT Debt to Equity", color: Color(hex: 0x8b5cf6)),
-        MetricChartDef(group: "Balance Sheet", dataKey: "Interest Coverage Ratio", title: "Interest Coverage Ratio", color: Color(hex: 0xec4899)),
-        MetricChartDef(group: "Balance Sheet", dataKey: "Asset Turnover", title: "Asset Turnover", color: Color(hex: 0x06b6d4)),
-        MetricChartDef(group: "Balance Sheet", dataKey: "Diluted Shares Outstanding", title: "Diluted Shares Outstanding", color: Color(hex: 0x64748b), isCount: true),
+        MetricChartDef(group: "Balance Sheet", dataKey: "Current Ratio", title: "Current Ratio", color: Color(hex: 0x1F9D6C)),
+        MetricChartDef(group: "Balance Sheet", dataKey: "Quick Ratio", title: "Quick Ratio", color: Color(hex: 0x259A91)),
+        MetricChartDef(group: "Balance Sheet", dataKey: "Debt-to-Equity Ratio", title: "Debt to Equity", color: Color(hex: 0xC8921E)),
+        MetricChartDef(group: "Balance Sheet", dataKey: "Long-Term Debt to Equity", title: "LT Debt to Equity", color: Color(hex: 0x9A5DB8)),
+        MetricChartDef(group: "Balance Sheet", dataKey: "Interest Coverage Ratio", title: "Interest Coverage Ratio", color: Color(hex: 0xC2588A)),
+        MetricChartDef(group: "Balance Sheet", dataKey: "Asset Turnover", title: "Asset Turnover", color: Color(hex: 0x259A91)),
+        MetricChartDef(group: "Balance Sheet", dataKey: "Diluted Shares Outstanding", title: "Diluted Shares Outstanding", color: Color(hex: 0x6A6C74), isCount: true),
 
         // 4. Earnings & Sales
-        MetricChartDef(group: "Earnings & Sales", dataKey: "Diluted EPS", title: "Diluted EPS ($)", color: Color(hex: 0x10b981)),
-        MetricChartDef(group: "Earnings & Sales", dataKey: "Total Revenue", title: "Total Revenue (Sales)", color: Color(hex: 0x06b6d4), isCount: true),
-        MetricChartDef(group: "Earnings & Sales", dataKey: "Revenue Growth YoY (%)", title: "Revenue Growth YoY", color: Color(hex: 0x8b5cf6), isPercent: true),
-        MetricChartDef(group: "Earnings & Sales", dataKey: "EPS Growth YoY (%)", title: "EPS Growth YoY", color: Color(hex: 0xec4899), isPercent: true),
-        MetricChartDef(group: "Earnings & Sales", dataKey: "Operating Margin (%)", title: "Operating Margin", color: Color(hex: 0xf59e0b), isPercent: true),
+        MetricChartDef(group: "Earnings & Sales", dataKey: "Diluted EPS", title: "Diluted EPS ($)", color: Color(hex: 0x1F9D6C)),
+        MetricChartDef(group: "Earnings & Sales", dataKey: "Total Revenue", title: "Total Revenue (Sales)", color: Color(hex: 0x259A91), isCount: true),
+        MetricChartDef(group: "Earnings & Sales", dataKey: "Revenue Growth YoY (%)", title: "Revenue Growth YoY", color: Color(hex: 0x9A5DB8), isPercent: true),
+        MetricChartDef(group: "Earnings & Sales", dataKey: "EPS Growth YoY (%)", title: "EPS Growth YoY", color: Color(hex: 0xC2588A), isPercent: true),
+        MetricChartDef(group: "Earnings & Sales", dataKey: "Operating Margin (%)", title: "Operating Margin", color: Color(hex: 0xC8921E), isPercent: true),
     ]
 
     private var columns: Int { hSizeClass == .regular ? 2 : 1 }
@@ -291,8 +291,8 @@ struct StockKeyMetricsView: View {
                             Text(grp)
                                 .appFont(.caption.weight(.semibold))
                                 .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(selectedGroup == grp ? Color.accentColor : Color.gray.opacity(0.12), in: Capsule())
-                                .foregroundStyle(selectedGroup == grp ? Color.white : Color.secondary)
+                                .background(selectedGroup == grp ? Color.brandTint : Color.inset, in: Capsule())
+                                .foregroundStyle(selectedGroup == grp ? Color.brandInk : Color.ink2)
                         }
                         .buttonStyle(.plain)
                     }

@@ -340,7 +340,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                 {open_lots.length > 0 ? (
                     <div className="overflow-x-auto rounded-2xl border border-border/50">
                         <table className="w-full text-xs text-left">
-                            <thead className="bg-muted/70 text-muted-foreground uppercase text-[10px] tracking-wider font-semibold border-b border-border/50">
+                            <thead className="bg-muted/70 text-muted-foreground uppercase text-[11px] tracking-[0.06em] font-semibold border-b border-border/50">
                                 <tr>
                                     <th className="py-3 px-4 whitespace-nowrap">Purchase Date</th>
                                     <th className="py-3 px-4 whitespace-nowrap">Account</th>
@@ -415,7 +415,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
 
                     <div className="overflow-x-auto rounded-2xl border border-border/50">
                         <table className="w-full text-xs text-left">
-                            <thead className="bg-muted/70 text-muted-foreground uppercase text-[10px] tracking-wider font-semibold border-b border-border/50">
+                            <thead className="bg-muted/70 text-muted-foreground uppercase text-[11px] tracking-[0.06em] font-semibold border-b border-border/50">
                                 <tr>
                                     <th className="py-3 px-4 whitespace-nowrap">Sale Date</th>
                                     <th className="py-3 px-4 whitespace-nowrap">Account</th>

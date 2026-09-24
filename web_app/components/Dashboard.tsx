@@ -4,18 +4,18 @@ import { formatCurrency, cn } from '../lib/utils';
 import { MetricCard } from './MetricCard';
 import { COMPLEX_METRIC_IDS, DEFAULT_ITEMS, TOP_SECTION_IDS } from '../lib/dashboard_constants';
 import {
-    Wallet, TrendingUp, TrendingDown, DollarSign, Percent,
+    TrendingUp, TrendingDown, DollarSign, Percent,
     Activity, PiggyBank, Receipt, PieChart, Loader2, Zap,
     ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
-import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
+import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 import { Holding } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import TodayStrip from './dashboard/TodayStrip';
 import DashboardEvents from './dashboard/DashboardEvents';
 import DashboardInsights from './dashboard/DashboardInsights';
 import MarketTrendPanel from './dashboard/MarketTrendPanel';
-import { marketToday, DEFAULT_MARKET_TIMEZONE } from '@/lib/market_time';
+import { marketToday, DEFAULT_MARKET_TIMEZONE, formatMarketTime, formatCalendarDate, chartDay } from '@/lib/market_time';
 
 const RiskMetrics       = lazy(() => import('./RiskMetrics'));
 const PortfolioDonut    = lazy(() => import('./PortfolioDonut'));
@@ -141,38 +141,84 @@ function periodCutoff(period: HeroPeriod): Date {
     return dateUtc;
 }
 
-// Tiny intraday sparkline showing today's portfolio value path. Returns null if
-// there isn't enough variation to draw a meaningful line.
-function HeroSparkline({ history, positive }: { history: PerformanceData[]; positive: boolean }) {
-    const series = history
-        .filter(d => typeof d.value === 'number')
-        .map(d => ({ value: d.value as number }));
+interface HeroPoint { date: string; value: number }
+
+/** An intraday point carries a clock time; a daily one is a bare calendar day. */
+const hasClockTime = (date: string) => /\d{2}:\d{2}/.test(date);
+
+/** A hero point's moment in the app's notation: `Wed, 05 Aug 10:30 AM` on the
+ *  market's clock for an intraday point, `05 Aug 2026` for a daily one. */
+function heroPointLabel(date: string, { weekday = true } = {}): string {
+    return hasClockTime(date)
+        ? formatMarketTime(date, { weekday })
+        : formatCalendarDate(chartDay(date));
+}
+
+/** Hover card for the hero chart: when, the value then, and the move since
+ *  the start of the selected window — signed, in the gain/loss colour. */
+function HeroTooltip({ active, payload, start, currency }: {
+    active?: boolean;
+    payload?: { payload: HeroPoint }[];
+    start: HeroPoint;
+    currency: string;
+}) {
+    if (!active || !payload?.length) return null;
+    const point = payload[0].payload;
+    const change = point.value - start.value;
+    const pct = start.value !== 0 ? (change / start.value) * 100 : null;
+    const up = change >= 0;
+    const sign = up ? '+' : '\u2212';
+    return (
+        <div className="min-w-[200px] rounded-inset border border-border bg-popover px-3 py-2.5 shadow-[0_12px_32px_rgb(22_23_27/0.12)] dark:shadow-[0_12px_32px_rgb(0_0_0/0.5)]">
+            <p className="text-xs leading-4 text-muted-foreground whitespace-nowrap">{heroPointLabel(point.date)}</p>
+            <p className="mt-1 text-[15px] leading-5 font-semibold tabular-nums text-foreground whitespace-nowrap">
+                {formatCurrency(point.value, currency)}
+            </p>
+            <p className={cn('mt-0.5 text-xs leading-4 font-semibold tabular-nums whitespace-nowrap', up ? 'text-up' : 'text-down')}>
+                {sign}{formatCurrency(Math.abs(change), currency)}
+                {pct != null && <> · {sign}{Math.abs(pct).toFixed(2)}%</>}
+            </p>
+            <p className="text-xs leading-4 text-muted-foreground whitespace-nowrap">
+                since {heroPointLabel(start.date, { weekday: false })}
+            </p>
+        </div>
+    );
+}
+
+// The hero chart: the portfolio's path over the selected window. Ledger draws
+// it in the accent whatever the sign — the figure beside it already says gain
+// or loss, with its sign — over a flat 6% tint, not a gradient. Hovering shows
+// the value at that moment and the move since the window began. Returns null
+// if there isn't enough variation to draw a meaningful line.
+function HeroSparkline({ history, currency }: { history: HeroPoint[]; currency: string }) {
+    const series = history.filter(d => typeof d.value === 'number' && !!d.date);
     if (series.length < 2) return null;
     const values = series.map(s => s.value);
     const min = Math.min(...values);
     const max = Math.max(...values);
     if (max - min < Math.max(0.01, max * 0.0005)) return null; // ~flat — skip
 
-    const stroke = positive ? '#10b981' : '#ef4444';
-    const gradId = `hero-spark-${positive ? 'up' : 'dn'}`;
     return (
-        <div className="h-12 w-full mt-3">
+        <div className="h-36 lg:h-44 w-full">
             <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={series} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-                    <defs>
-                        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={stroke} stopOpacity={0.35} />
-                            <stop offset="95%" stopColor={stroke} stopOpacity={0} />
-                        </linearGradient>
-                    </defs>
+                <AreaChart data={series} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
                     <YAxis hide domain={[(d: number) => d * 0.999, (d: number) => d * 1.001]} />
+                    <Tooltip
+                        content={<HeroTooltip start={series[0]} currency={currency} />}
+                        cursor={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1, strokeDasharray: '3 3' }}
+                        isAnimationActive={false}
+                        allowEscapeViewBox={{ x: false, y: true }}
+                        wrapperStyle={{ outline: 'none', zIndex: 20 }}
+                    />
                     <Area
                         type="monotone"
                         dataKey="value"
-                        stroke={stroke}
+                        stroke="hsl(var(--primary))"
                         strokeWidth={2}
-                        fill={`url(#${gradId})`}
+                        fill="hsl(var(--primary))"
+                        fillOpacity={0.06}
                         dot={false}
+                        activeDot={{ r: 4, fill: 'hsl(var(--primary))', stroke: 'hsl(var(--card))', strokeWidth: 2 }}
                         isAnimationActive={false}
                     />
                 </AreaChart>
@@ -192,21 +238,19 @@ function StatPill({
     if (value == null) return null;
     const positive = value >= 0;
     return (
-        <div className="flex flex-col gap-1 min-w-0">
-            <p className="section-label text-[10px] uppercase tracking-wider">{label}</p>
+        <div className="flex flex-col gap-0.5 min-w-0">
+            <p className="text-xs leading-4 text-muted-foreground whitespace-nowrap">{label}</p>
             {isLoading ? (
                 <Skeleton className="h-6 w-16 rounded" />
             ) : (
                 <p className={cn(
-                    'text-lg sm:text-xl font-bold tabular-nums leading-none',
+                    'text-[17px] leading-6 font-semibold tabular-nums whitespace-nowrap',
                     positive ? 'text-up' : 'text-down',
                 )}>
-                    {positive ? '+' : ''}{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                    {positive ? '+' : '\u2212'}{Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
                 </p>
             )}
-            {sub && !isLoading && (
-                <p className="text-[10px] text-muted-foreground tabular-nums leading-none">{sub}</p>
-            )}
+            <p className="text-xs leading-4 text-ink-2 tabular-nums">{sub && !isLoading ? sub : '\u00a0'}</p>
         </div>
     );
 }
@@ -227,7 +271,7 @@ function PortfolioHeroCard({
     // Derive the series + period return for the currently-selected window.
     const periodView = useMemo(() => {
         if (heroPeriod === 'day') {
-            const series = (history ?? []).filter(d => typeof d.value === 'number').map(d => ({ value: d.value as number }));
+            const series = (history ?? []).filter(d => typeof d.value === 'number').map(d => ({ date: d.date, value: d.value as number }));
             return { series, pct: dayGLPct ?? null, abs: dayGL ?? null };
         }
         const historyToUse = heroPeriod === 'wtd' ? wtdHistory : longHistory;
@@ -242,7 +286,7 @@ function PortfolioHeroCard({
         const beforeIdx = longRows.findIndex(d => new Date(d.date).getTime() >= cutoffMs);
         const anchor = beforeIdx > 0 ? longRows[beforeIdx - 1] : (sliced[0] ?? longRows[0]);
         const tail = sliced.length > 0 ? sliced : longRows.slice(-1);
-        const series = [anchor, ...tail].map(d => ({ value: d.value as number }));
+        const series = [anchor, ...tail].map(d => ({ date: d.date, value: d.value as number }));
         const startVal = anchor?.value as number;
         const endVal = tail[tail.length - 1]?.value as number;
         if (!startVal || !endVal) return { series, pct: null, abs: null };
@@ -252,129 +296,113 @@ function PortfolioHeroCard({
     }, [heroPeriod, history, longHistory, wtdHistory, dayGL, dayGLPct]);
 
     const periodPositive = (periodView.pct ?? 0) >= 0;
-    const sparklinePositive = heroPeriod === 'day' ? positive : periodPositive;
+    // The figure is shown in full, on one line, whatever its size: it steps
+    // down as the string grows ($1,961,734.79 is 13 characters) rather than
+    // ellipsising or spilling into the chart beside it. Set in the interface
+    // sans with fixed-width digits, not the display serif: a condensed serif
+    // "1" is barely wider than the comma beside it, and this is the figure
+    // read most often.
+    const heroFigure = formatCurrency(animatedValue, currency);
+    const heroFigureSize =
+        heroFigure.length > 15 ? 'text-3xl sm:text-4xl' :
+        heroFigure.length > 12 ? 'text-[34px] sm:text-[44px]' :
+        'text-4xl sm:text-5xl';
+    const signed = (v: number) => (v >= 0 ? '+' : '\u2212') + formatCurrency(Math.abs(v), currency);
 
     return (
-        <div className="metric-card card-shine relative overflow-hidden p-5 sm:p-6">
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+        <section aria-label="Portfolio value" className="card-hero p-5 sm:p-7">
+            <div className="grid gap-6 lg:gap-9 lg:grid-cols-[minmax(300px,auto)_minmax(0,1fr)]">
 
-                {/* Left: main value + day change */}
-                <div className="min-w-0 flex-1" style={{ minWidth: 'min(100%, 260px)' }}>
-                    <div className="flex items-center gap-2 mb-2">
-                        <Wallet className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                        <span className="section-label">Total Portfolio Value</span>
+                {/* Left: the figure, today's move, and the three returns. */}
+                <div className="flex flex-col gap-3.5 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="section-label">Portfolio value</span>
                         {isRefreshing && !isLoading && (
-                            <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/40" />
+                            <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
                         )}
                     </div>
 
                     {isLoading ? (
-                        <div className="space-y-2">
-                            <Skeleton className="h-10 w-52 rounded-lg" />
-                            <Skeleton className="h-5 w-36 rounded-lg" />
+                        <div className="space-y-3">
+                            <Skeleton className="h-14 w-64 rounded-lg" />
+                            <Skeleton className="h-6 w-40 rounded-md" />
                         </div>
                     ) : (
-                        <div className="flex items-baseline gap-4 flex-wrap">
-                            <span className="text-3xl sm:text-4xl md:text-5xl font-black tabular-nums text-foreground leading-none tracking-tight whitespace-nowrap">
-                                {formatCurrency(animatedValue, currency)}
+                        <>
+                            <span className={cn('font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground whitespace-nowrap', heroFigureSize)}>
+                                {heroFigure}
                             </span>
-
                             {dayGL !== null && (
-                                <div className={cn(
-                                    'flex items-center gap-2 flex-wrap',
-                                    positive ? 'text-up' : 'text-down',
-                                )}>
-                                    {positive
-                                        ? <ArrowUpRight className="w-4 h-4 shrink-0" />
-                                        : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-                                    <span className="text-lg font-semibold tabular-nums">
-                                        {animatedDayGL >= 0 ? '+' : ''}{formatCurrency(animatedDayGL, currency)}
+                                <div className="flex items-center gap-2 whitespace-nowrap">
+                                    <span className={cn(
+                                        'inline-flex items-center gap-1 h-[26px] px-2 rounded-md text-[13px] font-semibold tabular-nums',
+                                        positive ? 'bg-up-tint text-up' : 'bg-down-tint text-down',
+                                    )}>
+                                        {positive
+                                            ? <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
+                                            : <ArrowDownRight className="w-3.5 h-3.5" aria-hidden="true" />}
+                                        {signed(animatedDayGL)}
+                                        {dayGLPct !== null && <> · {animatedDayPct >= 0 ? '+' : '\u2212'}{Math.abs(animatedDayPct).toFixed(2)}%</>}
                                     </span>
-                                    {dayGLPct !== null && (
-                                        <span className={cn(
-                                            'text-sm font-bold px-2.5 py-0.5 rounded-full',
-                                            positive ? 'bg-up/12 text-up' : 'bg-down/12 text-down',
-                                        )}>
-                                            {animatedDayPct >= 0 ? '+' : ''}{animatedDayPct.toFixed(2)}%
-                                        </span>
-                                    )}
-                                    <span className="text-sm text-muted-foreground font-normal">today</span>
+                                    <span className="text-[13px] text-muted-foreground">today</span>
                                 </div>
                             )}
+                        </>
+                    )}
+
+                    {hasPerf && (
+                        <div className="mt-auto grid grid-cols-3 gap-3 pt-4 border-t border-border">
+                            <StatPill label="Total TWR" value={cumTWR} sub="since start" isLoading={isLoading} />
+                            <StatPill label="Ann. TWR" value={annTWR} sub="p.a." isLoading={isLoading} />
+                            <StatPill label="IRR (MWR)" value={irr} sub="p.a." isLoading={isLoading} />
                         </div>
                     )}
                 </div>
 
-                {/* Right: performance stats separated by vertical dividers */}
-                {hasPerf && (
-                    <div className="hidden sm:flex items-stretch gap-0 divide-x divide-border/50">
-                        <div className="px-6 first:pl-0">
-                            <StatPill label="Total TWR" value={cumTWR} isLoading={isLoading} />
+                {/* Right: the period picker, the window's return, the chart. */}
+                {!isLoading && (
+                    <div className="flex flex-col gap-3 min-w-0">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            {periodView.pct != null && periodView.abs != null && heroPeriod !== 'day' ? (
+                                <div className="inline-flex items-baseline gap-2 tabular-nums whitespace-nowrap">
+                                    <span className={cn('text-sm font-semibold', periodPositive ? 'text-up' : 'text-down')}>
+                                        {periodPositive ? '+' : '\u2212'}{Math.abs(periodView.pct).toFixed(2)}%
+                                    </span>
+                                    <span className="text-[13px] text-ink-2">{signed(periodView.abs)}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {HERO_PERIODS.find(p => p.key === heroPeriod)?.label}
+                                    </span>
+                                </div>
+                            ) : <span className="text-[13px] text-muted-foreground">Intraday</span>}
+                            <div role="radiogroup" aria-label="Chart period" className="segmented h-8">
+                                {HERO_PERIODS.map(p => (
+                                    <button
+                                        key={p.key}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={heroPeriod === p.key}
+                                        onClick={() => setHeroPeriod(p.key)}
+                                        className="text-xs min-w-9"
+                                    >
+                                        {p.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                        {annTWR != null && (
-                            <div className="px-6">
-                                <StatPill label="Ann. TWR" value={annTWR} sub="p.a." isLoading={isLoading} />
-                            </div>
-                        )}
-                        {irr != null && (
-                            <div className="px-6">
-                                <StatPill label="IRR (MWR)" value={irr} sub="p.a." isLoading={isLoading} />
-                            </div>
-                        )}
+                        {periodView.series.length > 1 ? (
+                            <HeroSparkline history={periodView.series} currency={currency} />
+                        ) : heroPeriod !== 'day' ? (
+                            // Only shown for explicitly selected longer periods — on 1D
+                            // an empty series usually just means intraday history is
+                            // still loading, where this message would mislead.
+                            <p className="text-[13px] text-muted-foreground mt-2">
+                                Not enough history yet to chart this period.
+                            </p>
+                        ) : null}
                     </div>
                 )}
             </div>
-            {/* Period selector + sparkline + period return */}
-            {!isLoading && (
-                <div className="mt-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3 mb-1.5">
-                        <div className="inline-flex rounded-lg bg-secondary p-0.5">
-                            {HERO_PERIODS.map(p => (
-                                <button
-                                    key={p.key}
-                                    type="button"
-                                    onClick={() => setHeroPeriod(p.key)}
-                                    className={cn(
-                                        'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                                        heroPeriod === p.key
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'text-muted-foreground hover:text-foreground',
-                                    )}
-                                >
-                                    {p.label}
-                                </button>
-                            ))}
-                        </div>
-                        {periodView.pct != null && periodView.abs != null && heroPeriod !== 'day' && (
-                            <div className={cn(
-                                'inline-flex items-baseline gap-2 tabular-nums',
-                                periodPositive ? 'text-up' : 'text-down',
-                            )}>
-                                <span className="text-sm font-bold">
-                                    {periodPositive ? '+' : ''}{periodView.pct.toFixed(2)}%
-                                </span>
-                                <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
-                                    ({periodPositive ? '+' : ''}{formatCurrency(periodView.abs, currency)})
-                                </span>
-                                <span className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
-                                    {HERO_PERIODS.find(p => p.key === heroPeriod)?.label}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                    {periodView.series.length > 1 ? (
-                        <HeroSparkline history={periodView.series as PerformanceData[]} positive={sparklinePositive} />
-                    ) : heroPeriod !== 'day' ? (
-                        // Only shown for explicitly selected longer periods — on 1D
-                        // an empty series usually just means intraday history is
-                        // still loading, where this message would mislead.
-                        <p className="text-[11px] text-muted-foreground/60 mt-2">
-                            Not enough history yet to chart this period.
-                        </p>
-                    ) : null}
-                </div>
-            )}
-        </div>
+        </section>
     );
 }
 
@@ -490,21 +518,21 @@ function DashboardInner({
             case 'dayGL':
                 return null; // handled by hero card
             case 'totalReturn':
-                return <MetricCard title="Total Return" value={totalGain} subValue={m?.total_return_pct} colorClass={pos(totalGain)} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Total Return" value={totalGain} subValue={m?.total_return_pct} colorClass={pos(totalGain)} valueClassName="text-[22px]" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
             case 'annualTWR':
                 return <MetricCard title="Total TWR" value={m?.cumulative_twr != null ? `${Math.abs(m.cumulative_twr).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '-'} subValue={m?.annualized_twr != null ? `${Math.abs(m.annualized_twr).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% p.a.` : undefined} subValueClassName={subBadge(m?.annualized_twr)} isCurrency={false} colorClass={pos(m?.cumulative_twr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
             case 'mwr':
                 return <MetricCard title="IRR (MWR)" value={m?.portfolio_mwr != null ? `${m.portfolio_mwr.toFixed(2)}%` : '-'} subValue="p.a." subValueClassName={subBadge(m?.portfolio_mwr)} isCurrency={false} colorClass={pos(m?.portfolio_mwr ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Activity} accentColor={themeColor} variant={variant} />;
             case 'unrealizedGL':
-                return <MetricCard title="Unrealized G/L" value={unrealizedGL} subValue={unrealizedGLPct} colorClass={pos(unrealizedGL)} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={TrendingUp} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Unrealized G/L" value={unrealizedGL} subValue={unrealizedGLPct} colorClass={pos(unrealizedGL)} valueClassName="text-[22px]" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={TrendingUp} accentColor={themeColor} variant={variant} />;
             case 'fxGL':
                 return <MetricCard title="FX Gain/Loss" value={fxGL} subValue={fxGLPct} colorClass={pos(fxGL)} containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={DollarSign} accentColor={themeColor} variant={variant} />;
             case 'realizedGain':
-                return <MetricCard title="Realized Gain" value={realizedGain} colorClass={pos(realizedGain)} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={PiggyBank} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Realized Gain" value={realizedGain} colorClass={pos(realizedGain)} valueClassName="text-[22px]" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={PiggyBank} accentColor={themeColor} variant={variant} />;
             case 'cashBalance':
-                return <MetricCard title="Cash Balance" value={cashBalance} currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={DollarSign} valueClassName="text-xl sm:text-2xl" accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Cash Balance" value={cashBalance} currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={DollarSign} valueClassName="text-[22px]" accentColor={themeColor} variant={variant} />;
             case 'ytdDividends':
-                return <MetricCard title="Total Dividends" value={m?.dividends ?? 0} valueClassName="text-xl sm:text-2xl" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={DollarSign} accentColor={themeColor} variant={variant} />;
+                return <MetricCard title="Total Dividends" value={m?.dividends ?? 0} valueClassName="text-[22px]" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={DollarSign} accentColor={themeColor} variant={variant} />;
             case 'dividendYield':
                 return <MetricCard title="Dividend Yield" value={m?.dividend_return_cumulative != null ? `${Math.abs(m.dividend_return_cumulative).toFixed(2)}%` : '-'} subValue={m?.dividend_return_annualized != null ? `${Math.abs(m.dividend_return_annualized).toFixed(2)}% p.a.` : undefined} subValueClassName={subBadge(m?.dividend_return_annualized)} isCurrency={false} colorClass={pos(m?.dividend_return_cumulative ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
             case 'ytdReturn':
@@ -538,7 +566,6 @@ function DashboardInner({
             case 'portfolioDonut':
                 return (
                     <div className="metric-card card-shine h-full p-5 relative overflow-hidden group">
-                        <div className="absolute top-0 left-5 right-5 h-[2px] rounded-full bg-cyan-500 opacity-40" />
                         <div className="h-full relative z-10">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-2">
@@ -664,9 +691,9 @@ function DashboardInner({
             {visibleComplexItems.length > 0 && (
                 <>
                     <div className="flex items-center gap-3 pt-1">
-                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+                        <div className="h-px flex-1 bg-border" />
                         <span className="section-label tracking-[0.2em]">Analytics</span>
-                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" />
+                        <div className="h-px flex-1 bg-border" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
                         {visibleComplexItems.map(item => (

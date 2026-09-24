@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { Transaction } from '../lib/api';
 import { marketToday } from '../lib/market_time';
 
@@ -262,13 +263,13 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
         if (filtered.length === 0) return null;
 
         return (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-40 overflow-y-auto">
+            <div className="menu-panel absolute z-10 w-full mt-1 max-h-40 overflow-y-auto">
                 <ul className="py-1">
                     {filtered.map(item => (
                         <li
                             key={item}
                             onMouseDown={(e) => { e.preventDefault(); handleSuggestionClick(item, field); }}
-                            className="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100"
+                            className="px-3 py-2 cursor-pointer hover:bg-muted text-foreground"
                         >
                             {item}
                         </li>
@@ -398,15 +399,15 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     const isSplitRatioDisabled = !isSplit;
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgb(22_23_27/0.36)]">
             <div className="flex min-h-full items-center justify-center p-4">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-full max-w-md shadow-xl relative">
+                <div role="dialog" aria-modal="true" aria-labelledby="tx-modal-title" className="bg-card text-card-foreground p-6 rounded-hero w-full max-w-md shadow-[0_24px_64px_rgb(22_23_27/0.24)] ring-1 ring-black/5 dark:ring-white/10 relative">
                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                        <h2 id="tx-modal-title" className="page-title text-[28px] leading-8 text-foreground">
                             {mode === 'edit' ? 'Edit Transaction' : 'Add Transaction'}
                         </h2>
-                        <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                            ✕
+                        <button type="button" onClick={onClose} aria-label="Close" className="w-9 h-9 flex items-center justify-center rounded-control bg-muted text-ink-2 hover:text-foreground transition-colors">
+                            <X className="w-4 h-4" aria-hidden="true" />
                         </button>
                     </div>
 
@@ -416,27 +417,27 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {/* Date */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date *</label>
+                                <label className="block text-[13px] font-medium text-ink-2 mb-1.5">Date *</label>
                                 <input
                                     type="date"
                                     name="Date"
                                     value={formData.Date}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                    className="w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow]"
                                     required
                                 />
                             </div>
 
                             {/* Type */}
                             <div>
-                                <label htmlFor="tx-type-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type *</label>
+                                <label htmlFor="tx-type-select" className="block text-[13px] font-medium text-ink-2 mb-1.5">Type *</label>
                                 <select
                                     id="tx-type-select"
                                     aria-label="Transaction Type"
                                     name="Type"
                                     value={formData.Type}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                    className="w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow]"
                                 >
                                     {TRANSACTION_TYPES.map(type => (
                                         <option key={type} value={type}>{type}</option>
@@ -447,7 +448,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
 
                         {/* Symbol */}
                         <div className="relative">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Symbol *</label>
+                            <label className="block text-[13px] font-medium text-ink-2 mb-1.5">Symbol *</label>
                             <input
                                 type="text"
                                 name="Symbol"
@@ -457,7 +458,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                 onBlur={() => setTimeout(() => setActiveSuggestionField(curr => curr === 'Symbol' ? null : curr), 100)}
                                 placeholder="e.g. AAPL"
                                 autoComplete="off"
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 uppercase"
+                                className="w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] uppercase"
                                 required
                             />
                             {renderSuggestions('Symbol', existingSymbols)}
@@ -467,7 +468,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                         {isTransfer ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="relative">
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From *</label>
+                                    <label className="block text-[13px] font-medium text-ink-2 mb-1.5">From *</label>
                                     <input
                                         type="text"
                                         name="From Account"
@@ -475,13 +476,13 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                         onChange={handleChange}
                                         onFocus={() => setActiveSuggestionField('From Account')}
                                         onBlur={() => setTimeout(() => setActiveSuggestionField(curr => curr === 'From Account' ? null : curr), 100)}
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                        className="w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow]"
                                         required
                                     />
                                     {renderSuggestions('From Account', existingAccounts)}
                                 </div>
                                 <div className="relative">
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To *</label>
+                                    <label className="block text-[13px] font-medium text-ink-2 mb-1.5">To *</label>
                                     <input
                                         type="text"
                                         name="To Account"
@@ -489,7 +490,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                         onChange={handleChange}
                                         onFocus={() => setActiveSuggestionField('To Account')}
                                         onBlur={() => setTimeout(() => setActiveSuggestionField(curr => curr === 'To Account' ? null : curr), 100)}
-                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                                        className="w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow]"
                                         required
                                     />
                                     {renderSuggestions('To Account', existingAccounts)}
@@ -497,7 +498,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                             </div>
                         ) : (
                             <div className="relative">
-                                <label className={`block text-sm font-medium mb-1 ${isSplit ? 'text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>Account *</label>
+                                <label className={`block text-[13px] font-medium mb-1.5 ${isSplit ? 'text-muted-foreground/60' : 'text-ink-2'}`}>Account *</label>
                                 <input
                                     type="text"
                                     name="Account"
@@ -508,7 +509,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                     placeholder="e.g. Brokerage"
                                     autoComplete="off"
                                     disabled={isSplit}
-                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isSplit ? 'opacity-50 cursor-not-allowed italic' : ''}`}
+                                    className={`w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] ${isSplit ? 'opacity-50 cursor-not-allowed italic' : ''}`}
                                     required={!isSplit}
                                 />
                                 {!isSplit && renderSuggestions('Account', existingAccounts)}
@@ -518,60 +519,60 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                         <div className="grid grid-cols-2 gap-3">
                             {/* Quantity */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Quantity</label>
+                                <label className="block text-[13px] font-medium text-ink-2 mb-1.5">Quantity</label>
                                 <input
                                     type="number"
                                     name="Quantity"
                                     value={formData.Quantity}
                                     onChange={handleChange}
                                     disabled={isQtyDisabled}
-                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isQtyDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] ${isQtyDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 />
                             </div>
                             {/* Price */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price/Share</label>
+                                <label className="block text-[13px] font-medium text-ink-2 mb-1.5">Price/Share</label>
                                 <input
                                     type="number"
                                     name="Price/Share"
                                     value={formData["Price/Share"]}
                                     onChange={handleChange}
                                     disabled={isPriceDisabled}
-                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isPriceDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] ${isPriceDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 />
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             {/* Total Amount */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Total Amount</label>
+                                <label className="block text-[13px] font-medium text-ink-2 mb-1.5">Total Amount</label>
                                 <input
                                     type="number"
                                     name="Total Amount"
                                     value={formData["Total Amount"]}
                                     onChange={handleChange}
                                     disabled={isTotalDisabled}
-                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isTotalDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] ${isTotalDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 />
                             </div>
 
                             {/* Commission */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Commission</label>
+                                <label className="block text-[13px] font-medium text-ink-2 mb-1.5">Commission</label>
                                 <input
                                     type="number"
                                     name="Commission"
                                     value={formData.Commission}
                                     onChange={handleChange}
                                     disabled={isCommDisabled}
-                                    className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isCommDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] ${isCommDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 />
                             </div>
                         </div>
 
                         {/* Split Ratio */}
                         <div>
-                            <label className={`block text-sm font-medium mb-1 ${isSplitRatioDisabled ? 'text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>Split Ratio (Optional)</label>
+                            <label className={`block text-[13px] font-medium mb-1.5 ${isSplitRatioDisabled ? 'text-muted-foreground/60' : 'text-ink-2'}`}>Split Ratio (Optional)</label>
                             <input
                                 type="number"
                                 name="Split Ratio"
@@ -579,18 +580,18 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                 onChange={handleChange}
                                 disabled={isSplitRatioDisabled}
                                 placeholder={isSplit ? "e.g. 2 for 2:1" : ""}
-                                className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 ${isSplitRatioDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`w-full h-10 px-3 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] ${isSplitRatioDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                             />
                         </div>
 
                         {/* Note */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Note</label>
+                            <label className="block text-[13px] font-medium text-ink-2 mb-1.5">Note</label>
                             <textarea
                                 name="Note"
                                 value={formData.Note || ''}
                                 onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 h-20"
+                                className="w-full px-3 py-2 border border-input rounded-control bg-card text-foreground focus:outline-none focus:border-primary focus:shadow-[0_0_0_3px_hsl(var(--primary-tint))] transition-[border-color,box-shadow] h-20"
                             />
                         </div>
 
@@ -603,11 +604,11 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                                     checked={!!formData["Auto-add Cash"]}
                                     onChange={(e) => setFormData((prev: TxForm) => ({ ...prev, "Auto-add Cash": e.target.checked }))}
                                     disabled={isAccountAutoCash}
-                                    className={`h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 ${isAccountAutoCash ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    className={`h-4 w-4 rounded accent-[hsl(var(--primary))] ${isAccountAutoCash ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 />
                                 <label
                                     htmlFor="auto-add-cash"
-                                    className={`text-sm font-medium ${isAccountAutoCash ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}
+                                    className={`text-sm font-medium ${isAccountAutoCash ? 'text-muted-foreground/60' : 'text-ink-2'}`}
                                     title={isAccountAutoCash ? 'Not available: this account uses Auto cash mode' : undefined}
                                 >
                                     Auto-add internal cash & commission withdrawal
@@ -621,14 +622,14 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                             <button
                                 type="button"
                                 onClick={onClose}
-                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded dark:text-gray-300 dark:hover:bg-gray-700"
+                                className="h-11 px-5 rounded-control border border-border bg-card text-foreground font-medium hover:bg-muted transition-colors"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                className="h-11 px-5 bg-primary text-primary-foreground font-semibold rounded-control hover:bg-primary-hover disabled:opacity-50 transition-colors"
                             >
                                 {loading ? 'Saving...' : (mode === 'edit' ? 'Update Transaction' : 'Add Transaction')}
                             </button>

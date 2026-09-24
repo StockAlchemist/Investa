@@ -1,5 +1,4 @@
 import React from 'react';
-import { cn } from '@/lib/utils';
 
 interface PeriodSelectorProps {
     selectedPeriod: string;
@@ -23,19 +22,17 @@ const PERIODS = [
 
 export default function PeriodSelector({ selectedPeriod, onPeriodChange }: PeriodSelectorProps) {
     return (
-        <div className="inline-flex items-center gap-0.5 bg-muted/60 border border-border/60 rounded-lg p-0.5">
+        <div role="radiogroup" aria-label="Period" className="segmented h-8">
             {PERIODS.map((period) => {
                 const active = selectedPeriod === period.value;
                 return (
                     <button
                         key={period.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
                         onClick={() => onPeriodChange(period.value)}
-                        className={cn(
-                            'relative px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all duration-150 whitespace-nowrap',
-                            active
-                                ? 'bg-indigo-600 text-white font-bold shadow'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-background/50',
-                        )}
+                        className="text-xs whitespace-nowrap"
                     >
                         {period.label}
                     </button>

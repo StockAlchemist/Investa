@@ -1,59 +1,106 @@
 import SwiftUI
 
+// MARK: - Ledger palette
+//
+// The same tokens as `web_app/app/globals.css` (`:root` / `.dark`), so a card,
+// a gain and the accent are the same object on all three clients. Warm paper,
+// white cards, near-black ink, one cobalt accent. Colour means something —
+// gain, loss, caution, "you can act on this" — and is never decoration.
+
 extension Color {
-    /// Gain (positive) semantic color — vibrant emerald matching web.
-    static let up = Color.adaptive(light: (0.09, 0.64, 0.29), dark: (0.13, 0.77, 0.37))   // #16a34a / #22c55e
-    /// Loss (negative) semantic color — rose/red matching web.
-    static let down = Color.adaptive(light: (0.86, 0.15, 0.15), dark: (0.94, 0.27, 0.27)) // #dc2626 / #ef4444
+    /// Adaptive colour from two hex values (sRGB), light first.
+    static func adaptive(lightHex: UInt, darkHex: UInt) -> Color {
+        func rgb(_ h: UInt) -> (r: Double, g: Double, b: Double) {
+            (Double((h >> 16) & 0xff) / 255, Double((h >> 8) & 0xff) / 255, Double(h & 0xff) / 255)
+        }
+        return adaptive(light: rgb(lightHex), dark: rgb(darkHex))
+    }
 
-    /// The one interface accent — indigo. Primary buttons, active nav, focus
-    /// rings, links, selection. Adaptive so it stays legible on both grounds:
-    /// indigo-500 on light, indigo-400 on dark.
-    ///
-    /// This was teal (#0097b2). Indigo won on usage — it already carried every
-    /// card shadow in `CardStyle` below and in the web app's glass cards, and
-    /// was the web app's most-used accent by a wide margin. Teal keeps its real
-    /// job as slot 1 of the data palette (`dataPalette`), which is where it was
-    /// already being used: the first colour of the allocation donut.
-    static let brand = Color.adaptive(light: (0.39, 0.40, 0.945), dark: (0.506, 0.549, 0.972))
-    /// Accent ink on a tinted fill — indigo-600 on light, indigo-300 on dark.
-    static let brandInk = Color.adaptive(light: (0.310, 0.275, 0.898), dark: (0.647, 0.706, 0.988))
-    /// Indigo-500, fixed. Use `brand` unless you need the exact hex.
-    static let brandIndigo = Color(hex: 0x6366f1)
-    /// Teal — slot 1 of the data palette. Not an interface colour.
-    static let brandTeal = Color(hex: 0x0097b2)
-    /// Accent violet (#8b5cf6) used in earnings events.
-    static let brandViolet = Color(hex: 0x8b5cf6)
-    /// Accent purple (#a855f7).
-    static let brandPurple = Color(hex: 0xa855f7)
-    /// Accent amber (#f59e0b) used in FX and warnings.
-    static let brandAmber = Color(hex: 0xf59e0b)
-    /// Accent cyan (#06b6d4).
-    static let brandCyan = Color(hex: 0x06b6d4)
-    /// Accent sky (#0ea5e9).
-    static let brandSky = Color(hex: 0x0ea5e9)
-    /// Accent emerald (#10b981).
-    static let brandEmerald = Color(hex: 0x10b981)
-    /// Accent rose (#f43f5e).
-    static let brandRose = Color(hex: 0xf43f5e)
+    // Ground and ink.
+    /// The page ground — warm paper (#F5F4EF) / near-black (#0F1013).
+    static let paper = Color.adaptive(lightHex: 0xF5F4EF, darkHex: 0x0F1013)
+    /// A panel inside a card: the inset tier's fill, and segmented-control tracks.
+    static let inset = Color.adaptive(lightHex: 0xF1F0EA, darkHex: 0x1E2127)
+    /// Hairline rule between rows and around cards.
+    static let line = Color.adaptive(lightHex: 0xE4E2DA, darkHex: 0x2A2D34)
+    /// The stronger rule used around form fields.
+    static let lineStrong = Color.adaptive(lightHex: 0xD3D0C6, darkHex: 0x34373F)
+    /// Second text tone: context under a figure ("p.a.", "on cost").
+    static let ink2 = Color.adaptive(lightHex: 0x4C4E56, darkHex: 0xB3B5BC)
+    /// Third text tone: labels and captions. ≥4.5:1 on paper and on a card.
+    static let ink3 = Color.adaptive(lightHex: 0x6A6C74, darkHex: 0x8D9098)
 
-    /// Section header and small uppercase label color (#475569 in light, #94a3b8 in dark).
-    static let sectionText = Color.adaptive(light: (0.28, 0.33, 0.41), dark: (0.58, 0.64, 0.72))
+    // Semantic. Gain and loss always travel with a sign, so hue is never the only cue.
+    /// Gain.
+    static let up = Color.adaptive(lightHex: 0x0B6B4C, darkHex: 0x4FC897)
+    /// Loss.
+    static let down = Color.adaptive(lightHex: 0xB83A15, darkHex: 0xFF8D6B)
+    /// Caution — stale data, drift over target, FX. Legible as text on a card.
+    static let warn = Color.adaptive(lightHex: 0x9A6200, darkHex: 0xF1BC55)
+    static let upTint = Color.adaptive(lightHex: 0xE3F1EA, darkHex: 0x173127)
+    static let downTint = Color.adaptive(lightHex: 0xFBE9E3, darkHex: 0x3A1F17)
+    static let warnTint = Color.adaptive(lightHex: 0xFBF0D9, darkHex: 0x3A2E14)
 
-    /// Web-aligned card background: clean elevated surface in light mode, deep dark blue-slate in dark mode.
-    static let cardBg = Color.adaptive(light: (0.98, 0.99, 1.0), dark: (0.04, 0.07, 0.13))
-    /// Card border color: subtle translucent highlight in dark mode, crisp clean border in light mode.
-    static let cardBorder = Color.adaptive(light: (0.88, 0.91, 0.94), dark: (0.20, 0.25, 0.38))
+    /// The one interface accent — cobalt. Primary buttons, the selected
+    /// segment's ink, focus, links. Never a gain or a loss.
+    static let brand = Color.adaptive(lightHex: 0x2E46C8, darkHex: 0x8FA3FF)
+    /// Accent ink on a tinted fill.
+    static let brandInk = Color.adaptive(lightHex: 0x2A3FB5, darkHex: 0xA9B8FF)
+    /// Accent tint — the fill behind an active chip.
+    static let brandTint = Color.adaptive(lightHex: 0xE8EBFA, darkHex: 0x232A4D)
+
+    // Chart series — categorical, never chrome. Mid-tones legible on both grounds.
+    static let plum = Color.adaptive(lightHex: 0x8B4FA6, darkHex: 0xB17FCB)
+    static let dataTeal = Color.adaptive(lightHex: 0x1C8C84, darkHex: 0x4FB0A8)
+    static let ochre = Color.adaptive(lightHex: 0xC8921E, darkHex: 0xF1BC55)
+    static let periwinkle = Color.adaptive(lightHex: 0x5F79DB, darkHex: 0x7C93E8)
+    static let graphite = Color.adaptive(lightHex: 0x6A6C74, darkHex: 0x9A9CA3)
+
+    // Retired names, re-pointed at Ledger so existing call sites land on the
+    // design language. New code names the role (`brand`, `plum`, `warn`).
+    static let brandIndigo = brand
+    static let brandTeal = dataTeal
+    static let brandViolet = plum
+    static let brandPurple = plum
+    static let brandAmber = ochre
+    static let brandCyan = dataTeal
+    static let brandSky = periwinkle
+    static let brandEmerald = Color.adaptive(lightHex: 0x1F9D6C, darkHex: 0x4FC897)
+    static let brandRose = Color.adaptive(lightHex: 0xD2491F, darkHex: 0xFF8D6B)
+
+    /// Overline and small label colour.
+    static let sectionText = ink3
+
+    /// The chosen segment of a segmented control: raised white on the inset
+    /// track (light), the strong rule colour (dark). Its text is `.primary`,
+    /// the others `.ink2` — the twin of the web `.segmented`.
+    static let segmentOn = Color.adaptive(lightHex: 0xFFFFFF, darkHex: 0x34373F)
+
+    /// Card surface: white on paper / #17191E on near-black.
+    static let cardBg = Color.adaptive(lightHex: 0xFFFFFF, darkHex: 0x17191E)
+    /// Card rule.
+    static let cardBorder = line
 }
 
-// Make `.up` / `.down` usable directly in ShapeStyle contexts (.foregroundStyle,
-// .fill, .background, chart .foregroundStyle) — like the built-in `.red`/`.green`.
+// Make the Ledger colours usable as implicit members in ShapeStyle contexts
+// (.foregroundStyle, .fill, .background, chart .foregroundStyle) — like the
+// built-in `.red`/`.green`, which Ledger replaces.
 extension ShapeStyle where Self == Color {
     static var up: Color { Color.up }
     static var down: Color { Color.down }
+    static var warn: Color { Color.warn }
     static var brand: Color { Color.brand }
     static var brandIndigo: Color { Color.brandIndigo }
     static var sectionText: Color { Color.sectionText }
+    static var paper: Color { Color.paper }
+    static var inset: Color { Color.inset }
+    static var line: Color { Color.line }
+    static var ink2: Color { Color.ink2 }
+    static var ink3: Color { Color.ink3 }
+    static var plum: Color { Color.plum }
+    static var dataTeal: Color { Color.dataTeal }
+    static var ochre: Color { Color.ochre }
+    static var periwinkle: Color { Color.periwinkle }
 }
 
 /// App-wide visual tokens. Centralizes the card chrome that was previously
@@ -63,21 +110,22 @@ enum Theme {
     static let brand = Color.brand
 
     /// Categorical colours for charts and legends — fixed order, never used for
-    /// chrome. A tab is not a colour; a sector slice is.
+    /// chrome. A tab is not a colour; a sector slice is. Same order as the web
+    /// allocation palette.
     static let dataPalette: [Color] = [
-        Color(hex: 0x0097b2),   // teal
-        Color(hex: 0x6366f1),   // indigo
-        Color(hex: 0xf59e0b),   // amber
-        Color(hex: 0x10b981),   // emerald
-        Color(hex: 0x8b5cf6),   // violet
-        Color(hex: 0xf43f5e),   // rose
+        Color.brand,       // cobalt
+        Color.dataTeal,    // teal
+        Color.ochre,       // ochre
+        Color.plum,        // plum
+        Color.periwinkle,  // periwinkle
+        Color.graphite,    // graphite
     ]
 
-    /// FX overlay accent (amber-500), matching the web performance graph's FX line.
-    static let fx = Color.brandAmber
+    /// FX overlay accent, matching the web performance graph's FX line.
+    static let fx = Color.ochre
 
-    /// Earnings-event accent (violet-500), matching the web Events card.
-    static let earnings = Color.brandViolet
+    /// Earnings-event accent, matching the web Events card.
+    static let earnings = Color.plum
 
     static let controlRadius: CGFloat = 8    // buttons, chips, rows, inputs
     static let insetRadius: CGFloat = 12     // panels inside a card, menus
@@ -94,8 +142,14 @@ enum Theme {
     enum Tier { case hero, standard, inset }
 }
 
-/// Shared card chrome: elevated card background, top-shine highlight gradient,
-/// fine perimeter stroke, and a tier-scaled drop shadow matching web's glass cards.
+/// Shared card chrome — Ledger's three tiers, the twin of `.card-inset`,
+/// `.card-standard` and `.card-hero` in globals.css:
+///
+/// - inset: muted fill, no rule — a panel inside a card
+/// - standard: white card, 1pt hairline rule, no shadow
+/// - hero: the rule plus a soft neutral lift (light appearance only)
+///
+/// No shine gradient and no tinted shadow: Ledger lifts nothing with colour.
 struct CardStyle: ViewModifier {
     var tier: Theme.Tier = .standard
     @Environment(\.colorScheme) private var colorScheme
@@ -109,48 +163,26 @@ struct CardStyle: ViewModifier {
     }
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
-            .background(Color.cardBg, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             // Clip content (e.g. full-bleed chart fills) to the card's rounded corners.
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .clipShape(shape)
             .overlay(
-                // Top-shine highlight gradient (mirrors web .card-shine::before)
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(colorScheme == .dark ? 0.05 : 0.15),
-                                Color.white.opacity(0.0)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .center
-                        )
-                    )
+                shape
+                    .strokeBorder(tier == .inset ? Color.clear : Color.cardBorder, lineWidth: 1)
                     .allowsHitTesting(false)
             )
-            .overlay(
-                // Subtle perimeter border stroke
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(colorScheme == .dark ? 0.12 : 0.8),
-                                Color.cardBorder.opacity(colorScheme == .dark ? 0.25 : 0.6)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
+            // The lift is cast by the card's own shape, behind the content. A
+            // `.shadow` on the whole card would shadow every chip, pill and
+            // label inside it separately.
+            .background(
+                shape
+                    .fill(tier == .inset ? Color.inset : Color.cardBg)
+                    .shadow(
+                        color: tier == .hero && colorScheme == .light
+                            ? Color(red: 0.086, green: 0.09, blue: 0.106).opacity(0.06) : .clear,
+                        radius: 12, x: 0, y: 6
                     )
-                    .allowsHitTesting(false)
-            )
-            .shadow(
-                color: colorScheme == .dark
-                    ? Color.black.opacity(tier == .hero ? 0.40 : 0.25)
-                    : Color.brandIndigo.opacity(tier == .hero ? 0.08 : 0.04),
-                radius: tier == .hero ? 18 : 8,
-                x: 0,
-                y: tier == .hero ? 8 : 3
             )
     }
 }
@@ -160,7 +192,8 @@ extension View {
     func card(_ tier: Theme.Tier = .standard) -> some View { modifier(CardStyle(tier: tier)) }
 }
 
-/// Standardized section label view (10px uppercase, font-weight 800, tracking 1.5).
+/// Overline — the small caps label above a figure or a group ("PORTFOLIO
+/// VALUE"). 11pt semibold, light tracking; the twin of `.section-label`.
 struct SectionLabel: View {
     let title: String
     /// Headers that are too long for a compact width can opt into wrapping
@@ -168,8 +201,8 @@ struct SectionLabel: View {
     var lineLimit: Int = 1
     var body: some View {
         Text(title)
-            .appFont(.system(size: 10, weight: .heavy))
-            .tracking(1.5)
+            .appFont(.system(size: 11, weight: .semibold))
+            .tracking(0.66)
             .textCase(.uppercase)
             .foregroundStyle(Color.sectionText)
             .lineLimit(lineLimit)
@@ -177,7 +210,8 @@ struct SectionLabel: View {
     }
 }
 
-/// Reusable semantic badge pill with border and translucent background fill.
+/// Ledger badge: a 6pt-radius tag on a tinted fill, no rule — the twin of the
+/// web `Badge`. Gain and loss badges still carry their sign in the text.
 struct SemanticBadge: View {
     let text: String
     var tint: Color = .brandIndigo
@@ -192,13 +226,12 @@ struct SemanticBadge: View {
 
     var body: some View {
         Text(text)
-            .appFont(.system(size: 11, weight: .bold))
+            .appFont(.system(size: 12, weight: .semibold))
             .monospacedDigit()
             .foregroundStyle(effectiveTint)
             .padding(.horizontal, 7)
-            .padding(.vertical, 2.5)
-            .background(effectiveTint.opacity(0.12), in: Capsule())
-            .overlay(Capsule().strokeBorder(effectiveTint.opacity(0.25), lineWidth: 0.8))
+            .padding(.vertical, 2)
+            .background(effectiveTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
@@ -228,7 +261,7 @@ private struct RowHover: ViewModifier {
     @State private var hovering = false
     func body(content: Content) -> some View {
         content
-            .background(hovering ? Color.primary.opacity(0.06) : .clear,
+            .background(hovering ? Color.inset : .clear,
                         in: RoundedRectangle(cornerRadius: 8))
             .onHover { hovering = $0 }
     }

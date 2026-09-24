@@ -66,7 +66,6 @@ export const PendingIbkrBanner: React.FC = () => {
 
     return (
         <div className="metric-card card-shine overflow-hidden animate-in slide-in-from-top duration-500 relative border-2 border-cyan-500/20">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500" />
             <div className="px-4 py-4 bg-cyan-500/10 flex justify-between items-center border-b border-cyan-500/10">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-cyan-500/20 rounded-full">
@@ -76,7 +75,7 @@ export const PendingIbkrBanner: React.FC = () => {
                         <h3 className="text-sm font-bold text-cyan-700 dark:text-cyan-400 uppercase tracking-widest">
                             Pending IBKR Transactions ({pendingTransactions.length})
                         </h3>
-                        <p className="text-[10px] text-muted-foreground uppercase font-semibold">Synced from IBKR. Review and approve to add to your main portfolio.</p>
+                        <p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-[0.06em]">Synced from IBKR. Review and approve to add to your main portfolio.</p>
                     </div>
                 </div>
                 <div className="flex gap-2">
@@ -114,7 +113,7 @@ export const PendingIbkrBanner: React.FC = () => {
             </div>
             <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
                 <table className="min-w-full">
-                    <thead className="bg-cyan-500/5 text-[10px] font-black text-cyan-700 dark:text-cyan-400 uppercase tracking-tighter sticky top-0 bg-card/95 backdrop-blur-sm z-10">
+                    <thead className="bg-cyan-500/5 text-[11px] font-semibold text-cyan-700 dark:text-cyan-400 uppercase tracking-tighter sticky top-0 bg-card/95 backdrop-blur-sm z-10">
                         <tr>
                             <th className="px-4 py-2 text-left w-8">
                                 <input
@@ -155,7 +154,7 @@ export const PendingIbkrBanner: React.FC = () => {
                                 </td>
                                 <td className="px-4 py-3 text-[12px] text-muted-foreground whitespace-nowrap">{formatCalendarDate(tx.Date)}</td>
                                 <td className="px-4 py-3">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${getPendingTypeStyle(tx.Type)}`}>
+                                    <span className={`px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-[0.06em] ${getPendingTypeStyle(tx.Type)}`}>
                                         {tx.Type}
                                     </span>
                                 </td>

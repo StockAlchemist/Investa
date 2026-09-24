@@ -200,7 +200,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                                                 isEffectivelyClosed && "line-through"
                                             )}>{account}</span>
                                             {isEffectivelyClosed && (
-                                                <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 bg-muted text-muted-foreground rounded-full">
+                                                <span className="text-[11px] uppercase tracking-[0.06em] font-semibold px-2 py-0.5 bg-muted text-muted-foreground rounded-full">
                                                     Closed
                                                 </span>
                                             )}

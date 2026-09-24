@@ -43,8 +43,8 @@ export function defaultRange(periodType: StatementPeriod): StatementRange {
  * surface. The light steps sit below 3:1 on the light surface, so the statement
  * table under the chart carries the relief.
  */
-export const SERIES_COLORS_LIGHT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100'];
-export const SERIES_COLORS_DARK = ['#3987e5', '#d95926', '#199e70', '#c98500'];
+export const SERIES_COLORS_LIGHT = ['#2E46C8', '#C8921E', '#1C8C84', '#8B4FA6'];
+export const SERIES_COLORS_DARK = ['#8FA3FF', '#F1BC55', '#4FB0A8', '#B17FCB'];
 
 /**
  * Two measures whose magnitudes differ by more than this get their own chart

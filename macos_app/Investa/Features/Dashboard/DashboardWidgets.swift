@@ -54,31 +54,33 @@ struct PortfolioHeroCard: View {
     private var dayGL: Double? { metrics?.dayChangeDisplay }
     private var dayGLPct: Double? { metrics?.dayChangePercent }
 
-    private var periodView: (series: [Double], pct: Double?, abs: Double?) {
+    /// The selected window's path — values and the raw date of each point (for
+    /// the hover card) — plus its return.
+    private var periodView: (series: [Double], dates: [String], pct: Double?, abs: Double?) {
         if period == .day {
             let series = intradayHistory.map { $0.value }
-            return (series, dayGLPct, dayGL)
+            return (series, intradayHistory.map(\.date), dayGLPct, dayGL)
         }
         let historyToUse = period == .wtd ? wtdHistory : longHistory
-        let rows = historyToUse.compactMap { p -> (Date, Double)? in
-            guard let d = p.parsedDate else { return nil }; return (d, p.value)
+        let rows = historyToUse.compactMap { p -> (Date, Double, String)? in
+            guard let d = p.parsedDate else { return nil }; return (d, p.value, p.date)
         }
-        guard !rows.isEmpty else { return ([], nil, nil) }
+        guard !rows.isEmpty else { return ([], [], nil, nil) }
         let cut = Self.cutoff(period)
         let beforeIdx = rows.firstIndex { $0.0 >= cut }
         let sliced = rows.filter { $0.0 >= cut }
         let anchor = (beforeIdx ?? 0) > 0 ? rows[(beforeIdx ?? 0) - 1] : (sliced.first ?? rows[0])
         let tail = sliced.isEmpty ? Array(rows.suffix(1)) : sliced
         let series = [anchor.1] + tail.map { $0.1 }
+        let dates = [anchor.2] + tail.map { $0.2 }
         let start = anchor.1, end = tail.last?.1 ?? anchor.1
-        guard start != 0 else { return (series, nil, nil) }
+        guard start != 0 else { return (series, dates, nil, nil) }
         let absV = end - start
-        return (series, absV / start * 100, absV)
+        return (series, dates, absV / start * 100, absV)
     }
 
     var body: some View {
-        let positive = (dayGL ?? 0) >= 0
-        return VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             // Stacked on phone; side-by-side (with graceful fallback) when wide.
             if compact {
                 VStack(alignment: .leading, spacing: 12) { valueBlock; pillCluster }
@@ -107,45 +109,84 @@ struct PortfolioHeroCard: View {
                     }
                 }
                 if periodView.series.count > 1 {
-                    let up = (periodView.pct ?? 0) >= 0
-                    let domain = chartDomain(periodView.series)
-                    Chart(Array(periodView.series.enumerated()), id: \.offset) { i, v in
+                    let view = periodView
+                    let domain = chartDomain(view.series)
+                    Chart(Array(view.series.enumerated()), id: \.offset) { i, v in
                         AreaMark(
                             x: .value("i", i),
                             yStart: .value("Min", domain.lowerBound),
                             yEnd: .value("v", v)
                         )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    (up ? Color.up : Color.down).opacity(0.32),
-                                    (up ? Color.up : Color.down).opacity(0.0)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                        // Ledger: the portfolio's path is drawn in the accent
+                        // whatever the sign, over a flat tint — the figures
+                        // beside it already say gain or loss, with a sign.
+                        .foregroundStyle(Color.brand.opacity(0.06))
                         LineMark(x: .value("i", i), y: .value("v", v))
-                            .foregroundStyle(up ? Color.up : Color.down)
+                            .foregroundStyle(Color.brand)
                             .lineStyle(StrokeStyle(lineWidth: 2))
                     }
                     .chartYScale(domain: domain)
-                    .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 50)
+                    .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: compact ? 96 : 140)
+                    // Hover (macOS) or touch-and-drag (iOS): the value at that
+                    // moment and the move since the window began — the web
+                    // hero chart's tooltip.
+                    .chartHoverTooltip(Array(view.series.indices)) { i in
+                        heroTooltip(i, series: view.series, dates: view.dates)
+                    }
                 }
             }
         }
-        .padding(20)
+        .padding(compact ? 18 : 26)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            // Faint directional wash: green when the day is up, red when down.
-            LinearGradient(
-                colors: [(positive ? Color.up : .down).opacity(0.08), .clear],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.heroRadius, style: .continuous))
-        )
         .card(.hero)
     }
+
+    private func heroTooltip(_ i: Int, series: [Double], dates: [String]) -> ChartTooltipContent? {
+        guard series.indices.contains(i), let start = series.first else { return nil }
+        let value = series[i]
+        let change = value - start
+        let sign = change >= 0 ? "+" : "\u{2212}"
+        var changeText = "\(sign)\(Fmt.currency(abs(change), code: currency))"
+        if start != 0 { changeText += " · \(sign)\(String(format: "%.2f%%", abs(change / start * 100)))" }
+        let title = dates.indices.contains(i) ? Self.pointLabel(dates[i], weekday: true) : ""
+        var rows = [
+            ChartTooltipRow(label: "Value", value: Fmt.currency(value, code: currency)),
+            ChartTooltipRow(color: change >= 0 ? .up : .down, label: "Change", value: changeText),
+        ]
+        if let first = dates.first {
+            rows.append(ChartTooltipRow(label: "Since", value: Self.pointLabel(first, weekday: false)))
+        }
+        return ChartTooltipContent(title: title, rows: rows)
+    }
+
+    /// A hero point's moment in the app's notation — `Wed, 05 Aug 10:30 AM` on
+    /// the market's clock for an intraday point, `05 Aug 2026` for a daily one.
+    /// Read the way the web's `chartInstant` reads it: a zoneless timestamp is
+    /// UTC wall-clock time, an offset is honoured.
+    static func pointLabel(_ raw: String, weekday: Bool) -> String {
+        guard raw.count > 10 else { return MarketTime.formatted(raw) }
+        let hasZone = raw.range(of: #"(Z|[+-]\d{2}:?\d{2})$"#, options: .regularExpression) != nil
+        let instant = hasZone
+            ? (isoWithFraction.date(from: raw) ?? ISO8601DateFormatter().date(from: raw))
+            : zonelessUTC.date(from: String(raw.replacingOccurrences(of: "T", with: " ").prefix(19)))
+        guard let instant else { return MarketTime.formatted(String(raw.prefix(10))) }
+        return MarketTime.formatter(weekday ? "EEE, dd MMM h:mm a" : "dd MMM h:mm a",
+                                    timeZone: MarketTime.defaultZone).string(from: instant)
+    }
+
+    private static let zonelessUTC: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+
+    private static let isoWithFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
 
     private var periodControls: some View {
         HStack(spacing: 2) {
@@ -154,20 +195,18 @@ struct PortfolioHeroCard: View {
                     withAnimation(.easeInOut(duration: 0.15)) { period = p }
                 } label: {
                     Text(p.rawValue)
-                        .appFont(.system(size: 11, weight: .bold))
+                        .appFont(.system(size: 12, weight: period == p ? .semibold : .medium))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4.5)
-                        .background(
-                            period == p ? Color.brand : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .background(period == p ? Color.segmentOn : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                         )
-                        .foregroundStyle(period == p ? Color.white : Color.secondary)
+                        .foregroundStyle(period == p ? Color.primary : Color.ink2)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(2.5)
-        .background(Color.cardBorder.opacity(0.25), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(3)
+        .background(Color.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func periodReturnText(pct: Double, absV: Double) -> some View {
@@ -193,10 +232,7 @@ struct PortfolioHeroCard: View {
         let positive = (dayGL ?? 0) >= 0
         return VStack(alignment: .leading, spacing: compact ? 4 : 6) {
             HStack(spacing: 6) {
-                Image(systemName: "wallet.pass")
-                    .appFont(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.sectionText)
-                SectionLabel(title: "Total Portfolio Value")
+                SectionLabel(title: "Portfolio value")
                 if isLoading {
                     ProgressView().controlSize(.mini).padding(.leading, 2)
                 }
@@ -214,31 +250,33 @@ struct PortfolioHeroCard: View {
 
     private var valueText: some View {
         Text(Fmt.currency(metrics?.marketValue, code: currency))
-            .appFont(.system(size: compact ? 34 : 42, weight: .black, design: .rounded))
+            // The interface sans with tabular digits, not the display serif:
+            // a condensed serif "1" is barely wider than the comma beside it.
+            .appFont(.system(size: compact ? 38 : 48, weight: .semibold))
             .monospacedDigit()
             .minimumScaleFactor(0.5).lineLimit(1)
     }
 
+    /// Today's move as one Ledger chip — "↗ +$1,250.50 · +1.01%" on the gain
+    /// or loss tint — then "today". Sign and arrow carry it, not hue alone.
     @ViewBuilder private func deltaView(_ positive: Bool) -> some View {
         if let g = dayGL {
-            HStack(spacing: 5) {
-                Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
-                    .appFont(.system(size: 13, weight: .bold))
-                Text("\(g >= 0 ? "+" : "")\(Fmt.currency(g, code: currency))")
-                    .appFont(.system(size: 16, weight: .semibold))
-                    .monospacedDigit()
-                if let p = dayGLPct {
-                    Text("\(p >= 0 ? "+" : "")\(String(format: "%.2f%%", p))")
-                        .appFont(.system(size: 12, weight: .bold))
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
+                        .appFont(.system(size: 11, weight: .bold))
+                    Text("\(g >= 0 ? "+" : "\u{2212}")\(Fmt.currency(abs(g), code: currency))"
+                         + (dayGLPct.map { " · \($0 >= 0 ? "+" : "\u{2212}")\(String(format: "%.2f%%", abs($0)))" } ?? ""))
+                        .appFont(.system(size: 13, weight: .semibold))
                         .monospacedDigit()
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2.5)
-                        .background((positive ? Color.up : Color.down).opacity(0.12), in: Capsule())
-                        .overlay(Capsule().strokeBorder((positive ? Color.up : Color.down).opacity(0.25), lineWidth: 0.8))
                 }
-                Text("today").appFont(.caption).foregroundStyle(.secondary)
+                .foregroundStyle(positive ? Color.up : Color.down)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(positive ? Color.upTint : Color.downTint,
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text("today").appFont(.footnote).foregroundStyle(Color.ink3)
             }
-            .foregroundStyle(positive ? Color.up : Color.down)
             .lineLimit(1).minimumScaleFactor(0.7)
         }
     }
@@ -255,28 +293,28 @@ struct PortfolioHeroCard: View {
                 statPill("IRR (MWR)", irr, sub: "p.a.")
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
         .frame(maxWidth: compact ? .infinity : nil)
-        .background(Color.cardBorder.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.cardBorder.opacity(0.4), lineWidth: 0.8))
     }
 
     private func statPill(_ label: String, _ value: Double?, sub: String?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            SectionLabel(title: label)
+            Text(label)
+                .appFont(.caption)
+                .foregroundStyle(Color.ink3)
+                .lineLimit(1)
                 .minimumScaleFactor(0.7)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(Fmt.percent(value, includeSign: true))
-                    .appFont(.system(size: 18, weight: .bold))
+                    .appFont(.system(size: 17, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(Fmt.tint(for: value))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                 if let sub {
                     Text(sub)
-                        .appFont(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .appFont(.caption)
+                        .foregroundStyle(Color.ink2)
                 }
             }
         }
@@ -606,7 +644,7 @@ struct UpcomingEventsCard: View {
             .lineLimit(1).fixedSize()
         case .dividend(let d):
             if d.status == "estimated" {
-                Label("est.", systemImage: "clock").appFont(.caption2).foregroundStyle(.orange)
+                Label("est.", systemImage: "clock").appFont(.caption2).foregroundStyle(.warn)
             } else {
                 Image(systemName: "checkmark.seal.fill").appFont(.caption2).foregroundStyle(Color.up)
             }
@@ -728,11 +766,11 @@ struct DonutSlice: Identifiable {
 
 /// Palette matching the web PortfolioDonut COLORS (last = slate for "Other").
 private let donutPalette: [Color] = [
-    Color(hex: 0x0097b2), Color(hex: 0x0ea5e9), Color(hex: 0x3b82f6), Color(hex: 0x6366f1),
-    Color(hex: 0x8b5cf6), Color(hex: 0xd946ef), Color(hex: 0xec4899), Color(hex: 0xf43f5e),
-    Color(hex: 0xf59e0b), Color(hex: 0x10b981), Color(hex: 0x14b8a6),
+    Color(hex: 0x259A91), Color(hex: 0x7C93E8), Color(hex: 0x4A62E0), Color(hex: 0x4A62E0),
+    Color(hex: 0x9A5DB8), Color(hex: 0x9A5DB8), Color(hex: 0xC2588A), Color(hex: 0xD2491F),
+    Color(hex: 0xC8921E), Color(hex: 0x1F9D6C), Color(hex: 0x259A91),
 ]
-private let otherColor = Color(hex: 0x94a3b8)
+private let otherColor = Color(hex: 0x8E9099)
 
 /// Group holdings into donut slices by a key, with a 2% "Other" bucket.
 private func donutSlices(_ holdings: [Holding], currency: String, by keyFor: (Holding) -> String) -> [DonutSlice] {
@@ -1063,7 +1101,7 @@ struct PortfolioHealthCard: View {
         .onTapGesture { showAnalysis = true }
         .sheet(isPresented: $showAnalysis) { HealthAnalysisSheet(health: health) }
     }
-    private func color(_ s: Double) -> Color { s < 40 ? .red : (s < 70 ? .orange : .green) }
+    private func color(_ s: Double) -> Color { s < 40 ? .down : (s < 70 ? .warn : .up) }
 }
 
 // MARK: - Risk metrics
@@ -1079,7 +1117,7 @@ struct RiskMetricsCard: View {
             ("Sortino Ratio", "Sortino Ratio", Fmt.number(risk?.sortino), (risk?.sortino ?? 0) > 1 ? .up : .primary),
             ("Volatility", "Volatility", Fmt.percent(risk?.volatilityAnn), .primary),
             ("Max Drawdown", "Max Drawdown", Fmt.percent(risk?.maxDrawdown), .down),
-            ("Beta", "Beta", Fmt.number(risk?.beta), (risk?.beta ?? 0) > 1.2 ? .orange : .primary),
+            ("Beta", "Beta", Fmt.number(risk?.beta), (risk?.beta ?? 0) > 1.2 ? .warn : .primary),
             ("Alpha", "Alpha", Fmt.percent(risk?.alpha, includeSign: true),
              (risk?.alpha ?? 0) > 0 ? .up : ((risk?.alpha ?? 0) < 0 ? .down : .primary)),
         ]
@@ -1234,7 +1272,7 @@ private struct ContributorRow: View {
                             .appFont((large ? AppFont.callout : AppFont.caption).weight(.bold)).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.7)
                     }.foregroundStyle(tone)
-                    Text(stock.sector).appFont(.system(size: 10)).foregroundStyle(Color(hex: 0x06b6d4)).textCase(.uppercase).lineLimit(1)
+                    Text(stock.sector).appFont(.system(size: 10)).foregroundStyle(Color(hex: 0x259A91)).textCase(.uppercase).lineLimit(1)
                 }
             }
             .padding(.vertical, large ? 8 : 4).padding(.horizontal, large ? 12 : 4)
@@ -1421,7 +1459,7 @@ struct DividendCalendarCard: View {
                             Button {
                                 appState.openStock(ev.symbol)
                             } label: {
-                                Text(ev.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                Text(ev.symbol).fontWeight(.bold).foregroundStyle(.brand)
                             }
                             .buttonStyle(.plain)
                             .frame(width: 70, alignment: .leading)
@@ -1431,7 +1469,7 @@ struct DividendCalendarCard: View {
                             }
                             Spacer()
                             if ev.status == "estimated" {
-                                Text("est.").appFont(.caption2).foregroundStyle(.orange)
+                                Text("est.").appFont(.caption2).foregroundStyle(.warn)
                             }
                             Text(Fmt.currency(ev.amount, code: currency)).monospacedDigit()
                         }

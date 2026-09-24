@@ -24,7 +24,7 @@ export function TrendSparkline({
 
     // Auto color based on trend if no explicit color provided
     const isUp = data[data.length - 1] >= data[0];
-    const autoColor = isUp ? "#10b981" : "#f43f5e"; // Emerald or Rose
+    const autoColor = isUp ? "#1F9D6C" : "#D2491F"; // Emerald or Rose
     const finalColor = color || autoColor;
 
     const gradientId = `sparkline-gradient-${id}`;

@@ -49,9 +49,9 @@ const PERIOD_OPTIONS = [
 ] as const;
 
 const BENCHMARK_OPTIONS = [
-    { name: 'S&P 500', color: '#f59e0b' },
-    { name: 'NASDAQ', color: '#8b5cf6' },
-    { name: 'Dow Jones', color: '#0ea5e9' },
+    { name: 'S&P 500', color: '#C8921E' },
+    { name: 'NASDAQ', color: '#9A5DB8' },
+    { name: 'Dow Jones', color: '#7C93E8' },
 ] as const;
 
 interface TooltipPayloadItem {
@@ -101,7 +101,7 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({
                         {shares.toLocaleString(undefined, { maximumFractionDigits: 4 })} sh
                     </span>
                 ) : (
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
                         Closed
                     </span>
                 )}
@@ -352,7 +352,7 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                             className={cn(
                                 'flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold transition-all duration-150 cursor-pointer whitespace-nowrap',
                                 view === 'value'
-                                    ? 'bg-indigo-600 text-white font-bold shadow'
+                                    ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                             )}
                         >
@@ -364,7 +364,7 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                             className={cn(
                                 'flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-semibold transition-all duration-150 cursor-pointer whitespace-nowrap',
                                 view === 'return'
-                                    ? 'bg-indigo-600 text-white font-bold shadow'
+                                    ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                     : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                             )}
                         >
@@ -384,7 +384,7 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                     className={cn(
                                         'px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all duration-150 cursor-pointer whitespace-nowrap',
                                         active
-                                            ? 'bg-indigo-600 text-white font-bold shadow'
+                                            ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                                     )}
                                 >
@@ -450,8 +450,8 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                             <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="posValueGradient" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
+                                        <stop offset="5%" stopColor="#4A62E0" stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor="#4A62E0" stopOpacity={0.0} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
@@ -479,7 +479,7 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                     type="monotone"
                                     dataKey="value"
                                     name="Market Value"
-                                    stroke="#6366f1"
+                                    stroke="#4A62E0"
                                     strokeWidth={2.2}
                                     fillOpacity={1}
                                     fill="url(#posValueGradient)"
@@ -488,7 +488,7 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                     type="monotone"
                                     dataKey="cost_basis"
                                     name="Cost Basis"
-                                    stroke="#94a3b8"
+                                    stroke="#8E9099"
                                     strokeWidth={1.5}
                                     strokeDasharray="4 4"
                                     dot={false}
@@ -500,12 +500,12 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                     <linearGradient id="posReturnGradient" x1="0" y1="0" x2="0" y2="1">
                                         <stop
                                             offset="5%"
-                                            stopColor={isOverallPositive ? '#10b981' : '#ef4444'}
+                                            stopColor={isOverallPositive ? '#1F9D6C' : '#D2491F'}
                                             stopOpacity={0.35}
                                         />
                                         <stop
                                             offset="95%"
-                                            stopColor={isOverallPositive ? '#10b981' : '#ef4444'}
+                                            stopColor={isOverallPositive ? '#1F9D6C' : '#D2491F'}
                                             stopOpacity={0.0}
                                         />
                                     </linearGradient>
@@ -534,14 +534,14 @@ export const PositionPerformanceGraph: React.FC<PositionPerformanceGraphProps> =
                                     type="monotone"
                                     dataKey="return_pct"
                                     name="Position Return"
-                                    stroke={isOverallPositive ? '#10b981' : '#ef4444'}
+                                    stroke={isOverallPositive ? '#1F9D6C' : '#D2491F'}
                                     strokeWidth={2.2}
                                     fillOpacity={1}
                                     fill="url(#posReturnGradient)"
                                 />
                                 {selectedBenchmarks.map((bmName) => {
                                     const bmOpt = BENCHMARK_OPTIONS.find((b) => b.name === bmName);
-                                    const col = bmOpt ? bmOpt.color : '#f59e0b';
+                                    const col = bmOpt ? bmOpt.color : '#C8921E';
                                     return (
                                         <Line
                                             key={bmName}

@@ -3,18 +3,19 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const badgeVariants = cva(
-    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+    "inline-flex items-center rounded-md border border-transparent px-2 py-0.5 text-xs font-semibold tabular-nums whitespace-nowrap transition-colors",
     {
         variants: {
             variant: {
-                default: "border-transparent bg-primary text-primary-foreground",
-                secondary: "border-border bg-muted text-muted-foreground",
-                destructive: "border-down/25 bg-down/12 text-down",
-                outline: "border-border text-foreground",
-                // Semantic. Same geometry as every other pill; only the hue moves.
-                success: "border-up/25 bg-up/12 text-up",
-                warning: "border-warn/25 bg-warn/12 text-warn-ink",
-                info: "border-primary/25 bg-primary/12 text-primary-ink",
+                default: "bg-primary text-primary-foreground",
+                secondary: "bg-muted text-ink-2",
+                destructive: "bg-down-tint text-down",
+                outline: "border-border text-ink-2",
+                // Semantic. Same geometry as every other badge; only the hue moves, and
+                // gain/loss figures inside one still carry their sign.
+                success: "bg-up-tint text-up",
+                warning: "bg-warn-tint text-warn-ink",
+                info: "bg-primary-tint text-primary-ink",
             },
         },
         defaultVariants: {

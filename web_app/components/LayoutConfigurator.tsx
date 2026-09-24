@@ -49,7 +49,7 @@ function renderItemList(
     return groups.map((group, gi) => (
         <div key={group.label ?? `__nogroup_${gi}`}>
             {hasAnyLabel && group.label && (
-                <div className="px-4 pt-3 pb-1 text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+                <div className="px-4 pt-3 pb-1 text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-[0.06em]">
                     {group.label}
                 </div>
             )}
@@ -62,7 +62,7 @@ function renderItemList(
                         className={cn(
                             "group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors last:border-0",
                             isVisible
-                                ? 'bg-primary text-primary-foreground'
+                                ? 'bg-muted text-foreground font-semibold'
                                 : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
                         )}
                     >
@@ -165,7 +165,7 @@ export default function LayoutConfigurator({
                 aria-expanded={isOpen}
             >
                 <SlidersHorizontal className="w-4 h-4 text-cyan-500" />
-                <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent font-bold uppercase text-[12px] hidden lg:block">
+                <span className="text-[13px] font-medium text-foreground hidden lg:block">
                     Layout
                 </span>
             </button>

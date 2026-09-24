@@ -31,14 +31,14 @@ interface MarketsTabProps {
 
 function getIndexStyle(name: string): { stroke: string; borderClass: string } {
     const n = name.toLowerCase();
-    if (n.includes('nasdaq'))                            return { stroke: '#8b5cf6', borderClass: 'border-l-violet-500' };
-    if (n.includes('s&p') || n.includes('500'))          return { stroke: '#06b6d4', borderClass: 'border-l-cyan-500'   };
-    if (n.includes('dow') || n.includes('jones'))        return { stroke: '#f59e0b', borderClass: 'border-l-amber-500'  };
-    if (n.includes('russell'))                           return { stroke: '#f97316', borderClass: 'border-l-orange-500' };
-    if (n.includes('ftse'))                              return { stroke: '#3b82f6', borderClass: 'border-l-blue-500'   };
-    if (n.includes('nikkei') || n.includes('japan'))     return { stroke: '#ec4899', borderClass: 'border-l-pink-500'   };
-    if (n.includes('dax') || n.includes('germany'))      return { stroke: '#14b8a6', borderClass: 'border-l-teal-500'   };
-    return                                                      { stroke: '#10b981', borderClass: 'border-l-emerald-500' };
+    if (n.includes('nasdaq'))                            return { stroke: '#9A5DB8', borderClass: 'border-l-violet-500' };
+    if (n.includes('s&p') || n.includes('500'))          return { stroke: '#259A91', borderClass: 'border-l-cyan-500'   };
+    if (n.includes('dow') || n.includes('jones'))        return { stroke: '#C8921E', borderClass: 'border-l-amber-500'  };
+    if (n.includes('russell'))                           return { stroke: '#D07A2A', borderClass: 'border-l-orange-500' };
+    if (n.includes('ftse'))                              return { stroke: '#4A62E0', borderClass: 'border-l-blue-500'   };
+    if (n.includes('nikkei') || n.includes('japan'))     return { stroke: '#C2588A', borderClass: 'border-l-pink-500'   };
+    if (n.includes('dax') || n.includes('germany'))      return { stroke: '#259A91', borderClass: 'border-l-teal-500'   };
+    return                                                      { stroke: '#1F9D6C', borderClass: 'border-l-emerald-500' };
 }
 
 function IndexCard({ index, onClick }: { index: MarketIndex; onClick: () => void }) {
@@ -59,7 +59,7 @@ function IndexCard({ index, onClick }: { index: MarketIndex; onClick: () => void
             <div className="px-5 pt-5 pb-3">
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground truncate">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground truncate">
                             {index.name}
                         </p>
                         <p className="text-3xl font-bold tabular-nums text-foreground mt-1 leading-none">
@@ -165,7 +165,7 @@ function NewsCard({ item }: { item: MarketNewsItem }) {
                             {item.symbol}
                         </span>
                     )}
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide truncate">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">
                         {item.provider}
                     </span>
                     {item.pub_date && (

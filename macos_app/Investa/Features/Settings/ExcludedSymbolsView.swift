@@ -51,7 +51,7 @@ struct ExcludedSymbolsView: View {
                         addSymbol()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .tint(.down)
                     .disabled(newSymbol.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -70,7 +70,7 @@ struct ExcludedSymbolsView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "checkmark.circle")
                             .font(.system(size: 32))
-                            .foregroundStyle(.green.opacity(0.6))
+                            .foregroundStyle(.up.opacity(0.6))
                             .padding(.vertical, 8)
                         Text("No symbols are currently excluded.")
                             .appFont(.caption)

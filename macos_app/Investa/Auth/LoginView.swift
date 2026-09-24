@@ -35,7 +35,7 @@ struct LoginView: View {
                 if let error = auth.errorMessage {
                     Text(error)
                         .appFont(.callout)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.down)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

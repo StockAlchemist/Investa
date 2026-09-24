@@ -118,8 +118,8 @@ struct UnrealizedTaxSection: View {
             Text(label).appFont(.caption2.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
             HStack(spacing: 4) {
                 Text("\(value >= 0 ? "+" : "")\(Fmt.currency(value, code: currency))")
-                    .appFont(.title3.bold()).foregroundStyle(value >= 0 ? .green : .red)
-                Image(systemName: value >= 0 ? "arrow.up.right" : "arrow.down.right").appFont(.caption2).foregroundStyle(value >= 0 ? .green : .red)
+                    .appFont(.title3.bold()).foregroundStyle(value >= 0 ? .up : .down)
+                Image(systemName: value >= 0 ? "arrow.up.right" : "arrow.down.right").appFont(.caption2).foregroundStyle(value >= 0 ? .up : .down)
             }
             Text(sub).appFont(.caption2).foregroundStyle(.secondary)
         }
@@ -143,7 +143,7 @@ struct UnrealizedTaxSection: View {
                                 Button {
                                     appState.openStock(c.symbol)
                                 } label: {
-                                    Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                    Text(c.symbol).fontWeight(.bold).foregroundStyle(.brand)
                                 }
                                 .buttonStyle(.plain)
                                 termBadge(c.isLT)
@@ -151,12 +151,12 @@ struct UnrealizedTaxSection: View {
                                     Text(acc).foregroundStyle(.secondary).appFont(.caption2)
                                 }
                                 Spacer()
-                                Text("\(Fmt.currency(c.gain, code: currency))").foregroundStyle(.red).fontWeight(.bold)
+                                Text("\(Fmt.currency(c.gain, code: currency))").foregroundStyle(.down).fontWeight(.bold)
                             }
                             HStack {
                                 Text("Acquired \(MarketTime.formatted(c.date))").appFont(.caption2).foregroundStyle(.secondary)
                                 Spacer()
-                                Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.red).appFont(.caption.weight(.bold))
+                                Text("\(String(format: "%.1f", c.gainPct))%").foregroundStyle(.down).appFont(.caption.weight(.bold))
                             }
                             Divider()
                             HStack(spacing: 0) {
@@ -192,7 +192,7 @@ struct UnrealizedTaxSection: View {
                                 Button {
                                     appState.openStock(c.symbol)
                                 } label: {
-                                    Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                    Text(c.symbol).fontWeight(.bold).foregroundStyle(.brand)
                                 }
                                 .buttonStyle(.plain)
                                 if let acc = c.account {
@@ -203,7 +203,7 @@ struct UnrealizedTaxSection: View {
                             Text(MarketTime.formatted(c.date)).foregroundStyle(.secondary).gridColumnAlignment(.leading)
                             Text(Fmt.number(c.qty)); Text(Fmt.currency(c.cost, code: currency)).foregroundStyle(.secondary)
                             Text(Fmt.currency(c.value, code: currency))
-                            Text("\(Fmt.currency(c.gain, code: currency)) (\(String(format: "%.1f", c.gainPct))%)").foregroundStyle(.red).fontWeight(.bold)
+                            Text("\(Fmt.currency(c.gain, code: currency)) (\(String(format: "%.1f", c.gainPct))%)").foregroundStyle(.down).fontWeight(.bold)
                             termBadge(c.isLT).gridColumnAlignment(.leading)
                         }.appFont(.caption).monospacedDigit()
                     }
@@ -242,13 +242,13 @@ struct UnrealizedTaxSection: View {
                 StockIcon(symbol: c.symbol, size: 26, scalesWithText: true)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text(c.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                        Text(c.symbol).fontWeight(.bold).foregroundStyle(.brand)
                             // Shrinks, then truncates. Never wraps: half a
                             // ticker on a second line is not the ticker.
                             .lineLimit(1).minimumScaleFactor(0.6)
                         Spacer(minLength: 8)
                         Text("+\(Fmt.currency(c.gain, code: currency))")
-                            .fontWeight(.bold).foregroundStyle(.green).monospacedDigit()
+                            .fontWeight(.bold).foregroundStyle(.up).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.7)
                     }
                     HStack(spacing: 6) {
@@ -277,15 +277,15 @@ struct UnrealizedTaxSection: View {
             .appFont(.caption2.weight(.bold)).monospacedDigit()
             .lineLimit(1)
             .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Color.orange.opacity(0.15), in: Capsule())
-            .foregroundStyle(.orange)
+            .background(Color.warn.opacity(0.15), in: Capsule())
+            .foregroundStyle(.warn)
     }
 
     private func termBadge(_ isLT: Bool) -> some View {
         Text(isLT ? "LT" : "ST").appFont(.caption2.weight(.bold))
             .padding(.horizontal, 5).padding(.vertical, 1)
-            .background((isLT ? Color.green : .orange).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-            .foregroundStyle(isLT ? .green : .orange)
+            .background((isLT ? Color.up : .warn).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+            .foregroundStyle(isLT ? .up : .warn)
     }
 }
 
@@ -314,15 +314,15 @@ struct CapitalGainsKpiStrip: View {
         let winRate: Double? = decided > 0 ? Double(wins) / Double(decided) * 100 : nil
         let returnPct: Double? = cost != 0 ? totalGain / cost * 100 : nil
         let returnSub = returnPct.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))% on cost" } ?? "on cost basis"
-        let totalTone: Color = totalGain >= 0 ? .green : .red
+        let totalTone: Color = totalGain >= 0 ? .up : .down
         // Reused for iPad (regular width) and macOS — Total Realized stays inside
         // the balanced grid with the compact 1.10M value.
         let sevenTileRow = KpiRow(count: 7, minTileWidth: 140) {
             tile("Total Realized", cgCompact(totalGain, currency), returnSub, totalTone)
             tile("Win Rate", winRate.map { String(format: "%.0f%%", $0) } ?? "–",
-                 "\(wins) W · \(losses) L\(flat > 0 ? " · \(flat) flat" : "")", (winRate ?? 0) >= 50 ? .green : .orange)
-            tile("Avg Win", wins > 0 ? cgCompact(winSum / Double(wins), currency) : "–", "per winning sale", .green)
-            tile("Avg Loss", losses > 0 ? cgCompact(lossSum / Double(losses), currency) : "–", "per losing sale", .red)
+                 "\(wins) W · \(losses) L\(flat > 0 ? " · \(flat) flat" : "")", (winRate ?? 0) >= 50 ? .up : .warn)
+            tile("Avg Win", wins > 0 ? cgCompact(winSum / Double(wins), currency) : "–", "per winning sale", .up)
+            tile("Avg Loss", losses > 0 ? cgCompact(lossSum / Double(losses), currency) : "–", "per losing sale", .down)
             tile("Sales", "\(gains.count)", "closing lots", .primary)
             tile("Proceeds", cgCompact(proceeds, currency), "gross sold", .primary)
             tile("Cost Basis", cgCompact(cost, currency), "of sold lots", .primary)
@@ -335,9 +335,9 @@ struct CapitalGainsKpiStrip: View {
                 tile("Total Realized", Fmt.currency(totalGain, code: currency), returnSub, totalTone)
                 KpiRow(count: 6, minTileWidth: 140) {
                     tile("Win Rate", winRate.map { String(format: "%.0f%%", $0) } ?? "–",
-                         "\(wins) W · \(losses) L\(flat > 0 ? " · \(flat) flat" : "")", (winRate ?? 0) >= 50 ? .green : .orange)
-                    tile("Avg Win", wins > 0 ? cgCompact(winSum / Double(wins), currency) : "–", "per winning sale", .green)
-                    tile("Avg Loss", losses > 0 ? cgCompact(lossSum / Double(losses), currency) : "–", "per losing sale", .red)
+                         "\(wins) W · \(losses) L\(flat > 0 ? " · \(flat) flat" : "")", (winRate ?? 0) >= 50 ? .up : .warn)
+                    tile("Avg Win", wins > 0 ? cgCompact(winSum / Double(wins), currency) : "–", "per winning sale", .up)
+                    tile("Avg Loss", losses > 0 ? cgCompact(lossSum / Double(losses), currency) : "–", "per losing sale", .down)
                     tile("Sales", "\(gains.count)", "closing lots", .primary)
                     tile("Proceeds", cgCompact(proceeds, currency), "gross sold", .primary)
                     tile("Cost Basis", cgCompact(cost, currency), "of sold lots", .primary)
@@ -351,13 +351,13 @@ struct CapitalGainsKpiStrip: View {
             if biggestWin != nil || biggestLoss != nil {
                 #if os(iOS)
                 VStack(spacing: 12) {
-                    if let w = biggestWin { callout("Biggest Win", w, .green, "+") }
-                    if let l = biggestLoss { callout("Biggest Loss", l, .red, "") }
+                    if let w = biggestWin { callout("Biggest Win", w, .up, "+") }
+                    if let l = biggestLoss { callout("Biggest Loss", l, .down, "") }
                 }
                 #else
                 HStack(spacing: 12) {
-                    if let w = biggestWin { callout("Biggest Win", w, .green, "+") }
-                    if let l = biggestLoss { callout("Biggest Loss", l, .red, "") }
+                    if let w = biggestWin { callout("Biggest Win", w, .up, "+") }
+                    if let l = biggestLoss { callout("Biggest Loss", l, .down, "") }
                 }
                 #endif
             }
@@ -375,13 +375,13 @@ struct CapitalGainsKpiStrip: View {
     }
     private func callout(_ label: String, _ v: (String, String, Double), _ tone: Color, _ prefix: String) -> some View {
         HStack {
-            Image(systemName: tone == .green ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis").foregroundStyle(tone)
+            Image(systemName: tone == .up ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis").foregroundStyle(tone)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label).appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
                 Button {
                     appState.openStock(v.0)
                 } label: {
-                    Text(v.0).fontWeight(.bold).foregroundStyle(.indigo)
+                    Text(v.0).fontWeight(.bold).foregroundStyle(.brand)
                 }
                 .buttonStyle(.plain)
                 Text(v.1).appFont(.caption2).foregroundStyle(.secondary)
@@ -457,7 +457,7 @@ struct AnnualRealizedGainsCard: View {
                 .chartHoverTooltip(data.map(\.year),
                                    onTap: { i in let y = data[i].year; selectedYear = (selectedYear == y) ? nil : y }) { i in
                     ChartTooltipContent(title: data[i].year,
-                                        rows: [ChartTooltipRow(color: data[i].gain >= 0 ? .green : .red,
+                                        rows: [ChartTooltipRow(color: data[i].gain >= 0 ? .up : .down,
                                                                label: "Realized Gain",
                                                                value: Fmt.currency(data[i].gain, code: currency)),
                                                ChartTooltipRow(label: "Tap to filter transactions", value: "")])
@@ -474,8 +474,8 @@ struct AnnualRealizedGainsCard: View {
     private func barColor(_ year: String, _ gain: Double) -> Color {
         let selected = selectedYear == year
         if selectedYear != nil && !selected { return Color.secondary.opacity(0.25) }
-        if gain >= 0 { return selected ? Color(hex: 0x059669) : Color(hex: 0x10B981) }
-        return selected ? Color(hex: 0xDC2626) : Color(hex: 0xEF4444)
+        if gain >= 0 { return selected ? Color(hex: 0x1F9D6C) : Color(hex: 0x1F9D6C) }
+        return selected ? Color(hex: 0xD2491F) : Color(hex: 0xD2491F)
     }
 
     /// Compact currency axis label: 1M / 500K / 0 / -500K (matches the web's
@@ -566,7 +566,7 @@ struct RealizedGainsTable: View {
                         Button {
                             appState.openStock(row.symbol)
                         } label: {
-                            Text(row.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                            Text(row.symbol).fontWeight(.bold).foregroundStyle(.brand)
                         }
                         .buttonStyle(.plain)
                     }
@@ -594,7 +594,7 @@ struct RealizedGainsTable: View {
                 Button {
                     appState.openStock(r.symbol)
                 } label: {
-                    Text(r.symbol).appFont(.headline).fontWeight(.bold).foregroundStyle(.indigo)
+                    Text(r.symbol).appFont(.headline).fontWeight(.bold).foregroundStyle(.brand)
                 }
                 .buttonStyle(.plain)
                 Text(r.type).appFont(.caption.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())

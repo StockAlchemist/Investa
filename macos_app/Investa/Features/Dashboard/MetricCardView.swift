@@ -20,66 +20,49 @@ struct MetricCard: Identifiable {
     }
 }
 
+/// Ledger KPI tile — the twin of the web `MetricCard`: a quiet sentence-case
+/// label, the figure, one sub-line. No glow and no icon badge; colour is kept
+/// for the sign of a gain or loss.
 struct MetricCardView: View {
     let card: MetricCard
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Ambient soft glow in top right
-            Circle()
-                .fill(card.accent.opacity(0.10))
-                .frame(width: 70, height: 70)
-                .blur(radius: 20)
-                .offset(x: 15, y: -15)
-                .allowsHitTesting(false)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(card.title)
+                .appFont(.caption)
+                .foregroundStyle(Color.ink3)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 0) {
-                // Row 1: Section Label + Top-right Icon Badge
-                HStack(alignment: .top, spacing: 6) {
-                    Text(card.title)
-                        .appFont(.system(size: 10, weight: .heavy))
-                        .tracking(1.2)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color.sectionText)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
+            Text(card.value)
+                .appFont(.system(size: 22, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(card.tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
 
-                    Spacer(minLength: 4)
+            Spacer(minLength: 0)
 
-                    Image(systemName: card.icon)
-                        .appFont(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(card.accent)
-                        .frame(width: 22, height: 22)
-                        .background(card.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
-                .padding(.bottom, 8)
-
-                // Row 2: Large primary value (single line, tabular digits)
-                Text(card.value)
-                    .appFont(.system(size: 19, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundStyle(card.tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-
-                Spacer(minLength: 6)
-
-                // Row 3: SubValue delta badge pill
-                HStack {
-                    if let subtitle = card.subtitle, !subtitle.isEmpty {
-                        let isPos: Bool? = subtitle.contains("+") ? true : (subtitle.contains("-") ? false : nil)
-                        SemanticBadge(text: subtitle, tint: card.tint, isPositive: isPos)
-                    } else {
-                        // Keep row height aligned across the grid
-                        Color.clear.frame(height: 20)
-                    }
-                    Spacer(minLength: 0)
+            // Sub-line: a signed figure in the gain/loss colour, or context in
+            // the second ink. The row keeps its height so tiles line up.
+            Group {
+                if let subtitle = card.subtitle, !subtitle.isEmpty {
+                    let sign: Bool? = subtitle.hasPrefix("+") ? true
+                        : (subtitle.hasPrefix("-") || subtitle.hasPrefix("\u{2212}") ? false : nil)
+                    Text(subtitle)
+                        .appFont(.caption.weight(sign == nil ? .regular : .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(sign == nil ? Color.ink2 : (sign! ? Color.up : Color.down))
+                } else {
+                    Text(" ").appFont(.caption)
                 }
             }
-            .padding(13)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
         .card(.standard)
     }
 }
-

@@ -178,11 +178,11 @@ struct StockSearchBar: View {
 
     private func typeColor(_ type: String) -> Color {
         switch type.lowercased() {
-        case "equity", "stock": return .indigo
-        case "etf": return .cyan
-        case "mutualfund", "mutual fund": return .purple
-        case "index": return .orange
-        case "crypto", "cryptocurrency": return .orange
+        case "equity", "stock": return .brand
+        case "etf": return .dataTeal
+        case "mutualfund", "mutual fund": return .plum
+        case "index": return .warn
+        case "crypto", "cryptocurrency": return .warn
         default: return .secondary
         }
     }

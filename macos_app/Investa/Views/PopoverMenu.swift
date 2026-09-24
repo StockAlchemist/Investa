@@ -80,7 +80,7 @@ struct MenuRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(role == .destructive ? Color.red : .primary)
+        .foregroundStyle(role == .destructive ? Color.down : .primary)
     }
 }
 

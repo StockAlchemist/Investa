@@ -34,7 +34,7 @@ private let allocPalette: [Color] = [
     0x6366f1, 0x06b6d4, 0x10b981, 0xf59e0b, 0xef4444,
     0x8b5cf6, 0xec4899, 0x14b8a6, 0xf97316, 0x84cc16,
 ].map { Color(hex: $0) }
-private let treemapPalette: [Color] = allocPalette + [Color(hex: 0x3b82f6), Color(hex: 0xa855f7)]
+private let treemapPalette: [Color] = allocPalette + [Color(hex: 0x4A62E0), Color(hex: 0x9A5DB8)]
 
 /// Squarified treemap (Bruls et al.) — lays sorted values into a rect, returning
 /// one frame per value in input order (matches recharts' default Treemap look).
@@ -114,8 +114,8 @@ struct ConcentrationKpiStrip: View {
 
     var body: some View {
         let mt = m
-        let largestTone: Color = (mt.largestPct ?? 0) >= 25 ? .orange : ((mt.largestPct ?? 0) >= 15 ? .primary : .up)
-        let effTone: Color = (mt.effectiveN ?? 0) >= 10 ? .up : ((mt.effectiveN ?? 0) >= 5 ? .primary : .orange)
+        let largestTone: Color = (mt.largestPct ?? 0) >= 25 ? .warn : ((mt.largestPct ?? 0) >= 15 ? .primary : .up)
+        let effTone: Color = (mt.effectiveN ?? 0) >= 10 ? .up : ((mt.effectiveN ?? 0) >= 5 ? .primary : .warn)
         return Section_(title: "Concentration", icon: "scope") {
             KpiRow(count: 6, minTileWidth: 140) {
                 tile("Holdings", "\(mt.stockCount)", mt.cashCount > 0 ? "+ \(mt.cashCount) cash" : "stocks & funds", .primary)
@@ -123,7 +123,7 @@ struct ConcentrationKpiStrip: View {
                 tile("Top 5", mt.top5.map { String(format: "%.1f%%", $0) } ?? "–", "of portfolio", .primary)
                 tile("Top 10", mt.top10.map { String(format: "%.1f%%", $0) } ?? "–", "of portfolio", .primary)
                 tile("Effective N", mt.effectiveN.map { String(format: "%.1f", $0) } ?? "–", "equal-weight equiv.", effTone)
-                tile("Cash", String(format: "%.1f%%", mt.cashPct), mt.cashPct > 20 ? "heavy cash drag" : "of portfolio", mt.cashPct > 20 ? .orange : .primary)
+                tile("Cash", String(format: "%.1f%%", mt.cashPct), mt.cashPct > 20 ? "heavy cash drag" : "of portfolio", mt.cashPct > 20 ? .warn : .primary)
             }
         }
     }
@@ -147,7 +147,7 @@ struct ConcentrationKpiStrip: View {
                 Button {
                     appState.openStock(symbol)
                 } label: {
-                    Text(symbol).appFont(.title3.bold()).foregroundStyle(.indigo).lineLimit(1)
+                    Text(symbol).appFont(.title3.bold()).foregroundStyle(.brand).lineLimit(1)
                 }
                 .buttonStyle(.plain)
             } else {
@@ -212,7 +212,7 @@ struct AllocationDriftCard: View {
         if editing {
             HStack(spacing: 6) {
                 Text("Σ \(String(format: "%.1f%%", draftSum))")
-                    .appFont(.caption.bold()).foregroundStyle(abs(draftSum - 100) < 0.5 ? .up : .orange)
+                    .appFont(.caption.bold()).foregroundStyle(abs(draftSum - 100) < 0.5 ? .up : .warn)
                 Button { commit() } label: { Image(systemName: "checkmark") }.tint(.up)
                 Button { editing = false; draft = [:] } label: { Image(systemName: "xmark") }
             }
@@ -226,7 +226,7 @@ struct AllocationDriftCard: View {
         let absDrift = abs(r.drift)
         let alert = absDrift >= 10 && r.target > 0
         let warn = !alert && absDrift >= 5 && r.target > 0
-        let tone: Color = r.target == 0 ? .secondary : (alert ? .down : (warn ? .orange : .up))
+        let tone: Color = r.target == 0 ? .secondary : (alert ? .down : (warn ? .warn : .up))
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -500,8 +500,8 @@ struct PortfolioTreemapView: View {
                     Text(d.label).appFont(.caption.weight(.semibold))
                         .lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(dim == d.key ? Theme.brand : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                        .foregroundStyle(dim == d.key ? .white : .secondary)
+                        .background(dim == d.key ? Color.segmentOn : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                        .foregroundStyle(dim == d.key ? Color.primary : Color.ink2)
                 }.buttonStyle(.plain)
             }
         }
@@ -721,9 +721,8 @@ struct HoldingsHeatmapView: View {
                     Text(opt.1).appFont(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                         .frame(maxWidth: fill ? .infinity : nil)
                         .padding(.horizontal, fill ? 4 : 8).padding(.vertical, 4)
-                        .background(selection.wrappedValue == opt.0 ? (brand ? Theme.brand : Color.accentColor) : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 6))
-                        .foregroundStyle(selection.wrappedValue == opt.0 ? .white : .secondary)
+                        .background(selection.wrappedValue == opt.0 ? Color.segmentOn : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                        .foregroundStyle(selection.wrappedValue == opt.0 ? Color.primary : Color.ink2)
                 }.buttonStyle(.plain)
             }
         }
@@ -805,7 +804,7 @@ struct HoldingsHeatmapView: View {
     /// tile underneath never bleeds through and washes out the text.
     private func tooltip(_ leaf: Leaf) -> some View {
         let perf = leaf.metricVal.map { String(format: "%@%.2f%%", $0 >= 0 ? "+" : "", $0) } ?? "n/a"
-        let perfColor: Color = leaf.metricVal == nil ? .secondary : (leaf.metricVal! >= 0 ? .green : .red)
+        let perfColor: Color = leaf.metricVal == nil ? .secondary : (leaf.metricVal! >= 0 ? .up : .down)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 RoundedRectangle(cornerRadius: 2).fill(leaf.color).frame(width: 9, height: 9)
@@ -1033,7 +1032,7 @@ struct AllocationDonutChart: View {
                         Button {
                             appState.openStock(r.symbol)
                         } label: {
-                            Text(r.symbol).appFont(.caption.bold()).foregroundStyle(.indigo).lineLimit(1)
+                            Text(r.symbol).appFont(.caption.bold()).foregroundStyle(.brand).lineLimit(1)
                         }
                         .buttonStyle(.plain)
                     } else {

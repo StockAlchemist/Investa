@@ -15,7 +15,7 @@ interface HoldingsTabProps {
     fundamentals: any;
 }
 
-const COLORS = ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#6366f1'];
+const COLORS = ['#259A91', '#4A62E0', '#9A5DB8', '#C2588A', '#D2491F', '#C8921E', '#1F9D6C', '#4A62E0'];
 
 export const HoldingsTab: React.FC<HoldingsTabProps> = ({ fundamentals }) => {
     const { openStockDetail } = useStockModal();

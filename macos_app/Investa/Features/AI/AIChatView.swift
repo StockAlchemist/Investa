@@ -116,10 +116,10 @@ struct AIChatLauncher: View {
             .foregroundStyle(.white)
             .frame(width: diameter, height: diameter)
             .background(
-                LinearGradient(colors: [Color(hex: 0x4f46e5), Color(hex: 0x9333ea)],
+                LinearGradient(colors: [Color(hex: 0x4f46e5), Color(hex: 0x9A5DB8)],
                                startPoint: .topTrailing, endPoint: .bottomLeading),
                 in: Circle())
-            .shadow(color: Color(hex: 0x6366f1).opacity(0.4), radius: 12, y: 4)
+            .shadow(color: Color(hex: 0x4A62E0).opacity(0.4), radius: 12, y: 4)
             .contentShape(Circle())
             .onTapGesture { showChat = true }
             .accessibilityLabel("Open Investa AI Chat")
@@ -176,12 +176,12 @@ struct AIChatView: View {
             Image(systemName: "sparkles")
                 .appFont(.callout.weight(.semibold)).foregroundStyle(.white)
                 .frame(width: 32, height: 32)
-                .background(LinearGradient(colors: [Color(hex: 0x6366f1), Color(hex: 0xa855f7)],
+                .background(LinearGradient(colors: [Color(hex: 0x4A62E0), Color(hex: 0x9A5DB8)],
                                            startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Investa AI").appFont(.headline)
                 HStack(spacing: 5) {
-                    Circle().fill(.green).frame(width: 6, height: 6)
+                    Circle().fill(.up).frame(width: 6, height: 6)
                     Text(vm.messages.isEmpty ? "ONLINE" : "MEMORY ACTIVE")
                         .appFont(.system(size: 10, weight: .bold)).tracking(0.8)
                         .foregroundStyle(.secondary)

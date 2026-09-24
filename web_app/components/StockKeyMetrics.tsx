@@ -100,37 +100,37 @@ interface MetricChartDef {
 
 const METRIC_CHARTS_BY_GROUP: Record<string, MetricChartDef[]> = {
     'Valuation': [
-        { dataKey: 'P/E Ratio', title: 'Price to Earnings (P/E)', color: '#10b981' },
-        { dataKey: 'P/S Ratio', title: 'Price to Sales (P/S)', color: '#06b6d4' },
-        { dataKey: 'P/B Ratio', title: 'Price to Book (P/B)', color: '#8b5cf6' },
-        { dataKey: 'EV/EBITDA', title: 'EV / EBITDA', color: '#f59e0b' },
-        { dataKey: 'EV/Sales', title: 'EV / Sales', color: '#ec4899' },
-        { dataKey: 'P/FCF Ratio', title: 'Price to Free Cash Flow (P/FCF)', color: '#14b8a6' },
-        { dataKey: 'Dividend Yield (%)', title: 'Dividend Yield', color: '#10b981', suffix: '%' },
+        { dataKey: 'P/E Ratio', title: 'Price to Earnings (P/E)', color: '#1F9D6C' },
+        { dataKey: 'P/S Ratio', title: 'Price to Sales (P/S)', color: '#259A91' },
+        { dataKey: 'P/B Ratio', title: 'Price to Book (P/B)', color: '#9A5DB8' },
+        { dataKey: 'EV/EBITDA', title: 'EV / EBITDA', color: '#C8921E' },
+        { dataKey: 'EV/Sales', title: 'EV / Sales', color: '#C2588A' },
+        { dataKey: 'P/FCF Ratio', title: 'Price to Free Cash Flow (P/FCF)', color: '#259A91' },
+        { dataKey: 'Dividend Yield (%)', title: 'Dividend Yield', color: '#1F9D6C', suffix: '%' },
     ],
     'Earnings & Sales': [
-        { dataKey: 'Diluted EPS', title: 'Diluted EPS ($)', color: '#10b981' },
-        { dataKey: 'Total Revenue', title: 'Total Revenue (Sales)', color: '#06b6d4', compact: true },
-        { dataKey: 'Revenue Growth YoY (%)', title: 'Revenue Growth YoY', color: '#8b5cf6', suffix: '%' },
-        { dataKey: 'EPS Growth YoY (%)', title: 'EPS Growth YoY', color: '#ec4899', suffix: '%' },
-        { dataKey: 'Operating Margin (%)', title: 'Operating Margin', color: '#f59e0b', suffix: '%' },
+        { dataKey: 'Diluted EPS', title: 'Diluted EPS ($)', color: '#1F9D6C' },
+        { dataKey: 'Total Revenue', title: 'Total Revenue (Sales)', color: '#259A91', compact: true },
+        { dataKey: 'Revenue Growth YoY (%)', title: 'Revenue Growth YoY', color: '#9A5DB8', suffix: '%' },
+        { dataKey: 'EPS Growth YoY (%)', title: 'EPS Growth YoY', color: '#C2588A', suffix: '%' },
+        { dataKey: 'Operating Margin (%)', title: 'Operating Margin', color: '#C8921E', suffix: '%' },
     ],
     'Profitability': [
-        { dataKey: 'Return on Invested Capital (ROIC) (%)', title: 'Return on Invested Capital (ROIC)', color: '#ec4899', suffix: '%' },
-        { dataKey: 'Return on Equity (ROE) (%)', title: 'Return on Equity (ROE)', color: '#10b981', suffix: '%' },
-        { dataKey: 'Return on Assets (ROA) (%)', title: 'Return on Assets (ROA)', color: '#06b6d4', suffix: '%' },
-        { dataKey: 'Gross Profit Margin (%)', title: 'Gross Margin', color: '#8b5cf6', suffix: '%' },
-        { dataKey: 'Net Profit Margin (%)', title: 'Net Margin', color: '#f59e0b', suffix: '%' },
-        { dataKey: 'Free Cash Flow Margin (%)', title: 'Free Cash Flow Margin', color: '#14b8a6', suffix: '%' },
+        { dataKey: 'Return on Invested Capital (ROIC) (%)', title: 'Return on Invested Capital (ROIC)', color: '#C2588A', suffix: '%' },
+        { dataKey: 'Return on Equity (ROE) (%)', title: 'Return on Equity (ROE)', color: '#1F9D6C', suffix: '%' },
+        { dataKey: 'Return on Assets (ROA) (%)', title: 'Return on Assets (ROA)', color: '#259A91', suffix: '%' },
+        { dataKey: 'Gross Profit Margin (%)', title: 'Gross Margin', color: '#9A5DB8', suffix: '%' },
+        { dataKey: 'Net Profit Margin (%)', title: 'Net Margin', color: '#C8921E', suffix: '%' },
+        { dataKey: 'Free Cash Flow Margin (%)', title: 'Free Cash Flow Margin', color: '#259A91', suffix: '%' },
     ],
     'Balance Sheet': [
-        { dataKey: 'Current Ratio', title: 'Current Ratio', color: '#10b981' },
-        { dataKey: 'Quick Ratio', title: 'Quick Ratio', color: '#06b6d4' },
-        { dataKey: 'Debt-to-Equity Ratio', title: 'Debt to Equity', color: '#f59e0b' },
-        { dataKey: 'Long-Term Debt to Equity', title: 'LT Debt to Equity', color: '#8b5cf6' },
-        { dataKey: 'Interest Coverage Ratio', title: 'Interest Coverage Ratio', color: '#ec4899' },
-        { dataKey: 'Asset Turnover', title: 'Asset Turnover', color: '#06b6d4' },
-        { dataKey: 'Diluted Shares Outstanding', title: 'Diluted Shares Outstanding', color: '#64748b', compact: true },
+        { dataKey: 'Current Ratio', title: 'Current Ratio', color: '#1F9D6C' },
+        { dataKey: 'Quick Ratio', title: 'Quick Ratio', color: '#259A91' },
+        { dataKey: 'Debt-to-Equity Ratio', title: 'Debt to Equity', color: '#C8921E' },
+        { dataKey: 'Long-Term Debt to Equity', title: 'LT Debt to Equity', color: '#9A5DB8' },
+        { dataKey: 'Interest Coverage Ratio', title: 'Interest Coverage Ratio', color: '#C2588A' },
+        { dataKey: 'Asset Turnover', title: 'Asset Turnover', color: '#259A91' },
+        { dataKey: 'Diluted Shares Outstanding', title: 'Diluted Shares Outstanding', color: '#6A6C74', compact: true },
     ],
 };
 
@@ -264,7 +264,7 @@ export default function StockKeyMetrics({
                                 className={cn(
                                     "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer",
                                     viewMode === 'table'
-                                        ? "bg-indigo-600 text-white shadow-sm"
+                                        ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                         : "text-muted-foreground hover:text-foreground"
                                 )}
                             >
@@ -277,7 +277,7 @@ export default function StockKeyMetrics({
                                 className={cn(
                                     "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer",
                                     viewMode === 'graphs'
-                                        ? "bg-indigo-600 text-white shadow-sm"
+                                        ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                         : "text-muted-foreground hover:text-foreground"
                                 )}
                             >
@@ -307,7 +307,7 @@ export default function StockKeyMetrics({
                                     className={cn(
                                         "px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase transition-all cursor-pointer",
                                         ratioRange === opt
-                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                             : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
@@ -329,7 +329,7 @@ export default function StockKeyMetrics({
                                     className={cn(
                                         "px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all cursor-pointer",
                                         periodType === opt.id
-                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                             : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >

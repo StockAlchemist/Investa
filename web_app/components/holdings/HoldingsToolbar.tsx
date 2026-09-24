@@ -134,7 +134,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                         onClick={() => setIsGroupByMenuOpen(!isGroupByMenuOpen)}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors
                         ${groupBy
-                                ? 'bg-primary text-primary-foreground border-none'
+                                ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                 : 'text-foreground bg-secondary border-none hover:bg-accent/10'
                             }`}
                     >
@@ -178,7 +178,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                         onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors
                         ${selectedAccounts.size > 0 || isAccountMenuOpen
-                                ? 'bg-primary text-primary-foreground'
+                                ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                 : 'text-foreground bg-secondary hover:bg-accent/10'
                             }`}
                     >
@@ -244,7 +244,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                             {/* Column groups */}
                             {COLUMN_GROUPS.map(group => (
                                 <div key={group.label} className="px-2 py-1.5">
-                                    <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1.5 mb-1">{group.label}</p>
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/60 px-1.5 mb-1">{group.label}</p>
                                     <div className="grid grid-cols-2 gap-0.5">
                                         {group.cols.map(header => {
                                             const isSelected = visibleColumns.includes(header);
@@ -291,7 +291,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                         onClick={toggleAllCards}
                         className={`md:hidden flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring text-center transition-colors
                         ${expandedCards.size > 0
-                                ? 'bg-primary text-primary-foreground'
+                                ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                 : 'text-foreground bg-secondary hover:bg-accent/10'
                             }`}
                         title={expandedCards.size > 0 ? 'Collapse All Details' : 'Expand All Details'}
@@ -306,7 +306,7 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
                     onClick={toggleAllLots}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring text-center transition-colors
                     ${expandedLots.size > 0
-                            ? 'bg-primary text-primary-foreground'
+                            ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                             : 'text-foreground bg-secondary hover:bg-accent/10'
                         }`}
                     title={expandedLots.size > 0 ? 'Collapse All Tax Lots' : 'Show All Tax Lots'}

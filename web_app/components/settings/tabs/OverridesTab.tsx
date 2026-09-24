@@ -297,14 +297,14 @@ export const OverridesTab: React.FC<OverridesTabProps> = ({ settings, holdings }
                     <table className="min-w-full text-sm">
                         <thead className="bg-muted/60 border-b border-border">
                             <tr>
-                                <th className="sticky left-0 z-20 px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs bg-zinc-100 dark:bg-zinc-800 shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">Symbol</th>
-                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Price</th>
-                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Asset Type</th>
-                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Sector</th>
-                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Country</th>
-                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Industry</th>
-                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-xs">Market</th>
-                                <th className="px-6 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-xs">Actions</th>
+                                <th className="sticky left-0 z-20 px-6 py-3 text-left font-semibold text-muted-foreground text-xs bg-zinc-100 dark:bg-zinc-800 shadow-[1px_0_0_0_rgba(0,0,0,0.06)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.08)]">Symbol</th>
+                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Price</th>
+                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Asset Type</th>
+                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Sector</th>
+                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Country</th>
+                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Industry</th>
+                                <th className="px-6 py-3 text-left font-semibold text-muted-foreground text-xs">Market</th>
+                                <th className="px-6 py-3 text-right font-semibold text-muted-foreground text-xs">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">

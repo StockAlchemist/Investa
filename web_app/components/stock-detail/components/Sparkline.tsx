@@ -21,16 +21,16 @@ export const Sparkline: React.FC<{ data: number[] }> = ({ data }) => {
                 <AreaChart data={values.map((v, i) => ({ value: v, index: i }))}>
                     <defs>
                         <linearGradient id={`splitFill-${id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset={off} stopColor="#10b981" stopOpacity={0.15} />
-                            <stop offset={off} stopColor="#ef4444" stopOpacity={0.15} />
+                            <stop offset={off} stopColor="#1F9D6C" stopOpacity={0.15} />
+                            <stop offset={off} stopColor="#D2491F" stopOpacity={0.15} />
                         </linearGradient>
                         <linearGradient id={`splitStroke-${id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset={off} stopColor="#10b981" stopOpacity={1} />
-                            <stop offset={off} stopColor="#ef4444" stopOpacity={1} />
+                            <stop offset={off} stopColor="#1F9D6C" stopOpacity={1} />
+                            <stop offset={off} stopColor="#D2491F" stopOpacity={1} />
                         </linearGradient>
                     </defs>
                     <YAxis hide domain={['dataMin', 'dataMax']} />
-                    <ReferenceLine y={baseline} stroke="#71717a" strokeDasharray="2 2" strokeOpacity={0.3} />
+                    <ReferenceLine y={baseline} stroke="#6A6C74" strokeDasharray="2 2" strokeOpacity={0.3} />
                     <Area
                         type="monotone"
                         dataKey="value"
@@ -42,7 +42,7 @@ export const Sparkline: React.FC<{ data: number[] }> = ({ data }) => {
                         dot={(props: { cx?: number; cy?: number; index?: number }) => {
                             const { cx, cy, index } = props;
                             if (index === values.length - 1) {
-                                const color = values[values.length - 1] >= baseline ? "#10b981" : "#ef4444";
+                                const color = values[values.length - 1] >= baseline ? "#1F9D6C" : "#D2491F";
                                 return (
                                     <circle key="dot" cx={cx} cy={cy} r={2} fill={color} stroke="none" />
                                 );

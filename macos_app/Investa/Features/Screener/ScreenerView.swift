@@ -91,7 +91,7 @@ struct ScreenerView: View {
                             .background(.background.secondary, in: Capsule())
                     }
                     if let error = viewModel.errorMessage {
-                        Text(error).foregroundStyle(.red).appFont(.callout)
+                        Text(error).foregroundStyle(.down).appFont(.callout)
                     }
                     ScreenerResultsView(viewModel: viewModel, currency: cur)
                 }
@@ -117,7 +117,7 @@ struct ScreenerView: View {
                             .background(.background.secondary, in: Capsule())
                     }
                     if let error = viewModel.errorMessage {
-                        Text(error).foregroundStyle(.red).appFont(.callout)
+                        Text(error).foregroundStyle(.down).appFont(.callout)
                     }
                     ScreenerResultsView(viewModel: viewModel, currency: cur)
                 }
@@ -162,7 +162,7 @@ struct ScreenerView: View {
                 }
                 if universe == .narrative {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("AI Search Prompt", systemImage: "sparkles").appFont(.caption.weight(.semibold)).foregroundStyle(.cyan)
+                        Label("AI Search Prompt", systemImage: "sparkles").appFont(.caption.weight(.semibold)).foregroundStyle(.dataTeal)
                         TextField("e.g. high-growth tech with margin of safety > 20%", text: $prompt)
                             .textFieldStyle(.roundedBorder)
                     }
@@ -204,7 +204,7 @@ struct ScreenerView: View {
                 }
                 if universe == .narrative {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label("AI Search Prompt", systemImage: "sparkles").appFont(.caption.weight(.semibold)).foregroundStyle(.cyan)
+                        Label("AI Search Prompt", systemImage: "sparkles").appFont(.caption.weight(.semibold)).foregroundStyle(.dataTeal)
                         TextField("e.g. high-growth tech with margin of safety > 20%", text: $prompt)
                             .textFieldStyle(.roundedBorder).frame(minWidth: 280)
                     }

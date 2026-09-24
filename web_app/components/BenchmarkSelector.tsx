@@ -87,24 +87,24 @@ export default function BenchmarkSelector({ selectedBenchmarks, onBenchmarkChang
                             <label
                                 key={benchmark}
                                 className={`flex items-center space-x-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${selectedBenchmarks.includes(benchmark)
-                                    ? 'bg-primary text-primary-foreground underline-none'
-                                    : 'hover:bg-accent/10 text-foreground'
+                                    ? 'bg-muted text-foreground font-semibold'
+                                    : 'hover:bg-muted text-foreground'
                                     }`}
                             >
                                 <input
                                     type="checkbox"
                                     checked={selectedBenchmarks.includes(benchmark)}
                                     onChange={() => handleToggle(benchmark)}
-                                    className={`rounded border-none bg-secondary focus:ring-ring ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-cyan-500'}`}
+                                    className="rounded accent-[hsl(var(--primary))]"
                                 />
-                                <span className={`text-sm ${selectedBenchmarks.includes(benchmark) ? 'text-white' : 'text-foreground'}`}>{benchmark}</span>
+                                <span className="text-sm">{benchmark}</span>
                             </label>
                         ))}
 
                         {/* Custom ticker chips */}
                         {customSelected.length > 0 && (
                             <div className="pt-2 mt-2 border-t border-border space-y-1">
-                                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/60 px-2">
                                     Custom
                                 </p>
                                 {customSelected.map(ticker => (

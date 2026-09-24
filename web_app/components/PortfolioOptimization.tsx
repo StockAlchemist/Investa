@@ -86,7 +86,7 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
                 </div>
                 <div>
                     <h3 className="text-sm font-black uppercase tracking-[0.15em]">AI Optimization Hub</h3>
-                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Suggested Actions</p>
+                    <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-[0.06em]">Suggested Actions</p>
                 </div>
             </div>
 
@@ -107,7 +107,7 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
                                 </div>
                                 <div>
                                     <h4 className="font-bold text-sm leading-tight">{opt.title}</h4>
-                                    <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">{opt.symbol}</span>
+                                    <span className="text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-[0.06em]">{opt.symbol}</span>
                                 </div>
                             </div>
                             <Badge className={cn("text-[8px] font-black uppercase px-2 py-0.5 border-none", getPriorityColor(opt.priority))}>
@@ -120,14 +120,14 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
                         </p>
 
                         <div className="mt-6 flex items-center justify-between">
-                             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-500/5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-500/5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                                 <ArrowUpRight className="w-3 h-3" />
                                 {opt.action} Recommended
                             </div>
                             <Button 
                                 variant="ghost" 
                                 size="sm" 
-                                className="h-8 rounded-full text-[10px] font-black uppercase tracking-widest group-hover:bg-indigo-500 group-hover:text-white transition-all"
+                                className="h-8 rounded-full text-[11px] font-semibold uppercase tracking-[0.06em] group-hover:bg-indigo-500 group-hover:text-white transition-all"
                                 onClick={() => opt.symbol !== 'N/A' && openStockDetail(opt.symbol)}
                             >
                                 Review Lot Details
@@ -144,7 +144,7 @@ export default function PortfolioOptimization({ optimizations }: PortfolioOptimi
                 ))}
             </div>
             
-            <p className="text-[9px] text-center text-muted-foreground/40 mt-4 uppercase tracking-[0.1em] px-10">
+            <p className="text-[11px] text-center text-muted-foreground/40 mt-4 uppercase tracking-[0.06em] px-10">
                 Suggestions are anchored in business fundamentals and intrinsic value, not market timing.
                 Verify every action against your own thesis before acting.
             </p>

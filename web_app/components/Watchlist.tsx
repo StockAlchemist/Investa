@@ -314,7 +314,6 @@ export default function Watchlist({ currency }: WatchlistProps) {
         return (
             <div className="space-y-4">
                 <div className="metric-card card-shine p-6 relative overflow-hidden">
-                    <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-indigo-500 opacity-50" />
                     <CardHeader className="p-0 mb-4">
                         <Skeleton className="h-8 w-48 opacity-50 rounded-lg" />
                     </CardHeader>
@@ -339,7 +338,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                         className={cn(
                             "px-3 py-1.5 text-sm font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500",
                             activeWatchlistId === wl.id
-                                ? "bg-indigo-600 text-white"
+                                ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                 : "text-indigo-500 hover:bg-accent/10"
                         )}
                     >
@@ -380,7 +379,6 @@ export default function Watchlist({ currency }: WatchlistProps) {
             )}
 
             <div className="metric-card card-shine relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-sky-500 opacity-80" />
 
                 {/* Header */}
                 <div className="flex flex-row items-center justify-between p-5 pb-2">
@@ -479,7 +477,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                 <div className="px-5 pb-5">
                     <form onSubmit={handleAdd} className="flex flex-col md:flex-row items-end gap-3 mb-6 bg-muted/30 dark:bg-white/[0.03] backdrop-blur-md p-4 rounded-2xl border border-border/40 dark:border-white/[0.05]">
                         <div className="flex flex-col gap-1.5 md:w-56 w-full">
-                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">Symbol</label>
+                            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] px-1">Symbol</label>
                             <Input
                                 placeholder="e.g. AAPL, BTC-USD"
                                 value={newSymbol}
@@ -488,7 +486,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                             />
                         </div>
                         <div className="flex flex-col gap-1.5 flex-1 w-full">
-                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-1">Note (optional)</label>
+                            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] px-1">Note (optional)</label>
                             <Input
                                 placeholder="Add a description..."
                                 value={newNote}
@@ -621,7 +619,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                             {formatCurrency(item.intrinsic_value, item.Currency || 'USD')}
                                                         </span>
                                                         {item.margin_of_safety !== undefined && item.margin_of_safety !== null && (
-                                                            <span className={`text-[10px] font-black uppercase tracking-tighter ${item.margin_of_safety >= 0 ? 'text-up' : 'text-rose-500'}`}>
+                                                            <span className={`text-[11px] font-semibold uppercase tracking-tighter ${item.margin_of_safety >= 0 ? 'text-up' : 'text-rose-500'}`}>
                                                                 {item.margin_of_safety.toFixed(1)}% MOS
                                                             </span>
                                                         )}
@@ -662,7 +660,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                                             "absolute left-1/2 -translate-x-1/2 w-max max-w-[350px] p-4 bg-popover border border-border rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 pointer-events-none backdrop-blur-md whitespace-normal",
                                                             idx < 3 ? "top-full mt-2" : "bottom-full mb-2"
                                                         )}>
-                                                            <p className="text-[10px] font-extrabold uppercase text-primary mb-3 tracking-widest border-b border-border pb-1">Upcoming Catalysts</p>
+                                                            <p className="text-[11px] font-semibold uppercase text-primary mb-3 tracking-[0.06em] border-b border-border pb-1">Upcoming Catalysts</p>
                                                             <div className="space-y-3">
                                                                 {item.ai_catalysts.map((c, idx) => (
                                                                     <div key={idx} className="text-left border-l-2 border-amber-500 pl-3 py-0.5">

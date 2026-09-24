@@ -28,8 +28,8 @@ interface AllocationPieChartProps {
 }
 
 const PALETTE = [
-    '#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ef4444',
-    '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
+    '#4A62E0', '#259A91', '#1F9D6C', '#C8921E', '#D2491F',
+    '#9A5DB8', '#C2588A', '#259A91', '#D07A2A', '#1F9D6C',
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -246,7 +246,7 @@ export default function AllocationPieChart({ title, data, currency, holdings, bu
                 <div className="border-t border-border/60 pt-3 mt-1 animate-in fade-in slide-in-from-top-1 duration-150">
                     <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+                            <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold">
                                 Holdings in
                             </span>
                             <span className="text-xs font-bold text-foreground truncate max-w-[180px]">
@@ -259,7 +259,7 @@ export default function AllocationPieChart({ title, data, currency, holdings, bu
                         <button
                             type="button"
                             onClick={() => setSelectedBucket(null)}
-                            className="text-[10px] text-muted-foreground hover:text-foreground font-semibold uppercase tracking-wider"
+                            className="text-[11px] text-muted-foreground hover:text-foreground font-semibold uppercase tracking-[0.06em]"
                         >
                             Close
                         </button>

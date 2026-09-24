@@ -7,17 +7,17 @@ import { cn } from "@/lib/utils"
 // h-11 (44) touch and primary actions. Radius is the control step (8).
 // Hover changes colour only — cards lift, controls do not.
 const buttonVariants = cva(
-    "inline-flex items-center justify-center whitespace-nowrap rounded-control font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+    "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
     {
         variants: {
             variant: {
-                default: "bg-primary text-primary-foreground hover:bg-primary-hover",
-                destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-                outline: "border border-border bg-background hover:bg-accent hover:text-accent-foreground",
-                secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-                ghost: "text-muted-foreground hover:bg-muted hover:text-foreground",
+                default: "bg-primary text-primary-foreground font-semibold hover:bg-primary-hover",
+                destructive: "bg-down-tint text-down font-semibold hover:bg-down/15",
+                outline: "border border-border bg-card text-foreground hover:bg-muted",
+                secondary: "border border-border bg-card text-foreground hover:bg-muted",
+                ghost: "text-ink-2 hover:bg-muted hover:text-foreground",
                 link: "text-primary underline-offset-4 hover:underline",
-                glass: "bg-primary text-primary-foreground hover:bg-primary-hover",
+                glass: "bg-primary text-primary-foreground font-semibold hover:bg-primary-hover",
             },
             size: {
                 default: "h-9 px-3.5 text-sm",

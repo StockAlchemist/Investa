@@ -58,18 +58,18 @@ interface ChartEvent {
 }
 
 const EVENT_STYLES: Record<EventKind, { color: string; letter: string }> = {
-    buy: { color: '#16a34a', letter: 'B' },       // green
-    sell: { color: '#dc2626', letter: 'S' },      // red
-    dividend: { color: '#d97706', letter: 'D' },  // amber
-    earnings: { color: '#9333ea', letter: 'E' },  // purple
+    buy: { color: '#1F9D6C', letter: 'B' },       // green
+    sell: { color: '#D2491F', letter: 'S' },      // red
+    dividend: { color: '#C8921E', letter: 'D' },  // amber
+    earnings: { color: '#9A5DB8', letter: 'E' },  // purple
 };
 
 // Benchmarks selectable as return-% overlays. `name` matches the backend's
 // BENCHMARK_MAPPING keys; `key` is the mapped Yahoo ticker the API returns as a column.
 const BENCHMARKS = [
-    { name: 'S&P 500', key: '^GSPC', color: '#f59e0b' },   // amber
-    { name: 'NASDAQ', key: '^IXIC', color: '#8b5cf6' },    // purple
-    { name: 'Dow Jones', key: '^DJI', color: '#0ea5e9' },  // sky
+    { name: 'S&P 500', key: '^GSPC', color: '#C8921E' },   // amber
+    { name: 'NASDAQ', key: '^IXIC', color: '#9A5DB8' },    // purple
+    { name: 'Dow Jones', key: '^DJI', color: '#7C93E8' },  // sky
 ] as const;
 
 interface CustomTooltipProps {
@@ -775,7 +775,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                         key={key}
                                         onClick={() => setView(key)}
                                         className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all whitespace-nowrap ${view === key
-                                            ? 'bg-primary text-primary-foreground shadow-sm'
+                                            ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                             : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
                                             }`}
                                     >
@@ -798,7 +798,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                 {/* Third Row: Event Overlays (price view only) */}
                 {view === 'price' && (
                     <div className="flex items-center gap-2 mt-3 flex-wrap">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-0.5">Overlays</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mr-0.5">Overlays</span>
                         {([
                             { key: 'buy', label: 'Buys', active: showBuys, toggle: () => setShowBuys(v => !v) },
                             { key: 'sell', label: 'Sells', active: showSells, toggle: () => setShowSells(v => !v) },
@@ -810,13 +810,13 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                 <button
                                     key={key}
                                     onClick={toggle}
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all ${active
-                                        ? 'text-white shadow-sm border-transparent'
-                                        : 'text-muted-foreground border-border bg-secondary hover:text-foreground hover:bg-accent/10'
+                                    aria-pressed={active}
+                                    className={`flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full border transition-colors ${active
+                                        ? 'text-foreground border-input bg-card'
+                                        : 'text-muted-foreground border-border bg-transparent hover:text-foreground'
                                         }`}
-                                    style={active ? { backgroundColor: color } : undefined}
                                 >
-                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active ? '#fff' : color }} />
+                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color, opacity: active ? 1 : 0.35 }} />
                                     {label}
                                 </button>
                             );
@@ -827,20 +827,20 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                 {/* Third Row: Benchmark comparison (return view only) */}
                 {view === 'return' && (
                     <div className="flex items-center gap-2 mt-3 flex-wrap">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-0.5">Benchmarks</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mr-0.5">Benchmarks</span>
                         {BENCHMARKS.map((b) => {
                             const active = selectedBenchmarks.includes(b.name);
                             return (
                                 <button
                                     key={b.key}
                                     onClick={() => toggleBenchmark(b.name)}
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all ${active
-                                        ? 'text-white shadow-sm border-transparent'
-                                        : 'text-muted-foreground border-border bg-secondary hover:text-foreground hover:bg-accent/10'
+                                    aria-pressed={active}
+                                    className={`flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full border transition-colors ${active
+                                        ? 'text-foreground border-input bg-card'
+                                        : 'text-muted-foreground border-border bg-transparent hover:text-foreground'
                                         }`}
-                                    style={active ? { backgroundColor: b.color } : undefined}
                                 >
-                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: active ? '#fff' : b.color }} />
+                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: b.color, opacity: active ? 1 : 0.35 }} />
                                     {b.name}
                                 </button>
                             );
@@ -865,16 +865,16 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                         <ComposedChart data={chartDataWithEvents} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#4A62E0" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#4A62E0" stopOpacity={0} />
                                 </linearGradient>
                                 <linearGradient id="splitColorFill" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset={gradientOffset} stopColor="#10b981" stopOpacity={0.15} />
-                                    <stop offset={gradientOffset} stopColor="#ef4444" stopOpacity={0.15} />
+                                    <stop offset={gradientOffset} stopColor="#1F9D6C" stopOpacity={0.15} />
+                                    <stop offset={gradientOffset} stopColor="#D2491F" stopOpacity={0.15} />
                                 </linearGradient>
                                 <linearGradient id="splitColorStroke" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset={gradientOffset} stopColor="#10b981" stopOpacity={1} />
-                                    <stop offset={gradientOffset} stopColor="#ef4444" stopOpacity={1} />
+                                    <stop offset={gradientOffset} stopColor="#1F9D6C" stopOpacity={1} />
+                                    <stop offset={gradientOffset} stopColor="#D2491F" stopOpacity={1} />
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.5} />
@@ -915,7 +915,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                 cursor={{ stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' }}
                             />
 
-                            <Bar dataKey="volume" yAxisId="vol" fill="#9ca3af" opacity={0.15} barSize={period === '1d' ? undefined : 6} />
+                            <Bar dataKey="volume" yAxisId="vol" fill="#8E9099" opacity={0.15} barSize={period === '1d' ? undefined : 6} />
 
                             {view === 'price' ? (
                                 <>
@@ -923,7 +923,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                         yAxisId="main"
                                         type="monotone"
                                         dataKey="value"
-                                        stroke="#2563eb"
+                                        stroke="#4A62E0"
                                         strokeWidth={2}
                                         fillOpacity={1}
                                         fill="url(#colorPrice)"
@@ -934,7 +934,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                             yAxisId="main"
                                             type="monotone"
                                             dataKey="sma50"
-                                            stroke="#f97316" // Orange
+                                            stroke="#D07A2A" // Orange
                                             strokeWidth={1.5}
                                             dot={false}
                                             activeDot={{ r: 4 }}
@@ -946,7 +946,7 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                             yAxisId="main"
                                             type="monotone"
                                             dataKey="sma200"
-                                            stroke="#9333ea" // Purple
+                                            stroke="#9A5DB8" // Purple
                                             strokeWidth={1.5}
                                             dot={false}
                                             activeDot={{ r: 4 }}
@@ -957,13 +957,13 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
                                         <ReferenceLine
                                             yAxisId="main"
                                             y={avgCost}
-                                            stroke="#64748b" // Slate 500
+                                            stroke="#6A6C74" // Slate 500
                                             strokeDasharray="5 5"
                                             strokeWidth={1.5}
                                             label={{
                                                 value: `AVG COST: ${formatCurrency(avgCost, currency)}`,
                                                 position: 'right',
-                                                fill: '#64748b',
+                                                fill: '#6A6C74',
                                                 fontSize: 10,
                                                 fontWeight: 'bold',
                                                 offset: 10

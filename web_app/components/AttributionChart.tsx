@@ -54,7 +54,6 @@ export function SectorAttribution({ data, isLoading, isRefreshing = false, curre
 
     return (
         <div className="metric-card card-shine p-5 h-full relative overflow-hidden group">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
             <div className="flex items-center justify-between mb-5 relative z-10">
                 <h3 className="section-label">Sector Contribution</h3>
                 {isRefreshing && !isLoading && (
@@ -155,12 +154,12 @@ function FullContributorsModal({
 
                     <div className="p-5 sm:p-8 pb-4 sm:pb-6 flex justify-between items-start relative z-10">
                         <div className="flex items-center gap-4 sm:gap-6 flex-1">
-                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                            <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-primary flex items-center justify-center flex-shrink-0">
                                 <LayoutDashboard className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                             </div>
                             <div className="flex-1 min-w-0">
                                 <h2 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">All Contributors</h2>
-                                <p className="text-muted-foreground text-[10px] sm:text-sm font-medium mt-0.5 uppercase tracking-wider opacity-70">
+                                <p className="text-muted-foreground text-[11px] sm:text-sm font-medium mt-0.5 uppercase tracking-[0.06em] opacity-70">
                                     Impact of individual holdings on performance
                                 </p>
                             </div>
@@ -234,7 +233,7 @@ function FullContributorsModal({
                                                     </span>
                                                 ))}
                                                 {stock.value > 0 && (
-                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-up/12 text-up uppercase tracking-wider whitespace-nowrap leading-none">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-up/12 text-up uppercase tracking-[0.06em] whitespace-nowrap leading-none">
                                                         Held
                                                     </span>
                                                 )}
@@ -254,7 +253,7 @@ function FullContributorsModal({
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-1 justify-end max-w-full">
-                                            <span className="text-[9px] sm:text-[10px] font-medium text-cyan-500 uppercase tracking-wider truncate">
+                                            <span className="text-[11px] sm:text-[11px] font-medium text-cyan-500 uppercase tracking-[0.06em] truncate">
                                                 {stock.sector}
                                             </span>
                                         </div>
@@ -296,7 +295,6 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
     return (
         <>
             <div className="metric-card card-shine p-5 h-full relative overflow-hidden group">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
                 <div className="flex items-center justify-between mb-5 relative z-10">
                     <h3 className="section-label">Top Contributors</h3>
@@ -333,7 +331,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                             </span>
                                         ))}
                                         {stock.value > 0 && (
-                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-up/12 text-up uppercase tracking-wider whitespace-nowrap leading-none">
+                                            <span className="ml-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-up/12 text-up uppercase tracking-[0.06em] whitespace-nowrap leading-none">
                                                 Held
                                             </span>
                                         )}
@@ -346,7 +344,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                                     {formatCurrencyHelper(stock.gain, currency)}
                                     <span className="text-[10px] ml-1 opacity-70">({formatPercentHelper(stock.contribution)})</span>
                                 </p>
-                                <p className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{stock.sector}</p>
+                                <p className="text-[11px] text-muted-foreground/60 uppercase tracking-wide">{stock.sector}</p>
                             </div>
                         </div>
                     )) : (
@@ -358,7 +356,7 @@ export function TopContributors({ data, isLoading, isRefreshing = false, currenc
                     <div className="mt-4 pt-3 border-t border-border/40 relative z-10">
                         <button
                             onClick={() => setIsAllModalOpen(true)}
-                            className="w-full py-2 rounded-xl text-[10px] font-bold text-muted-foreground hover:text-amber-500 hover:bg-amber-500/5 transition-all uppercase tracking-widest"
+                            className="w-full py-2 rounded-xl text-[11px] font-semibold text-muted-foreground hover:text-amber-500 hover:bg-amber-500/5 transition-all uppercase tracking-[0.06em]"
                         >
                             View All Contributors
                         </button>

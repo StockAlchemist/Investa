@@ -347,7 +347,7 @@ struct BuffettRankControls: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(Color.secondary.opacity(0.10), in: Capsule())
+        .background(Color.inset, in: Capsule())
     }
 }
 
@@ -364,10 +364,10 @@ struct BuffettFilterChip: View {
                 .appFont(.caption.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .foregroundStyle(isSelected ? Color.primary : Color.ink2)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.brand : Color.secondary.opacity(0.12), in: Capsule())
+                .background(isSelected ? Color.segmentOn : Color.secondary.opacity(0.12), in: Capsule())
                 .overlay(
                     Capsule().strokeBorder(isSelected ? Color.clear : Color.secondary.opacity(0.22), lineWidth: 1)
                 )

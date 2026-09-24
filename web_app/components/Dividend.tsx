@@ -178,24 +178,23 @@ export default function Dividend({
             {/* Annual dividends chart with YoY growth labels */}
             {show('annualDividends') && (
             <div className="metric-card card-shine p-6 relative overflow-hidden group">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
                 <h3 className="section-label mb-4 relative z-10">Annual Dividends</h3>
                 <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dividendsByYear} margin={{ top: 24, right: 30, left: 20, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
-                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
+                            <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#6A6C74' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} />
                             <YAxis
                                 tickFormatter={(val) => formatCompactNumber(val, currency)}
-                                tick={{ fill: '#6b7280', fontSize: 12 }}
+                                tick={{ fill: '#6A6C74', fontSize: 12 }}
                                 axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                                 width={35}
                             />
-                            <Bar dataKey="amount" fill="#10b981" name="Dividend Amount" radius={[4, 4, 0, 0]} onClick={handleBarClick} cursor="pointer">
+                            <Bar dataKey="amount" fill="#1F9D6C" name="Dividend Amount" radius={[4, 4, 0, 0]} onClick={handleBarClick} cursor="pointer">
                                 {dividendsByYear.map((entry, index) => {
                                     const isSelected = selectedYear === entry.year;
                                     const isFaded = selectedYear != null && !isSelected;
-                                    const fill = isFaded ? 'var(--glass-hover)' : (isSelected ? '#059669' : '#10b981');
+                                    const fill = isFaded ? 'var(--glass-hover)' : (isSelected ? '#1F9D6C' : '#1F9D6C');
                                     return <Cell key={`cell-${index}`} fill={fill} cursor="pointer" />;
                                 })}
                                 <LabelList
@@ -209,7 +208,7 @@ export default function Dividend({
                                             <text
                                                 x={x + width / 2}
                                                 y={y - 8}
-                                                fill={isGain ? '#10b981' : '#ef4444'}
+                                                fill={isGain ? '#1F9D6C' : '#D2491F'}
                                                 textAnchor="middle"
                                                 fontSize={10}
                                                 fontWeight={700}
@@ -264,7 +263,6 @@ export default function Dividend({
             {/* Dividend transactions table — sortable + searchable */}
             {show('dividendTransactions') && (
             <div className="metric-card card-shine overflow-hidden relative group">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
                 <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
                     <div className="flex items-center gap-3">
                         <h3 className="section-label">Dividend Transactions</h3>
@@ -404,7 +402,7 @@ export default function Dividend({
                     <div className="flex justify-center gap-4 p-4">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[#1C8C84] transition-colors text-sm font-medium"
                         >
                             Show More
                         </button>

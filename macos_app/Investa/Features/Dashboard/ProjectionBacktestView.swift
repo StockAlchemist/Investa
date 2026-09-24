@@ -17,7 +17,7 @@ struct ProjectionBacktestView: View {
     #endif
 
     /// The path that actually happened.
-    private static let actualColor = Color.green
+    private static let actualColor = Color.up
     /// The model's own cone, in the same brand colour the forecast tab uses.
     private var modelColor: Color { Theme.brand }
 
@@ -275,9 +275,9 @@ struct ProjectionBacktestView: View {
 
     private static func verdictColor(_ verdict: String) -> Color {
         switch verdict {
-        case "narrow": return .red
+        case "narrow": return .down
         case "wide": return .secondary
-        default: return .green
+        default: return .up
         }
     }
 

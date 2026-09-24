@@ -39,7 +39,7 @@ function MarketContextColumn({ indices, portfolioDayChangePct }: { indices?: Rec
 
     return (
         <div className="flex flex-col gap-2 min-w-0">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] text-slate-600 dark:text-slate-400 font-semibold">
                 <Globe className="w-3 h-3" />
                 <span>Market Today</span>
             </div>
@@ -51,7 +51,7 @@ function MarketContextColumn({ indices, portfolioDayChangePct }: { indices?: Rec
                     )}>
                         {portfolioDayChangePct >= 0 ? '+' : ''}{portfolioDayChangePct.toFixed(2)}%
                     </span>
-                    <span className="text-[10px] uppercase tracking-wider text-slate-600 dark:text-slate-400 font-semibold">you</span>
+                    <span className="text-[11px] uppercase tracking-[0.06em] text-slate-600 dark:text-slate-400 font-semibold">you</span>
                 </div>
             )}
             <div className="space-y-1">
@@ -93,7 +93,7 @@ function MoversColumn({ rows, currency, positive, onPick }: {
     const tone = positive ? 'text-up' : 'text-down';
     return (
         <div className="flex flex-col gap-2 min-w-0">
-            <div className={cn('flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold', tone)}>
+            <div className={cn('flex items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] font-semibold', tone)}>
                 <Icon className="w-3 h-3" />
                 <span>{positive ? 'Top Gainers' : 'Top Losers'}</span>
             </div>

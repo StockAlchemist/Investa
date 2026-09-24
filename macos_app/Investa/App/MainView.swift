@@ -113,8 +113,9 @@ struct MainView: View {
             // iOS requires an optional single-selection binding; bridge to the
             // non-optional state (ignore deselection).
             List(selection: Binding(get: { selection }, set: { selection = $0 ?? selection })) {
-                Section { ForEach(AppSection.group1) { row($0) } }
-                Section { ForEach(AppSection.group2) { row($0) } }
+                // Named groups — the web sidebar's "Portfolio" / "Research" overlines.
+                Section("Portfolio") { ForEach(AppSection.group1) { row($0) } }
+                Section("Research") { ForEach(AppSection.group2) { row($0) } }
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
             .safeAreaInset(edge: .bottom) { footer }
@@ -138,6 +139,8 @@ struct MainView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             }
+            // Ledger's paper ground behind every section; cards sit on it in white.
+            .background(Color.paper)
             .navigationTitle(appState.selectedStock ?? "Investa")
             .task { if !appState.didLoadSettings { await appState.loadSettings() } }
             .onChange(of: selection) { _, newSelection in
@@ -243,8 +246,12 @@ struct MainView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                // Ledger: where you are is raised onto a card in ink, not
+                // tinted in the accent — the web sidebar's active row.
+                .background(isSelected ? Color.cardBg : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isSelected ? Color.line : Color.clear, lineWidth: 1))
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundStyle(isSelected ? Color.primary : Color.ink2)
         }
         .buttonStyle(.plain)
     }
@@ -320,6 +327,7 @@ struct MainView: View {
             // that overflows would otherwise widen the shell and push the
             // control bar off the right edge of the screen.
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .background(Color.paper)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -399,7 +407,7 @@ struct IndexStrip: View {
                     if let change = index.change {
                         Text("\(isUp ? "+" : "")\(Fmt.number(change))")
                             .appFont(.caption.monospacedDigit())
-                            .foregroundStyle(isUp ? Color.green : Color.red)
+                            .foregroundStyle(isUp ? Color.up : Color.down)
                             .padding(.leading, 2)
                     }
                     
@@ -411,7 +419,7 @@ struct IndexStrip: View {
                         Text(String(format: "%.2f%%)", abs(index.changesPercentage ?? 0)))
                             .appFont(.caption.monospacedDigit())
                     }
-                    .foregroundStyle(isUp ? Color.green : Color.red)
+                    .foregroundStyle(isUp ? Color.up : Color.down)
                     .padding(.leading, 2)
                 }
             }
@@ -440,7 +448,7 @@ struct IndexStrip: View {
                         Text(String(format: "%.2f%%", abs(index.changesPercentage ?? 0)))
                             .appFont(.caption.monospacedDigit())
                     }
-                    .foregroundStyle(isUp ? Color.green : Color.red)
+                    .foregroundStyle(isUp ? Color.up : Color.down)
                     .padding(.leading, 2)
                 }
             }

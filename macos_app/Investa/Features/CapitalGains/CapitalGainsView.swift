@@ -53,7 +53,7 @@ struct CapitalGainsView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if let error = viewModel.errorMessage {
-                    Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
+                    Text(error).foregroundStyle(.down).appFont(.callout).padding(12)
                 }
                 VStack(spacing: 20) {
                     if vis("unrealizedTax") { UnrealizedTaxSection(holdings: viewModel.holdings, currency: cur) }
@@ -71,7 +71,7 @@ struct CapitalGainsView: View {
         #else
         VStack(spacing: 0) {
             if let error = viewModel.errorMessage {
-                Text(error).foregroundStyle(.red).appFont(.callout).padding(12)
+                Text(error).foregroundStyle(.down).appFont(.callout).padding(12)
             }
             ScrollView {
                 VStack(spacing: 20) {

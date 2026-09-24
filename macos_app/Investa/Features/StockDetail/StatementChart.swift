@@ -476,10 +476,8 @@ struct StatementTypeBar: View {
                             }
                             .appFont(.caption.weight(.bold))
                             .padding(.horizontal, 16).padding(.vertical, 8)
-                            .foregroundStyle(statement == t.0 ? Color.white : .secondary)
-                            .background(
-                                statement == t.0 ? Color.indigo : Color.secondary.opacity(0.15),
-                                in: Capsule()
+                            .foregroundStyle(statement == t.0 ? Color.primary : Color.ink2)
+                            .background(statement == t.0 ? Color.segmentOn : Color.secondary.opacity(0.15), in: Capsule()
                             )
                         }
                         .buttonStyle(.plain)
@@ -662,7 +660,7 @@ struct StatementChangeStrip: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(value)
                     .appFont(.title3.bold().monospacedDigit())
-                    .foregroundStyle(tone == nil ? Color.primary : (tone! >= 0 ? .green : .red))
+                    .foregroundStyle(tone == nil ? Color.primary : (tone! >= 0 ? .up : .down))
                     // A figure never wraps: it shrinks, then it truncates.
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)

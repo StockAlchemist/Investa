@@ -26,19 +26,17 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
 
+    void Icon;
     // Mobile → tablet: fills its responsive grid cell. xl+: becomes a
     // single-row flex strip item with vertical dividers (handled on the parent).
     return (
         <div className="min-w-0 px-1 py-1.5 xl:flex-1 xl:min-w-[150px] xl:px-4 xl:py-3 xl:first:pl-0 xl:last:pr-0">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1.5">
-                {Icon && <Icon className="w-3 h-3 shrink-0" />}
-                <span className="truncate">{label}</span>
-            </div>
-            <div className={cn('text-lg sm:text-2xl font-bold tabular-nums leading-none truncate', toneClass)}>
+            <div className="text-xs leading-4 text-muted-foreground mb-1 whitespace-nowrap">{label}</div>
+            <div className={cn('text-lg sm:text-[22px] font-semibold tabular-nums leading-7 whitespace-nowrap', toneClass)}>
                 {value}
             </div>
             {sub && (
-                <div className="text-[11px] text-muted-foreground/80 mt-1.5 leading-tight">
+                <div className="text-xs text-ink-2 mt-0.5 leading-4">
                     {sub}
                 </div>
             )}

@@ -229,7 +229,7 @@ struct PerformanceChartView: View {
                             HStack(spacing: 6) {
                                 Text(s.label).appFont(.caption2.weight(.medium)).foregroundStyle(.secondary).textCase(.uppercase)
                                 Text(s.text).appFont(.callout.weight(.bold))
-                                    .foregroundStyle(s.positive ? .green : .red)
+                                    .foregroundStyle(s.positive ? .up : .down)
                                     .lineLimit(1).minimumScaleFactor(0.7)
                             }
                         }
@@ -271,8 +271,8 @@ struct PerformanceChartView: View {
                     Button { period = p } label: {
                         Text(p.label).appFont(.caption.weight(.semibold))
                             .padding(.horizontal, 10).padding(.vertical, 4)
-                            .background(period == p ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
-                            .foregroundStyle(period == p ? .white : .secondary)
+                            .background(period == p ? Color.brandTint : Color.inset, in: Capsule())
+                            .foregroundStyle(period == p ? Color.brandInk : Color.ink2)
                     }.buttonStyle(.plain)
                 }
             }.padding(.vertical, 1)
@@ -306,7 +306,7 @@ struct PerformanceChartView: View {
                                 .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
                         } else if view == .drawdown {
                             AreaMark(x: .value("Date", item.date), y: .value("Value", item.value))
-                                .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                                .foregroundStyle(.linearGradient(colors: [Color.down.opacity(0.30), Color.down.opacity(0.02)], startPoint: .top, endPoint: .bottom))
                         }
                         LineMark(x: .value("Date", item.date), y: .value("Value", item.value))
                             .foregroundStyle(by: .value("Series", item.series))
@@ -344,7 +344,7 @@ struct PerformanceChartView: View {
                                 .foregroundStyle(.linearGradient(colors: [Color.accentColor.opacity(0.30), Color.accentColor.opacity(0.02)], startPoint: .top, endPoint: .bottom))
                         } else if view == .drawdown {
                             AreaMark(x: .value("Index", xIdx), y: .value("Value", item.value))
-                                .foregroundStyle(.linearGradient(colors: [Color.red.opacity(0.30), Color.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                                .foregroundStyle(.linearGradient(colors: [Color.down.opacity(0.30), Color.down.opacity(0.02)], startPoint: .top, endPoint: .bottom))
                         }
                         LineMark(x: .value("Index", xIdx), y: .value("Value", item.value))
                             .foregroundStyle(by: .value("Series", item.series))
@@ -457,9 +457,9 @@ struct PerformanceChartView: View {
     }
 
     private func seriesColor(_ name: String) -> Color {
-        if name == "Portfolio" { return view == .drawdown ? .red : .accentColor }
+        if name == "Portfolio" { return view == .drawdown ? .down : .accentColor }
         if name == fxSeriesName { return Theme.fx }
-        let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
+        let palette: [Color] = [.brand, .warn, .up, .plum, .plum, .dataTeal]
         if let idx = benchmarks.firstIndex(of: name) { return palette[idx % palette.count] }
         return .secondary
     }
@@ -510,10 +510,10 @@ struct PerformanceChartView: View {
     }
 
     private var seriesColors: [Color] {
-        let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal]
+        let palette: [Color] = [.brand, .warn, .up, .plum, .plum, .dataTeal]
         switch view {
         case .value: return [.accentColor]
-        case .drawdown: return [.red]
+        case .drawdown: return [.down]
         case .twr:
             // Order must match series first-appearance in seriesData: Portfolio,
             // benchmarks, then the FX return line.

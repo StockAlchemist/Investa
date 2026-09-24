@@ -58,7 +58,7 @@ export const HoldingsTagModal: React.FC<HoldingsTagModalProps> = ({
                     <button
                         onClick={handleSaveTags}
                         disabled={isPending}
-                        className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-[#0086a0] transition-colors flex items-center gap-2 disabled:opacity-50"
+                        className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-[#1C8C84] transition-colors flex items-center gap-2 disabled:opacity-50"
                     >
                         {isPending ? "Saving..." : <><Save className="w-3 h-3" /> Save</>}
                     </button>

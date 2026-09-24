@@ -394,7 +394,7 @@ export default function SP500Heatmap() {
                                     onClick={() => setSizeMode(s)}
                                     className={cn(
                                         'px-2 py-1 rounded-md text-xs font-semibold transition-all',
-                                        sizeMode === s ? 'bg-indigo-500 text-white' : 'text-muted-foreground hover:text-foreground',
+                                        sizeMode === s ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                                     )}
                                     title={s === 'cap' ? 'Size tiles by market cap' : 'Equal-size tiles'}
                                 >
@@ -448,7 +448,7 @@ export default function SP500Heatmap() {
                                 return (
                                     <div key={node.id} className="absolute pointer-events-none" style={{ left: node.frame.x, top: node.frame.y, width: node.frame.width, height: 16, backgroundColor: palette.industryHeader }}>
                                         <div
-                                            className="w-full h-full flex items-center px-1.5 text-[9px] font-semibold tracking-tight truncate uppercase border-b opacity-90"
+                                            className="w-full h-full flex items-center px-1.5 text-[11px] font-semibold tracking-tight truncate uppercase border-b opacity-90"
                                             style={{ color: palette.headerText, borderColor: palette.headerRule }}
                                         >
                                             {node.name}

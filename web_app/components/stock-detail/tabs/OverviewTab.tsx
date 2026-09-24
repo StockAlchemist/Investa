@@ -145,7 +145,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                             <Wallet className="w-5 h-5 text-indigo-500" />
                             Your Position
                         </h3>
-                        <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider bg-secondary/50 px-2 py-1 rounded-md">
+                        <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] bg-secondary/50 px-2 py-1 rounded-md">
                             Aggregated
                         </div>
                     </div>
@@ -327,7 +327,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         score: sc.moat,
                         color: 'text-blue-500 dark:text-blue-400',
                         bgColor: 'bg-blue-500/10 dark:bg-blue-500/20 text-blue-500 dark:text-blue-400',
-                        barColor: 'from-blue-500 to-cyan-500',
+                        barColor: 'bg-indigo-600 dark:bg-indigo-400',
                         badgeColor: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25',
                         getTier: (s: number) => s >= 9 ? 'Wide Moat' : s >= 7.5 ? 'Solid Moat' : s >= 5.5 ? 'Narrow Moat' : 'No Moat',
                     },
@@ -338,7 +338,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         score: sc.financial_strength,
                         color: 'text-amber-500 dark:text-amber-400',
                         bgColor: 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-500 dark:text-amber-400',
-                        barColor: 'from-amber-500 to-orange-500',
+                        barColor: 'bg-amber-500',
                         badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25',
                         getTier: (s: number) => s >= 9 ? 'Fortress' : s >= 7.5 ? 'Healthy' : s >= 5.5 ? 'Adequate' : 'Constrained',
                     },
@@ -349,7 +349,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         score: sc.predictability,
                         color: 'text-up',
                         bgColor: 'bg-up/12 dark:bg-emerald-500/20 text-up',
-                        barColor: 'from-emerald-500 to-teal-500',
+                        barColor: 'bg-teal-600 dark:bg-teal-400',
                         badgeColor: 'bg-up/12 text-up border-emerald-500/25',
                         getTier: (s: number) => s >= 9 ? 'High Visibility' : s >= 7.5 ? 'Predictable' : s >= 5.5 ? 'Moderate' : 'Volatile',
                     },
@@ -360,14 +360,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         score: sc.growth,
                         color: 'text-purple-500 dark:text-purple-400',
                         bgColor: 'bg-purple-500/10 dark:bg-purple-500/20 text-purple-500 dark:text-purple-400',
-                        barColor: 'from-purple-500 to-pink-500',
+                        barColor: 'bg-violet-600 dark:bg-violet-400',
                         badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/25',
                         getTier: (s: number) => s >= 9 ? 'High Growth' : s >= 7.5 ? 'Solid Growth' : s >= 5.5 ? 'Moderate' : 'Sluggish',
                     },
                 ];
 
                 return (
-                    <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-indigo-500/[0.03] via-card to-purple-500/[0.04] border border-border/70 shadow-xs space-y-3.5 sm:space-y-4">
+                    <div className="relative overflow-hidden rounded-card p-4 sm:p-5 bg-card border border-border space-y-3.5 sm:space-y-4">
                         {/* Ambient glow accent */}
                         <div className="pointer-events-none absolute -top-10 -right-10 w-36 h-36 bg-purple-500/10 dark:bg-purple-500/15 rounded-full blur-2xl" />
 
@@ -375,7 +375,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-3 relative z-10">
                             <div className="flex items-center justify-between sm:justify-start gap-2.5 min-w-0">
                                 <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 text-white flex items-center justify-center shadow-xs shadow-purple-500/20 shrink-0">
+                                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-control bg-primary text-primary-foreground flex items-center justify-center shrink-0">
                                         <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                     </div>
                                     <h3 className="text-sm sm:text-base font-bold text-foreground tracking-tight whitespace-nowrap">
@@ -463,7 +463,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                                             {/* Mini Progress Track */}
                                             <div className="w-full bg-muted/80 dark:bg-muted/40 h-1.5 rounded-full overflow-hidden">
                                                 <div
-                                                    className={cn("h-full rounded-full transition-all duration-700 bg-gradient-to-r", p.barColor)}
+                                                    className={cn("h-full rounded-full transition-all duration-700", p.barColor)}
                                                     style={{ width: `${pct}%` }}
                                                 />
                                             </div>
@@ -498,7 +498,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 <button
                     onClick={onRefreshData}
                     disabled={loading}
-                    className="flex items-center gap-1.5 text-[10px] font-bold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 transition-colors uppercase tracking-wider cursor-pointer"
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 transition-colors uppercase tracking-[0.06em] cursor-pointer"
                     title="Force Refresh Data"
                 >
                     <RotateCcw className="w-3 h-3" />

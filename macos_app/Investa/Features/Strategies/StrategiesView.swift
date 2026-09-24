@@ -165,7 +165,7 @@ struct StrategiesView: View {
                     .appFont(.caption)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.warn.opacity(0.12)))
             }
 
             ForEach(model.allocation?.sleeves ?? []) { sleeve in
@@ -304,7 +304,7 @@ struct StrategiesView: View {
                     Text(risk).appFont(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
-                    Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.shield").foregroundStyle(.warn)
                 }
             }
         }
@@ -438,7 +438,7 @@ private struct SleeveSection: View {
                 .foregroundStyle(.secondary)
             if let ageDays {
                 Text(ageDays == 0 ? "(today)" : "(\(ageDays)d ago)")
-                    .foregroundStyle(isStale ? .orange : .secondary)
+                    .foregroundStyle(isStale ? .warn : .secondary)
                     .fontWeight(isStale ? .semibold : .regular)
             }
         }

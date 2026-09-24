@@ -1,15 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Geist, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import { WebVitals } from "@/components/WebVitals";
 import { AuthProvider } from "@/context/AuthContext";
 import LazyAIChat from "@/components/LazyAIChat";
 
-const inter = Inter({ subsets: ["latin"] });
+// Ledger's type pair. Geist carries the interface and every figure;
+// Instrument Serif is for page titles and the hero figure only. Both expose a
+// CSS variable that globals.css maps onto `font-sans` and `font-display`.
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-instrument-serif",
+});
 
 export const viewport: Viewport = {
-  themeColor: "#06b6d4",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F5F4EF" },
+    { media: "(prefers-color-scheme: dark)", color: "#0F1013" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -42,8 +53,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} antialiased selection:bg-indigo-500/20 selection:text-indigo-500 min-h-screen bg-background text-foreground`} suppressHydrationWarning>
+    <html lang="en" className={`${geist.variable} ${instrumentSerif.variable}`} suppressHydrationWarning>
+      <body className="font-sans antialiased selection:bg-primary/20 min-h-screen bg-background text-foreground" suppressHydrationWarning>
         <Providers>
           <AuthProvider>
             <WebVitals />

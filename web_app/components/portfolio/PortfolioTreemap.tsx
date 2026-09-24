@@ -20,9 +20,9 @@ const DIMENSIONS: { key: Dimension; label: string }[] = [
 ];
 
 const PALETTE = [
-    '#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ef4444',
-    '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
-    '#3b82f6', '#a855f7',
+    '#4A62E0', '#259A91', '#1F9D6C', '#C8921E', '#D2491F',
+    '#9A5DB8', '#C2588A', '#259A91', '#D07A2A', '#1F9D6C',
+    '#4A62E0', '#9A5DB8',
 ];
 
 function isUnknown(v: unknown): boolean {
@@ -65,7 +65,7 @@ function TreemapCell(props: any) {
                 width={width}
                 height={height}
                 rx={3}
-                style={{ fill: fill || '#6366f1', stroke: 'var(--background)', strokeWidth: 2, cursor: 'pointer' }}
+                style={{ fill: fill || '#4A62E0', stroke: 'var(--background)', strokeWidth: 2, cursor: 'pointer' }}
             />
             {showLabel && (
                 <text x={x + 6} y={y + 16} fill="#fff" fontSize={11} fontWeight={700} className="pointer-events-none">
@@ -160,7 +160,7 @@ export default function PortfolioTreemap({ holdings, currency }: PortfolioTreema
                             onClick={() => setDim(d.key)}
                             className={cn(
                                 'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                                dim === d.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                                dim === d.key ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             {d.label}

@@ -28,10 +28,9 @@ import {
   fetchHeadline,
   PortfolioSummary
 } from '@/lib/api';
-import { cn } from '@/lib/utils';
 import { marketToday } from '@/lib/market_time';
 import type { MarketIndex } from '@/components/MarketsTab';
-import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
+import { INITIAL_VISIBLE_ITEMS, ACCENT_THEME } from '@/lib/dashboard_constants';
 import { TAB_LAYOUT_ITEMS, TAB_INITIAL_VISIBLE, TAB_SECTION_LABELS } from '@/lib/layout_registry';
 import Dashboard from '@/components/Dashboard';
 import HoldingsTable from '@/components/HoldingsTable';
@@ -644,7 +643,7 @@ export default function AuthenticatedDashboard() {
               indices={indices}
               visibleItems={visibleItems}
               accounts={selectedAccounts}
-              themeColor={currentTheme.color}
+              themeColor={ACCENT_THEME.color}
               showClosed={showClosed}
               excludeFromAnalytics={['riskMetrics', 'sectorContribution', 'topContributors', 'performanceGraph', 'projection']}
             />
@@ -777,7 +776,7 @@ export default function AuthenticatedDashboard() {
 
       case 'capital_gains':
         return (
-          <div className="space-y-6 p-4">
+          <div className="space-y-6">
             {activeVisible.includes('unrealizedTax') && (
               <UnrealizedTaxView holdings={holdings} currency={currency} />
             )}
@@ -845,23 +844,11 @@ export default function AuthenticatedDashboard() {
 
   if (!mounted) return <AppShellSkeleton />;
 
-  const currentTheme = TAB_THEMES[activeTab] || TAB_THEMES.performance;
-
   return (
     <div className="flex h-screen overflow-hidden bg-background selection:bg-primary/20 selection:text-primary-ink">
 
-      {/* Ambient background glows */}
-      <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
-        <div className={cn(
-          'absolute -top-[30%] -left-[15%] w-[70%] h-[70%] rounded-full blur-[120px] transition-all duration-[1500ms] animate-pulse-glow opacity-20',
-          currentTheme.bgGlow,
-        )} />
-        <div className={cn(
-          'absolute top-[20%] -right-[25%] w-[60%] h-[60%] rounded-full blur-[100px] transition-all duration-[1500ms] opacity-10',
-          currentTheme.bgGlow,
-        )} />
-      </div>
-      <div className="fixed inset-0 z-[-2] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background pointer-events-none" />
+      {/* Ledger has no ambient glow or gradient wash: the paper ground is the
+          background. */}
 
       {/* ── Sidebar (desktop) ── */}
       <Sidebar
@@ -872,6 +859,7 @@ export default function AuthenticatedDashboard() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(c => !c)}
         onUserClick={handleUserIconClick}
+        onSearchClick={() => setIsCommandPaletteOpen(true)}
         dayChangePct={cardMetrics?.day_change_percent as number | undefined}
       />
 

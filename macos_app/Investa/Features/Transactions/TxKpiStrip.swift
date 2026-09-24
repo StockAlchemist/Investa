@@ -79,10 +79,10 @@ struct TxKpiStrip: View {
                         kpiStat("Buys / Sells", "\(c.counts.buy) / \(c.counts.sell)")
                     }
                     if c.counts.dividend > 0 {
-                        kpiStat("Dividends", "\(c.counts.dividend)", valueColor: .green)
+                        kpiStat("Dividends", "\(c.counts.dividend)", valueColor: .up)
                     }
                     if c.counts.interest > 0 {
-                        kpiStat("Interest", "\(c.counts.interest)", valueColor: .green)
+                        kpiStat("Interest", "\(c.counts.interest)", valueColor: .up)
                     }
                     if c.counts.deposit + c.counts.withdrawal > 0 {
                         kpiStat("Cash Flows", "\(c.counts.deposit + c.counts.withdrawal)")
@@ -98,8 +98,8 @@ struct TxKpiStrip: View {
                     HStack(spacing: 4) { activity("\(c.counts.buy)", "buys"); Text("/").foregroundStyle(.secondary); activity("\(c.counts.sell)", "sells") }
                 }
                 if c.counts.dividend + c.counts.interest > 0 {
-                    activity("\(c.counts.dividend)", "div", tint: .green)
-                    if c.counts.interest > 0 { activity("\(c.counts.interest)", "int", tint: .green) }
+                    activity("\(c.counts.dividend)", "div", tint: .up)
+                    if c.counts.interest > 0 { activity("\(c.counts.interest)", "int", tint: .up) }
                 }
                 if c.counts.deposit + c.counts.withdrawal > 0 { activity("\(c.counts.deposit + c.counts.withdrawal)", "cash flows") }
             }
@@ -143,7 +143,7 @@ struct TxKpiStrip: View {
                     Image(systemName: positive ? "arrow.down.right" : "arrow.up.right")
                     Text("\(positive ? "+" : "−")\(compact(abs(row.netFlow)))").appFont(.title2.bold()).monospacedDigit()
                 }
-                .foregroundStyle(positive ? .green : .red)
+                .foregroundStyle(positive ? .up : .down)
                 // On the stack, so a figure added beside it can't opt out. Both
                 // parts: `lineLimit(1)` alone converts the wrap into an ellipsis,
                 // and half a net figure is a different number.
@@ -163,9 +163,9 @@ struct TxKpiStrip: View {
                 kv("Out", row.b.outflow > 0 ? compact(row.b.outflow) : "—", .primary, trailing: true)
             }
             HStack {
-                kv("Fees", row.b.fees > 0 ? compact(row.b.fees) : "—", row.b.fees > 0 ? .orange : .secondary)
+                kv("Fees", row.b.fees > 0 ? compact(row.b.fees) : "—", row.b.fees > 0 ? .warn : .secondary)
                 Spacer()
-                kv("Tax", row.b.tax > 0 ? compact(row.b.tax) : "—", row.b.tax > 0 ? .orange : .secondary, trailing: true)
+                kv("Tax", row.b.tax > 0 ? compact(row.b.tax) : "—", row.b.tax > 0 ? .warn : .secondary, trailing: true)
             }
         }
         // Top-leading, not `.leading`: where one card in a row runs taller,

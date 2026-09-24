@@ -293,7 +293,7 @@ export const HoldingsMobileCards: React.FC<HoldingsMobileCardsProps> = ({
                                     </span>
                                 </div>
                                 <div className="flex flex-col items-center justify-center col-span-2 bg-emerald-500/5 dark:bg-emerald-400/5 p-3 rounded-lg">
-                                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total Return</span>
+                                    <span className="text-[11px] text-muted-foreground uppercase tracking-[0.06em] mb-1">Total Return</span>
                                     <span className={`text-base font-bold ${getCellClass(getValue(holding, "Total G/L"), "Total G/L")}`}>
                                         {formatValue(getValue(holding, "Total G/L"), "Total G/L")} ({formatValue(getValue(holding, "Total Ret %"), "Total Ret %")})
                                     </span>

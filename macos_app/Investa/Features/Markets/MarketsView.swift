@@ -193,14 +193,14 @@ private struct IndexCard: View {
     /// Brand color per index — mirrors the web `getIndexStyle`.
     static func indexColor(_ name: String) -> Color {
         let n = name.lowercased()
-        if n.contains("nasdaq") { return Color(hex: 0x8b5cf6) }
-        if n.contains("s&p") || n.contains("500") { return Color(hex: 0x06b6d4) }
-        if n.contains("dow") || n.contains("jones") { return Color(hex: 0xf59e0b) }
-        if n.contains("russell") { return Color(hex: 0xf97316) }
-        if n.contains("ftse") { return Color(hex: 0x3b82f6) }
-        if n.contains("nikkei") || n.contains("japan") { return Color(hex: 0xec4899) }
-        if n.contains("dax") || n.contains("germany") { return Color(hex: 0x14b8a6) }
-        return Color(hex: 0x10b981)
+        if n.contains("nasdaq") { return Color(hex: 0x9A5DB8) }
+        if n.contains("s&p") || n.contains("500") { return Color(hex: 0x259A91) }
+        if n.contains("dow") || n.contains("jones") { return Color(hex: 0xC8921E) }
+        if n.contains("russell") { return Color(hex: 0xD07A2A) }
+        if n.contains("ftse") { return Color(hex: 0x4A62E0) }
+        if n.contains("nikkei") || n.contains("japan") { return Color(hex: 0xC2588A) }
+        if n.contains("dax") || n.contains("germany") { return Color(hex: 0x259A91) }
+        return Color(hex: 0x1F9D6C)
     }
 
     private var priceText: String {
@@ -224,12 +224,12 @@ private struct IndexCard: View {
                             .fontWeight(.bold).monospacedDigit()
                             .lineLimit(1).minimumScaleFactor(0.5).fixedSize(horizontal: true, vertical: false)
                     }
-                    .appFont(.caption).foregroundStyle(isUp ? .green : .red)
+                    .appFont(.caption).foregroundStyle(isUp ? .up : .down)
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background((isUp ? Color.green : .red).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background((isUp ? Color.up : .down).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 }
                 Text("\(isUp ? "+" : "")\(String(format: "%.2f", index.change ?? 0)) pts").appFont(.caption.weight(.semibold)).monospacedDigit()
-                    .foregroundStyle(isUp ? .green : .red)
+                    .foregroundStyle(isUp ? .up : .down)
             }
             .padding(16)
             if index.sparkline.count > 1 {
@@ -364,7 +364,7 @@ private struct IndexGraphSheet: View {
                     HStack(spacing: 10) {
                         Text(Fmt.number(index.price)).appFont(.title3).monospacedDigit()
                         Text("\(isUp ? "+" : "")\(Fmt.number(index.change)) (\(Fmt.percent(index.changesPercentage, includeSign: true)))")
-                            .foregroundStyle(isUp ? .green : .red).fontWeight(.semibold)
+                            .foregroundStyle(isUp ? .up : .down).fontWeight(.semibold)
                     }
                 }
                 Spacer()
@@ -384,8 +384,8 @@ private struct IndexGraphSheet: View {
                             Button { period = value } label: {
                                 Text(label).appFont(.caption.weight(.semibold))
                                     .padding(.horizontal, 10).padding(.vertical, 4)
-                                    .background(period == value ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
-                                    .foregroundStyle(period == value ? .white : .secondary)
+                                    .background(period == value ? Color.brandTint : Color.inset, in: Capsule())
+                                    .foregroundStyle(period == value ? Color.brandInk : Color.ink2)
                             }.buttonStyle(.plain)
                         }
                     }
@@ -442,9 +442,9 @@ private struct IndexGraphSheet: View {
             Chart {
                 ForEach(pts, id: \.date) { p in
                     AreaMark(x: .value("Date", p.date), y: .value("Return", p.ret))
-                        .foregroundStyle(.linearGradient(colors: [(isUp ? Color.green : .red).opacity(0.25), .clear], startPoint: .top, endPoint: .bottom))
+                        .foregroundStyle(.linearGradient(colors: [(isUp ? Color.up : .down).opacity(0.25), .clear], startPoint: .top, endPoint: .bottom))
                     LineMark(x: .value("Date", p.date), y: .value("Return", p.ret))
-                        .foregroundStyle(isUp ? .green : .red).interpolationMethod(.monotone)
+                        .foregroundStyle(isUp ? .up : .down).interpolationMethod(.monotone)
                 }
                 RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.4)).lineStyle(.init(lineWidth: 1, dash: [3, 3]))
             }
@@ -470,7 +470,7 @@ private struct IndexGraphSheet: View {
                 let f = MarketTime.formatter(intradayPeriod ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy",
                                              timeZone: intradayPeriod ? MarketTime.defaultZone : MarketTime.utc)
                 return ChartTooltipContent(title: f.string(from: pts[i].date),
-                                           rows: [ChartTooltipRow(color: isUp ? .green : .red, label: index.name ?? "Index",
+                                           rows: [ChartTooltipRow(color: isUp ? .up : .down, label: index.name ?? "Index",
                                                                   value: String(format: "%.2f%%", pts[i].ret))])
             }
             .frame(height: 300)

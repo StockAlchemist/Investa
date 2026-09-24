@@ -72,7 +72,7 @@ export default function Allocation({ holdings, currency, visibleSections = [] }:
     const countryData   = aggregate(holdings, 'Country',   marketValueKey);
 
     return (
-        <div className="p-4 space-y-6">
+        <div className="space-y-6">
             {/* Concentration KPIs */}
             {visibleSections.includes('concentrationKpis') && (
                 <ConcentrationKpiStrip holdings={holdings} currency={currency} />

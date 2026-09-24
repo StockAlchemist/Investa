@@ -24,25 +24,28 @@ struct ChartTooltipContent {
 struct ChartTooltipCard: View {
     let content: ChartTooltipContent
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        // Ledger tooltip — the web's chart hover card: the card surface, a
+        // hairline rule, the date in the third ink, figures in tabular digits.
+        VStack(alignment: .leading, spacing: 4) {
             if !content.title.isEmpty {
-                Text(content.title).appFont(.caption2.bold())
+                Text(content.title).appFont(.caption).foregroundStyle(Color.ink3)
             }
             ForEach(content.rows) { r in
                 HStack(spacing: 6) {
                     if let c = r.color {
                         RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 8, height: 8)
                     }
-                    Text(r.label).appFont(.caption2).foregroundStyle(.secondary)
+                    Text(r.label).appFont(.caption).foregroundStyle(Color.ink2)
                     Spacer(minLength: 12)
-                    Text(r.value).appFont(.caption2.monospacedDigit().weight(.semibold))
+                    Text(r.value).appFont(.caption.monospacedDigit().weight(.semibold))
                 }
+                .lineLimit(1)
             }
         }
-        .padding(.horizontal, 9).padding(.vertical, 7)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.15), radius: 5, y: 2)
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(Color.cardBg, in: RoundedRectangle(cornerRadius: Theme.insetRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.insetRadius, style: .continuous).strokeBorder(Color.line, lineWidth: 1))
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
         .frame(maxWidth: 280)
     }
 }

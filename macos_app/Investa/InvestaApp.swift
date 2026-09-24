@@ -67,7 +67,7 @@ struct InvestaApp: App {
                     goButton(.dividend,      shortcut: "5")
                     goButton(.capitalGains,  shortcut: "6")
                 }
-                Section("Discover") {
+                Section("Research") {
                     goButton(.market,    shortcut: "7")
                     goButton(.watchlist, shortcut: "8")
                     goButton(.markets,   shortcut: "9")

@@ -19,10 +19,10 @@ enum ToastStyle: Sendable {
 
     var color: Color {
         switch self {
-        case .error: return .red
-        case .warning: return .orange
-        case .info: return .blue
-        case .success: return .green
+        case .error: return .down
+        case .warning: return .warn
+        case .info: return .brand
+        case .success: return .up
         }
     }
 }

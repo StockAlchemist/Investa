@@ -4,8 +4,8 @@
     "description": "Personal Investment Portfolio Tracker",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#000000",
-    "theme_color": "#06b6d4",
+    "background_color": "#F5F4EF",
+    "theme_color": "#F5F4EF",
     "icons": [
         {
             "src": "/logo.png",

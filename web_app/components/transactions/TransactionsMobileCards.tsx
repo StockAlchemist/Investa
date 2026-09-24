@@ -86,19 +86,19 @@ export const TransactionsMobileCards: React.FC<TransactionsMobileCardsProps> = (
                         {/* Details grid */}
                         <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/40 text-xs">
                             <div>
-                                <span className="block text-[10px] text-muted-foreground uppercase tracking-wider">Qty</span>
+                                <span className="block text-[11px] text-muted-foreground uppercase tracking-[0.06em]">Qty</span>
                                 <span className="font-medium text-foreground tabular-nums">
                                     {Number(tx.Quantity || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
                                 </span>
                             </div>
                             <div>
-                                <span className="block text-[10px] text-muted-foreground uppercase tracking-wider">Price</span>
+                                <span className="block text-[11px] text-muted-foreground uppercase tracking-[0.06em]">Price</span>
                                 <span className="font-medium text-foreground tabular-nums">
                                     {Number(tx['Price/Share'] || 0) > 0 ? Number(tx['Price/Share']).toFixed(2) : '-'}
                                 </span>
                             </div>
                             <div>
-                                <span className="block text-[10px] text-muted-foreground uppercase tracking-wider">Account</span>
+                                <span className="block text-[11px] text-muted-foreground uppercase tracking-[0.06em]">Account</span>
                                 <span className="font-medium text-foreground truncate block">
                                     {tx.Account || 'Default'}
                                 </span>

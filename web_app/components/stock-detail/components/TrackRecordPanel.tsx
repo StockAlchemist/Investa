@@ -29,7 +29,7 @@ export const TrackRecordPanel: React.FC<{ record: TrackRecord }> = ({ record }) 
                 {record.rank?.rank != null && (
                     <div className="text-right">
                         <div className="text-2xl font-bold tabular-nums">#{record.rank.rank}</div>
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Buffett rank</div>
+                        <div className="text-[11px] text-muted-foreground uppercase tracking-[0.06em]">Buffett rank</div>
                     </div>
                 )}
             </div>
