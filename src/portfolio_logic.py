@@ -24,7 +24,10 @@ from typing import List, Dict, Tuple, Optional, Set, Any
 
 import pandas as pd
 import numpy as np
+import hashlib
 import logging
+import threading
+from collections import OrderedDict
 import traceback
 import time
 import multiprocessing
@@ -150,7 +153,21 @@ from portfolio_history import (  # noqa: F401
     generate_mappings,
 )
 
-_FIFO_CACHE: Dict[Tuple[Any, ...], Tuple[Any, Any]] = {}
+# FIFO lots and realized gains, keyed by a fingerprint of the transactions they
+# were computed from. It used to be keyed on (db_mtime, currency) and hold one
+# entry: two users on the server evicted each other on every request, and a
+# change that leaves the DB file alone (an account-currency map, which fills
+# blank currencies at load) served lots computed from the old transactions.
+_FIFO_CACHE: "OrderedDict[Tuple[Any, ...], Tuple[Any, Any]]" = OrderedDict()
+_FIFO_CACHE_MAX = 8
+_FIFO_CACHE_LOCK = threading.Lock()
+
+
+def _transactions_fingerprint(df: pd.DataFrame) -> str:
+    """A content hash of `df`, values and index: ~2.5 ms for 5,000 rows."""
+    hashed = pd.util.hash_pandas_object(df, index=True).values
+    columns = "|".join(map(str, df.columns)).encode()
+    return hashlib.blake2b(hashed.tobytes() + columns, digest_size=16).hexdigest()
 
 
 def get_default_metrics_dict(
@@ -1199,12 +1216,20 @@ def calculate_portfolio_summary(
         else:
             fifo_input_df.sort_values(by=["Date"], inplace=True)
 
-        # BN-08: Cache FIFO results keyed by db_mtime and display_currency
-        global _FIFO_CACHE
-        fifo_cache_key = (db_mtime, display_currency)
-        if db_mtime > 0 and fifo_cache_key in _FIFO_CACHE:
+        # BN-08: Cache FIFO results. `db_mtime > 0` still marks a caller that
+        # wants caching (the server); the key is the transactions themselves.
+        fifo_cache_key = (
+            _transactions_fingerprint(fifo_input_df) if db_mtime > 0 else None,
+            display_currency,
+            default_currency,
+        )
+        with _FIFO_CACHE_LOCK:
+            cached_fifo = _FIFO_CACHE.get(fifo_cache_key) if fifo_cache_key[0] else None
+            if cached_fifo is not None:
+                _FIFO_CACHE.move_to_end(fifo_cache_key)
+        if cached_fifo is not None:
             logging.info("Using cached FIFO Realized Gains & Lots...")
-            fifo_realized_gains_df, open_lots_dict = _FIFO_CACHE[fifo_cache_key]
+            fifo_realized_gains_df, open_lots_dict = cached_fifo
         else:
             # Call the function that returns both gains and lots
             fifo_realized_gains_df, open_lots_dict = calculate_fifo_lots_and_gains(
@@ -1217,9 +1242,14 @@ def calculate_portfolio_summary(
                 current_fx_rates_vs_usd=current_fx_rates_vs_usd,  # Pass the available rates!
             )
 
-            if db_mtime > 0:
-                _FIFO_CACHE.clear()  # keep only the latest
-                _FIFO_CACHE[fifo_cache_key] = (fifo_realized_gains_df, open_lots_dict)
+            if fifo_cache_key[0]:
+                with _FIFO_CACHE_LOCK:
+                    _FIFO_CACHE[fifo_cache_key] = (
+                        fifo_realized_gains_df,
+                        open_lots_dict,
+                    )
+                    while len(_FIFO_CACHE) > _FIFO_CACHE_MAX:
+                        _FIFO_CACHE.popitem(last=False)
 
         # --- DEBUG LOGGING ---
         logging.info(f"FIFO DF Shape: {fifo_realized_gains_df.shape}")
