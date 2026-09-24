@@ -4,7 +4,6 @@ import SwiftUI
 /// the login screen or the dashboard.
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
-    @StateObject private var appState = AppState()
 
     var body: some View {
         Group {
@@ -14,9 +13,9 @@ struct RootView: View {
                     .macMinSize(width: 420, height: 320)
             case .loggedOut:
                 LoginView()
-            case .loggedIn:
-                MainView()
-                    .environmentObject(appState)
+            case .loggedIn(let user):
+                SignedInRoot()
+                    .id(user.id)
             }
         }
         // App-wide typography bump on iOS: the UI is caption-heavy and runs
@@ -28,5 +27,21 @@ struct RootView: View {
         .task {
             await auth.restoreSession()
         }
+    }
+}
+
+/// The signed-in tree, owning one `AppState` per session.
+///
+/// `AppState` holds the user's accounts, selection, currency and headline
+/// figures. It used to live on `RootView`, above the login switch, so it
+/// outlived a logout: the next user to sign in inherited all of it — and with
+/// it `didLoadSettings`, so their own settings were never fetched and their
+/// dashboard was filtered by the previous user's account names.
+private struct SignedInRoot: View {
+    @StateObject private var appState = AppState()
+
+    var body: some View {
+        MainView()
+            .environmentObject(appState)
     }
 }

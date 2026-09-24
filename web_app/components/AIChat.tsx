@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { sendChatMessage, ChatMessage } from '@/lib/api';
+import { CHAT_HISTORY_STORAGE_KEY } from '@/lib/user_storage';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -33,7 +34,7 @@ export default function AIChat() {
 
     // Load history from localStorage on mount
     useEffect(() => {
-        const saved = localStorage.getItem('investa_chat_history');
+        const saved = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
         if (saved) {
             try {
                 setMessages(JSON.parse(saved));
@@ -49,7 +50,7 @@ export default function AIChat() {
             try {
                 // Cap persistent history to last 50 messages to avoid QuotaExceededError
                 const toSave = messages.slice(-50);
-                localStorage.setItem('investa_chat_history', JSON.stringify(toSave));
+                localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(toSave));
             } catch (e) {
                 console.warn("Storage quota exceeded, could not save full chat history", e);
                 // If it still fails, we could try saving even fewer, 
@@ -94,7 +95,7 @@ export default function AIChat() {
     };
 
     const clearHistory = () => {
-        localStorage.removeItem('investa_chat_history');
+        localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
         setMessages([]);
     };
 

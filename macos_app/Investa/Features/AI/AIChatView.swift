@@ -12,7 +12,10 @@ final class AIChatViewModel: ObservableObject {
     static let welcome = "Hello! I'm Investa AI. How can I help you with your portfolio today?"
 
     private let api: APIClient
-    private let storageKey = "investa.chat.history"
+    /// Where the conversation persists. One key for the whole device, so
+    /// `AuthViewModel` removes it on logout — it discusses the user's holdings.
+    static let storageKey = "investa.chat.history"
+    private var storageKey: String { Self.storageKey }
 
     init(api: APIClient = .shared) {
         self.api = api
