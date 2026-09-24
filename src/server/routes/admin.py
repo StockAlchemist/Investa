@@ -1,13 +1,16 @@
 """Admin routes: webhook-triggered refresh, cache clearing."""
 
 # ruff: noqa: E402
+import hmac
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 import config
+from server.auth import User
+from server.dependencies import get_current_user
 from server.portfolio_service import (
     _PORTFOLIO_SUMMARY_CACHE,
     reload_data_and_clear_cache,
@@ -26,17 +29,19 @@ def webhook_refresh(request: WebhookRefreshRequest):
     Webhook to trigger a market data refresh (cache invalidation).
     Requires a shared secret.
     """
-    # Simple hardcoded check for now, or load from env/config
-    # For personal local app, a default simple secret is acceptable if not exposed to internet
-    # Ideally should be in config.py or env var.
-    EXPECTED_SECRET = os.environ.get(
-        "INVESTA_WEBHOOK_SECRET", "investa_refresh_secret_123"
-    )
-
-    if request.secret.strip() != EXPECTED_SECRET:
-        logging.warning(
-            f"Webhook Secret Mismatch. Input: '{request.secret}' != Expected: (hidden)"
+    # No default: a fallback secret committed to the repo is a secret everyone
+    # has. Until INVESTA_WEBHOOK_SECRET is set, the webhook is off.
+    expected_secret = os.environ.get("INVESTA_WEBHOOK_SECRET", "")
+    if not expected_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook disabled: set INVESTA_WEBHOOK_SECRET on the server",
         )
+
+    if not hmac.compare_digest(
+        request.secret.strip().encode(), expected_secret.encode()
+    ):
+        logging.warning("Webhook refresh rejected: secret mismatch.")
         raise HTTPException(status_code=403, detail="Invalid secret")
 
     try:
@@ -68,8 +73,14 @@ def webhook_refresh(request: WebhookRefreshRequest):
 
 
 @router.post("/clear_cache")
-def clear_cache():
-    """Clears all application caches (files and in-memory)."""
+def clear_cache(current_user: User = Depends(get_current_user)):
+    """Clears all application caches (files and in-memory).
+
+    Requires a login: the caches are shared, and clearing them forces every
+    user's next request to re-download decades of price history. Unguarded, any
+    device on the network could trigger that, and so could any web page — a
+    bodiless POST needs no CORS preflight.
+    """
     try:
         logging.info("Starting Cache Clearing Process...")
         deleted_count = 0

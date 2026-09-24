@@ -1,10 +1,13 @@
 import sys
 import os
 import asyncio
+import json
 import re
+import subprocess
 
 import logging
 from contextlib import asynccontextmanager
+from typing import Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -109,21 +112,60 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # for the httpOnly auth cookie to be sent/accepted cross-origin (the regex below
 # reflects the specific matched origin, never "*", which credentialed CORS forbids).
 # Default coverage: localhost, private LAN ranges (RFC 1918), Tailscale (CGNAT
-# IPs and *.ts.net hostnames), .local mDNS names — any port.
-# Extra origins (e.g. a public domain) go in the CORS_ALLOW_ORIGINS env var,
-# comma-separated.
-_LOCAL_ORIGIN_REGEX = (
-    r"^https?://("
-    r"localhost|127\.0\.0\.1|\[::1\]"
-    r"|192\.168\.\d{1,3}\.\d{1,3}"
-    r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
-    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
-    r"|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"
-    r"|[\w.-]+\.ts\.net"
-    r"|[\w-]+\.local"
-    r"|[\w.-]+\.run\.app"
-    r")(:\d+)?$"
-)
+# IPs and this server's own tailnet hostnames), .local mDNS names — any port.
+# Extra origins (e.g. a public domain, or a frontend on Cloud Run) go in the
+# CORS_ALLOW_ORIGINS env var, comma-separated.
+#
+# Not every *.ts.net or *.run.app host: anyone can get one of those (Tailscale
+# Funnel, a Cloud Run service), so trusting the whole suffix trusted strangers.
+# It held only because the auth cookie defaults to SameSite=lax.
+
+
+def _tailnet_suffix() -> Optional[str]:
+    """This server's tailnet (`tail1234.ts.net`): INVESTA_TAILNET, else the CLI."""
+    configured = os.getenv("INVESTA_TAILNET", "").strip().strip(".")
+    if configured:
+        return configured
+    try:
+        out = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        suffix = (json.loads(out.stdout).get("MagicDNSSuffix") or "").strip(".")
+        return suffix or None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def build_local_origin_regex(tailnet: Optional[str]) -> str:
+    """The allowed-origin pattern, with Tailscale hosts narrowed to `tailnet`.
+
+    Without a known tailnet it falls back to any *.ts.net rather than lock the
+    web app out over Tailscale; set INVESTA_TAILNET to narrow it.
+    """
+    ts_hosts = r"[\w-]+\." + re.escape(tailnet) if tailnet else r"[\w.-]+\.ts\.net"
+    return (
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|\[::1\]"
+        r"|192\.168\.\d{1,3}\.\d{1,3}"
+        r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+        r"|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"
+        r"|" + ts_hosts + r"|[\w-]+\.local"
+        r")(:\d+)?$"
+    )
+
+
+_TAILNET = _tailnet_suffix()
+if _TAILNET is None:
+    logging.warning(
+        "CORS: tailnet unknown, so any *.ts.net origin is allowed. "
+        "Set INVESTA_TAILNET (e.g. tail1234.ts.net) to allow only your own."
+    )
+_LOCAL_ORIGIN_REGEX = build_local_origin_regex(_TAILNET)
 _extra_origins = [
     o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()
 ]

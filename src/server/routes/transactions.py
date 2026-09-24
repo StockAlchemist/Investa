@@ -2,9 +2,9 @@
 
 import logging
 import os
-import shutil
+import re
 import sqlite3
-import time
+import tempfile
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional
 
@@ -33,6 +33,10 @@ from server.dependencies import (
 )
 from server.pdf_parser import extract_transactions_from_file
 from server.route_utils import clean_nans
+
+# Statements and screenshots are a few MB; a phone scan of a long statement
+# might reach tens. Past this, the upload is refused rather than buffered to disk.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 # Project root (…/Investa) for temp upload storage
 project_root = os.path.dirname(
@@ -278,20 +282,32 @@ def parse_document(
     Supports IBKR trade confirmations (deterministic) and general statements (AI fallback).
     """
     try:
-        # Save the uploaded file temporarily to pass to the parser
-        # Use a safe unique name
+        # Save the upload where the parser can open it. The name is ours, not
+        # the client's: only a sanitised extension survives (the parser
+        # dispatches on it). The client's filename used to be joined straight
+        # into the path, so a "/" in it failed the request with a 500.
         temp_dir = os.path.join(project_root, "data", "temp_uploads")
         os.makedirs(temp_dir, exist_ok=True)
-        temp_file_path = os.path.join(
-            temp_dir, f"{current_user.id}_{int(time.time())}_{file.filename}"
+        ext = os.path.splitext(os.path.basename(file.filename or ""))[1].lower()
+        if not re.fullmatch(r"\.[a-z0-9]{1,5}", ext):
+            ext = ""
+        fd, temp_file_path = tempfile.mkstemp(
+            dir=temp_dir, prefix=f"{current_user.id}_", suffix=ext
         )
 
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Parse the document
         transactions = []
         try:
+            with os.fdopen(fd, "wb") as buffer:
+                written = 0
+                while chunk := file.file.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > MAX_UPLOAD_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+                        )
+                    buffer.write(chunk)
+
             transactions = extract_transactions_from_file(
                 temp_file_path,
                 user_id=current_user.id,
@@ -299,7 +315,7 @@ def parse_document(
                 account_override=account_override,
             )
         finally:
-            # Always clean up temp file
+            # Always clean up temp file, including after a failed copy.
             if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
 
