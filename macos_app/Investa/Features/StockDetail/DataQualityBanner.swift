@@ -26,7 +26,7 @@ struct DataQualityBanner: View {
             : "This price history has an unexplained jump"
     }
 
-    private var tint: Color { isHigh ? .red : .orange }
+    private var tint: Color { isHigh ? .down : .warn }
 
     /// The date the defect sits at, in the notation every Investa client uses —
     /// `05 Aug 2026`, never the `2026-08-05` the API ships.

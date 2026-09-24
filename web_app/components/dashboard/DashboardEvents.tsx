@@ -254,7 +254,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                     type="button"
                     onClick={() => setShowAll(true)}
                     disabled={confirmedCount === 0}
-                    className="text-[10px] uppercase tracking-wider font-semibold text-cyan-700 dark:text-cyan-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-default"
+                    className="text-[11px] uppercase tracking-[0.06em] font-semibold text-cyan-700 dark:text-cyan-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-default"
                     title="View all confirmed dividends"
                 >
                     Confirmed ({confirmedCount}) →

@@ -1,5 +1,4 @@
 import React from 'react';
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency } from '@/lib/utils';
 import { LucideIcon, Loader2 } from 'lucide-react';
@@ -40,7 +39,7 @@ export function MetricCard({
     subValue,
     isCurrency = true,
     colorClass = '',
-    valueClassName = 'text-xl sm:text-2xl',
+    valueClassName = 'text-[22px]',
     containerClassName = '',
     subValueClassName = '',
     currency = 'USD',
@@ -64,54 +63,52 @@ export function MetricCard({
         display.length > 9 ? 'text-lg sm:text-xl' : '';
 
     const seamless = variant === 'seamless';
+    void Icon;
 
-    const deltaBadge = subValue !== undefined && subValue !== null ? (
-        <Badge
-            variant={typeof subValue === 'number' ? (subValue >= 0 ? 'success' : 'destructive') : 'outline'}
-            className={cn('shrink-0', subValueClassName)}
-        >
-            {typeof subValue === 'number'
-                ? (subValue === Infinity ? '\u221e' : `${subValue >= 0 ? '+' : ''}${subValue.toFixed(2)}%`)
-                : subValue}
-        </Badge>
+    // Ledger KPI tile: a quiet label, the figure, and one line under it. A
+    // numeric sub-value is a signed percentage in the gain/loss colour; a
+    // string sub-value is context ("p.a.", "on cost") in the second ink.
+    const subLine = subValue !== undefined && subValue !== null ? (
+        typeof subValue === 'number' ? (
+            <span className={cn('font-semibold', subValue >= 0 ? 'text-up' : 'text-down')}>
+                {subValue === Infinity
+                    ? '\u221e'
+                    : `${subValue >= 0 ? '+' : '\u2212'}${Math.abs(subValue).toFixed(2)}%`}
+            </span>
+        ) : (
+            <span className={cn('text-ink-2', subValueClassName && 'font-medium')}>{subValue}</span>
+        )
     ) : null;
 
     return (
         <div
             className={cn(
-                'card-standard relative h-full p-4 flex flex-col gap-2',
-                seamless && 'min-h-[112px]',
+                'card-standard relative h-full p-4 flex flex-col gap-1',
+                seamless && 'min-h-[104px]',
                 onClick ? 'cursor-pointer' : 'cursor-default',
                 containerClassName,
             )}
             onClick={onClick}
         >
-            {/* Label + icon */}
+            {/* Label */}
             <div className="flex items-start justify-between gap-2">
-                <p className="section-label pr-1 leading-tight min-w-0 line-clamp-2">{title}</p>
-                <div className="flex items-center gap-1.5 shrink-0">
-                    {isRefreshing && (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary/60" />
-                    )}
-                    {Icon && (
-                        <div className="p-1.5 rounded-md bg-primary/12 text-primary-ink">
-                            <Icon className="w-3.5 h-3.5" />
-                        </div>
-                    )}
-                </div>
+                <p className="text-xs leading-4 text-muted-foreground min-w-0 line-clamp-2">{title}</p>
+                {isRefreshing && (
+                    <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-muted-foreground" />
+                )}
             </div>
 
             {/* Figure */}
             <div className="min-w-0">
                 {isLoading ? (
-                    <Skeleton className="h-7 w-28 opacity-50 rounded-md" />
+                    <Skeleton className="h-7 w-28 rounded-md" />
                 ) : (
                     <span
                         title={value !== null && value !== undefined && isCurrency && typeof value === 'number'
                             ? formatCurrency(value, currency)
                             : undefined}
                         className={cn(
-                            'block font-bold tracking-tight leading-none tabular-nums text-foreground truncate',
+                            'block font-semibold leading-7 tabular-nums text-foreground whitespace-nowrap',
                             colorClass,
                             valueClassName,
                             fitClass,
@@ -122,9 +119,9 @@ export function MetricCard({
                 )}
             </div>
 
-            {/* Delta — the row keeps its height so card footers line up. */}
-            <div className="mt-auto pt-1 min-h-[24px] flex items-center">
-                {isLoading ? <Skeleton className="h-4 w-14 rounded-full opacity-50" /> : deltaBadge}
+            {/* Sub-line — the row keeps its height so tiles in a row line up. */}
+            <div className="mt-auto min-h-4 flex items-center text-xs leading-4 tabular-nums whitespace-nowrap">
+                {isLoading ? <Skeleton className="h-3.5 w-14 rounded" /> : subLine}
             </div>
         </div>
     );

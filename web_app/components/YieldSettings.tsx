@@ -164,11 +164,11 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
                     <table className="min-w-full divide-y divide-border">
                         <thead className="bg-black/5 dark:bg-white/5">
                             <tr>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account</th>
-                                <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Cash Balance</th>
-                                <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Est. Annual Interest</th>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Annual Rate (%)</th>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground">Account</th>
+                                <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground">Cash Balance</th>
+                                <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground">Est. Annual Interest</th>
+                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground">Annual Rate (%)</th>
+                                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground">
                                     Exempt Threshold {accountCashData.defaultCurrency !== 'USD' && `(${accountCashData.defaultCurrency})`}
                                 </th>
                             </tr>

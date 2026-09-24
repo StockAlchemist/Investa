@@ -124,7 +124,7 @@ export default function WatchlistStar({ symbol, size = "md", className, iconClas
                             : dropdownPosition.right - 192,
                     }}
                 >
-                    <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-zinc-100 dark:border-zinc-800/50">
+                    <div className="px-3 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] border-b border-zinc-100 dark:border-zinc-800/50">
                         Add to Watchlist
                     </div>
                     {watchlists.map((wl) => {

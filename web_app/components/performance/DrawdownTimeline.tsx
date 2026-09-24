@@ -40,7 +40,6 @@ export default function DrawdownTimeline({ history, isLoading }: DrawdownTimelin
 
     return (
         <div className="metric-card p-5 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500 opacity-80" />
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                     <TrendingDown className="w-3.5 h-3.5 text-down" />
@@ -49,13 +48,13 @@ export default function DrawdownTimeline({ history, isLoading }: DrawdownTimelin
                 {series.length > 0 && (
                     <div className="flex items-center gap-4 text-right">
                         <div>
-                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Max</div>
+                            <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/70 font-semibold">Max</div>
                             <div className="text-sm font-bold tabular-nums text-down">
                                 {maxDD.toFixed(2)}%
                             </div>
                         </div>
                         <div>
-                            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Longest</div>
+                            <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/70 font-semibold">Longest</div>
                             <div className="text-sm font-bold tabular-nums text-foreground">{longestDays}d</div>
                         </div>
                     </div>
@@ -72,8 +71,8 @@ export default function DrawdownTimeline({ history, isLoading }: DrawdownTimelin
                         <AreaChart data={series} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                             <defs>
                                 <linearGradient id="dd-grad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#ef4444" stopOpacity={0.05} />
-                                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
+                                    <stop offset="0%" stopColor="#D2491F" stopOpacity={0.05} />
+                                    <stop offset="100%" stopColor="#D2491F" stopOpacity={0.4} />
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
@@ -95,7 +94,7 @@ export default function DrawdownTimeline({ history, isLoading }: DrawdownTimelin
                             <Area
                                 type="monotone"
                                 dataKey="drawdown"
-                                stroke="#ef4444"
+                                stroke="#D2491F"
                                 strokeWidth={1.5}
                                 fill="url(#dd-grad)"
                                 isAnimationActive={false}

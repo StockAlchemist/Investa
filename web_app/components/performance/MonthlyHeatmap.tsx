@@ -88,13 +88,13 @@ export default function MonthlyHeatmap({ data }: MonthlyHeatmapProps) {
                 <table className="w-full border-separate border-spacing-1 text-[11px] tabular-nums">
                     <thead>
                         <tr>
-                            <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-12">Year</th>
+                            <th className="text-left text-xs font-semibold text-muted-foreground w-12">Year</th>
                             {MONTH_LABELS.map(m => (
-                                <th key={m} className="text-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                <th key={m} className="text-center text-xs font-semibold text-muted-foreground">
                                     {m}
                                 </th>
                             ))}
-                            <th className="text-right text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-16 pl-2">Total</th>
+                            <th className="text-right text-xs font-semibold text-muted-foreground w-16 pl-2">Total</th>
                         </tr>
                     </thead>
                     <tbody>

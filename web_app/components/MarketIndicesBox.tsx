@@ -19,17 +19,17 @@ interface MarketIndicesBoxProps {
 }
 
 const INDEX_COLORS: Record<string, string> = {
-    'S&P 500': '#06b6d4',
-    'NASDAQ': '#8b5cf6',
-    'Dow Jones': '#f59e0b',
-    'Russell 2000': '#10b981',
+    'S&P 500': '#259A91',
+    'NASDAQ': '#9A5DB8',
+    'Dow Jones': '#C8921E',
+    'Russell 2000': '#1F9D6C',
 };
 
 function getColor(name: string): string {
     for (const key of Object.keys(INDEX_COLORS)) {
         if (name.toLowerCase().includes(key.toLowerCase())) return INDEX_COLORS[key];
     }
-    return '#94a3b8';
+    return '#8E9099';
 }
 
 export default function MarketIndicesBox({ indices, onClick, isFetching = false }: MarketIndicesBoxProps) {
@@ -38,7 +38,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
     return (
         <div
             onClick={onClick}
-            className="hidden md:flex items-stretch gap-0 rounded-2xl bg-muted/20 dark:bg-white/[0.04] border border-border/60 dark:border-white/[0.06] hover:border-border hover:bg-muted/30 dark:hover:bg-white/[0.07] transition-all duration-300 group cursor-pointer overflow-hidden relative shadow-sm"
+            className="hidden md:flex items-stretch gap-0 h-11 rounded-control bg-card border border-border hover:border-input transition-colors group cursor-pointer overflow-hidden relative"
         >
             {isFetching && (
                 <div className="absolute top-1.5 right-1.5 z-20">
@@ -54,7 +54,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
                 return (
                     <div
                         key={index.name}
-                        className={`flex flex-col px-3 py-2 min-w-[96px] relative overflow-hidden ${idx > 0 ? 'border-l border-border/40 dark:border-white/[0.05]' : ''}`}
+                        className={`flex flex-col justify-center px-3 min-w-[96px] relative overflow-hidden ${idx > 0 ? 'border-l border-border' : ''}`}
                     >
                         {/* Sparkline background */}
                         {chartData.length > 1 && (
@@ -84,10 +84,10 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
 
                         {/* Content */}
                         <div className="relative z-10 flex items-center justify-between gap-1 mb-0.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground truncate max-w-[60px]">
+                            <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
                                 {index.name.replace('Dow Jones', 'Dow').replace('Russell 2000', 'RUT').replace('S&P 500', 'S&P')}
                             </span>
-                            <span className={`text-[9px] font-bold tabular-nums flex items-center gap-0.5 ${isUp ? 'text-up' : 'text-rose-500'}`}>
+                            <span className={`text-[11px] font-semibold tabular-nums flex items-center gap-0.5 ${isUp ? 'text-up' : 'text-down'}`}>
                                 {isUp
                                     ? <TrendingUp className="w-2.5 h-2.5 shrink-0" />
                                     : <TrendingDown className="w-2.5 h-2.5 shrink-0" />
@@ -95,7 +95,7 @@ export default function MarketIndicesBox({ indices, onClick, isFetching = false 
                                 {Math.abs(index.changesPercentage || 0).toFixed(2)}%
                             </span>
                         </div>
-                        <div className="relative z-10 text-xs font-bold text-foreground tabular-nums leading-none">
+                        <div className="relative z-10 text-[13px] font-semibold text-foreground tabular-nums leading-none">
                             {index.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}
                         </div>
                     </div>

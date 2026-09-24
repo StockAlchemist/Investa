@@ -38,7 +38,6 @@ export default function BenchmarkScoreboard({ currency, benchmarks, availableAcc
     return (
         <div className="metric-card p-5 relative overflow-hidden">
             {/* The account dropdown renders in a portal, so overflow-hidden here is safe. */}
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500 opacity-80" />
             <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
                 <div className="flex items-center gap-2">
                     <Scale className="w-3.5 h-3.5 text-cyan-500" />
@@ -52,7 +51,7 @@ export default function BenchmarkScoreboard({ currency, benchmarks, availableAcc
                                 onClick={() => setPeriod(p)}
                                 className={cn(
                                     'px-2 py-0.5 text-[11px] font-medium transition-colors',
-                                    period === p ? 'bg-cyan-500 text-white' : 'text-muted-foreground hover:bg-muted/50'
+                                    period === p ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:bg-muted/50'
                                 )}
                             >
                                 {p}
@@ -81,7 +80,7 @@ export default function BenchmarkScoreboard({ currency, benchmarks, availableAcc
                 <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                         <thead>
-                            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground/70 border-b border-border/50">
+                            <tr className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/70 border-b border-border/50">
                                 <th className="py-1.5 pr-3 text-left font-semibold">Benchmark</th>
                                 <th className="py-1.5 px-2 text-right font-semibold" title="Annualized Jensen's alpha">α</th>
                                 <th className="py-1.5 px-2 text-right font-semibold" title="Beta vs benchmark">β</th>

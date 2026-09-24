@@ -151,7 +151,7 @@ const ParamItem = ({
 }) => (
     <div>
         <div className="flex items-center gap-1 mb-1">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold flex items-center gap-1">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-[0.06em] font-semibold flex items-center gap-1">
                 {label}
                 {isCustom && (
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Custom parameter" />
@@ -199,7 +199,7 @@ const LimitationCallout = ({
                 aria-expanded={expanded}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
             >
-                <span className="flex items-center gap-1.5 font-bold uppercase tracking-wide text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wide text-[11px] text-muted-foreground">
                     <Info className="w-3 h-3" />
                     Best Suited For &amp; Key Caveats
                 </span>
@@ -209,7 +209,7 @@ const LimitationCallout = ({
                 <div className="px-3 pb-3 space-y-2">
                     {suited && (
                         <div className="space-y-0.5">
-                            <div className="flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-up">
+                            <div className="flex items-center gap-1 font-semibold uppercase tracking-wide text-[11px] text-up">
                                 <CheckCircle2 className="w-3 h-3" />
                                 Best Suited For
                             </div>
@@ -219,7 +219,7 @@ const LimitationCallout = ({
                     {suited && caveats && <div className="border-t border-border/40" />}
                     {caveats && (
                         <div className="space-y-0.5">
-                            <div className="flex items-center gap-1 font-bold uppercase tracking-wide text-[10px] text-amber-600 dark:text-amber-400">
+                            <div className="flex items-center gap-1 font-semibold uppercase tracking-wide text-[11px] text-amber-600 dark:text-amber-400">
                                 <AlertTriangle className="w-3 h-3" />
                                 Key Caveats
                             </div>
@@ -262,7 +262,7 @@ const MonteCarloPillRow: React.FC<{
                     onClick={onOpenModal}
                     title="Click to view full distribution"
                 >
-                    <p className="text-[10px] text-rose-500 font-bold uppercase mb-0.5">Bear (10th)</p>
+                    <p className="text-[11px] text-rose-500 font-semibold uppercase mb-0.5 tracking-[0.06em]">Bear (10th)</p>
                     <p className="text-xs font-bold">{formatCurrency((mc.bear ?? 0) * fxRate, currency)}</p>
                 </div>
                 <div
@@ -270,7 +270,7 @@ const MonteCarloPillRow: React.FC<{
                     onClick={onOpenModal}
                     title="Click to view full distribution"
                 >
-                    <p className="text-[10px] text-indigo-500 font-bold uppercase mb-0.5">Median (50th)</p>
+                    <p className="text-[11px] text-indigo-500 font-semibold uppercase mb-0.5 tracking-[0.06em]">Median (50th)</p>
                     <p className="text-xs font-bold">{formatCurrency((mc.base ?? 0) * fxRate, currency)}</p>
                 </div>
                 <div
@@ -278,7 +278,7 @@ const MonteCarloPillRow: React.FC<{
                     onClick={onOpenModal}
                     title="Click to view full distribution"
                 >
-                    <p className="text-[10px] text-up font-bold uppercase mb-0.5">Bull (90th)</p>
+                    <p className="text-[11px] text-up font-semibold uppercase mb-0.5 tracking-[0.06em]">Bull (90th)</p>
                     <p className="text-xs font-bold">{formatCurrency((mc.bull ?? 0) * fxRate, currency)}</p>
                 </div>
             </div>
@@ -512,11 +512,11 @@ const BlendComposition: React.FC<{
             )}
             {weights.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-0.5">Weights</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground mr-0.5">Weights</span>
                     {weights.map(([key, w]) => (
                         <span
                             key={key}
-                            className="px-1.5 py-0.5 rounded bg-background/70 border border-border/50 text-[10px] font-semibold uppercase tabular-nums"
+                            className="px-1.5 py-0.5 rounded bg-background/70 border border-border/50 text-[11px] font-semibold uppercase tabular-nums tracking-[0.06em]"
                         >
                             {key} {(w * 100).toFixed(0)}%
                         </span>
@@ -527,7 +527,7 @@ const BlendComposition: React.FC<{
                 <div className="flex flex-wrap gap-2">
                     {floors.map((f) => (
                         <div key={f.label} className="px-3 py-2 rounded-xl bg-background/70 border border-border/50">
-                            <p className="text-[10px] uppercase font-bold text-muted-foreground">{f.label}</p>
+                            <p className="text-[11px] uppercase font-semibold text-muted-foreground tracking-[0.06em]">{f.label}</p>
                             <p className="text-sm font-bold tabular-nums">{formatCurrency((f.value as number) * fxRate, currency)}</p>
                             <p className="text-[10px] text-muted-foreground">{f.hint}</p>
                         </div>
@@ -719,12 +719,12 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             {title}
                             {primaryBadge && (
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-up bg-up/12 px-2 py-0.5 rounded">
+                                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-up bg-up/12 px-2 py-0.5 rounded">
                                     {primaryBadge}
                                 </span>
                             )}
                             {isCustom && (
-                                <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                <span className="text-[11px] font-semibold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 tracking-[0.06em]">
                                     Custom
                                 </span>
                             )}
@@ -762,7 +762,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                         className={cn(
                             "flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all cursor-pointer",
                             isEditing
-                                ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                                ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none border-border"
                                 : "bg-background/80 hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
                         )}
                     >
@@ -823,7 +823,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
 
             {/* Recommended Method Banner */}
             {recommended_method && recommended_method.method_key !== 'none' && (
-                <div className="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/30 rounded-2xl p-6 relative overflow-hidden">
+                <div className="bg-primary-tint border border-primary/25 rounded-card p-6 relative overflow-hidden">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="space-y-1">
                             <div className="flex items-center gap-2">
@@ -837,12 +837,12 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                         {recommended_method.intrinsic_value != null && (
                             <div className="flex items-center gap-3 bg-background/80 backdrop-blur-sm px-4 py-3 rounded-xl border border-border/50">
                                 <div>
-                                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Fair Value</p>
+                                    <p className="text-[11px] uppercase font-semibold text-muted-foreground tracking-[0.06em]">Fair Value</p>
                                     <p className="text-lg font-black text-indigo-500">{formatCurrency(recommended_method.intrinsic_value * fxRate, currency)}</p>
                                 </div>
                                 {current_price && (
                                     <div className="text-right pl-3 border-l border-border/50">
-                                        <p className="text-[10px] uppercase font-bold text-muted-foreground">Upside</p>
+                                        <p className="text-[11px] uppercase font-semibold text-muted-foreground tracking-[0.06em]">Upside</p>
                                         <p className={cn(
                                             "text-sm font-bold",
                                             ((recommended_method.intrinsic_value - current_price) / current_price) >= 0 ? "text-up" : "text-rose-500"
@@ -1858,14 +1858,14 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                             >
                                                 <defs>
                                                     <linearGradient id="colorBellFill" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.3} />
-                                                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                                                        <stop offset="0%" stopColor="#4A62E0" stopOpacity={0.3} />
+                                                        <stop offset="100%" stopColor="#4A62E0" stopOpacity={0} />
                                                     </linearGradient>
                                                 </defs>
                                                 <CartesianGrid
                                                     strokeDasharray="3 3"
                                                     vertical={false}
-                                                    stroke={isDarkMode ? "#334155" : "#e2e8f0"}
+                                                    stroke={isDarkMode ? "#4C4E56" : "#E4E2DA"}
                                                     opacity={isDarkMode ? 0.3 : 0.8}
                                                 />
                                                 <XAxis
@@ -1877,7 +1877,7 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                                     tickLine={false}
                                                     axisLine={false}
                                                     minTickGap={30}
-                                                    stroke={isDarkMode ? "#94a3b8" : "#64748b"}
+                                                    stroke={isDarkMode ? "#8E9099" : "#6A6C74"}
                                                 />
                                                 <YAxis hide />
                                                 <Tooltip
@@ -1898,35 +1898,35 @@ export const ValuationTab: React.FC<ValuationTabProps> = ({
                                                 <Area
                                                     type="monotone"
                                                     dataKey="count"
-                                                    stroke="#6366f1"
+                                                    stroke="#4A62E0"
                                                     strokeWidth={2}
                                                     fill="url(#colorBellFill)"
                                                     isAnimationActive={false}
                                                 />
                                                 <ReferenceLine
                                                     x={scaledMc.bear}
-                                                    stroke="#f43f5e"
+                                                    stroke="#D2491F"
                                                     strokeDasharray="3 3"
-                                                    label={{ value: 'Bear', position: 'top', fill: '#f43f5e', fontSize: 10, fontWeight: 'bold' }}
+                                                    label={{ value: 'Bear', position: 'top', fill: '#D2491F', fontSize: 10, fontWeight: 'bold' }}
                                                 />
                                                 <ReferenceLine
                                                     x={scaledMc.base}
-                                                    stroke="#06b6d4"
+                                                    stroke="#259A91"
                                                     strokeDasharray="3 3"
-                                                    label={{ value: 'Median', position: 'top', fill: '#06b6d4', fontSize: 10, fontWeight: 'bold' }}
+                                                    label={{ value: 'Median', position: 'top', fill: '#259A91', fontSize: 10, fontWeight: 'bold' }}
                                                 />
                                                 <ReferenceLine
                                                     x={scaledMc.bull}
-                                                    stroke="#10b981"
+                                                    stroke="#1F9D6C"
                                                     strokeDasharray="3 3"
-                                                    label={{ value: 'Bull', position: 'top', fill: '#10b981', fontSize: 10, fontWeight: 'bold' }}
+                                                    label={{ value: 'Bull', position: 'top', fill: '#1F9D6C', fontSize: 10, fontWeight: 'bold' }}
                                                 />
                                                 {currentPriceVal > 0 && (
                                                     <ReferenceLine
                                                         x={currentPriceVal}
-                                                        stroke="#a855f7"
+                                                        stroke="#9A5DB8"
                                                         strokeWidth={2}
-                                                        label={{ value: 'Current Price', position: 'bottom', fill: '#a855f7', fontSize: 10, fontWeight: 'bold' }}
+                                                        label={{ value: 'Current Price', position: 'bottom', fill: '#9A5DB8', fontSize: 10, fontWeight: 'bold' }}
                                                     />
                                                 )}
                                             </AreaChart>

@@ -55,7 +55,7 @@ const groupDigits = (raw: string): string => {
 function StatCell({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
     return (
         <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+            <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold">
                 {label}
             </span>
             <span className={cn(
@@ -142,7 +142,7 @@ function SleeveTable({ sleeve, currency }: { sleeve: StrategySleeve; currency: s
         <div className="overflow-x-auto">
             <table className="w-full text-sm">
                 <thead>
-                    <tr className="text-[10px] uppercase tracking-wider text-muted-foreground/80 border-b">
+                    <tr className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 border-b">
                         <th className="text-left font-semibold py-2 px-2 whitespace-nowrap">Symbol</th>
                         <th className="text-left font-semibold py-2 px-2 hidden md:table-cell">Industry</th>
                         <th className="text-right font-semibold py-2 px-2 whitespace-nowrap">Weight</th>
@@ -310,7 +310,7 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
                         </div>
                         <div className="flex items-end gap-2">
                             <label className="flex flex-col gap-1 flex-1 sm:flex-none">
-                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold whitespace-nowrap">
+                                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold whitespace-nowrap">
                                     Amount to allocate
                                 </span>
                                 {/* The symbol is chrome, not content: it sits in the

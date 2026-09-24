@@ -103,7 +103,7 @@ export default function AIChat() {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-20 md:bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50 group overflow-hidden"
+                className="fixed bottom-20 md:bottom-6 right-6 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg shadow-black/15 flex items-center justify-center hover:bg-primary-hover active:scale-95 transition-all z-50 group overflow-hidden"
                 aria-label="Open Investa AI Chat"
             >
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -125,11 +125,11 @@ export default function AIChat() {
             {/* Header */}
             <div className="p-4 flex items-center justify-between border-b border-white/10 bg-white/5">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 text-white">
+                    <div className="p-2 rounded-control bg-primary text-primary-foreground">
                         <Sparkles className="w-4 h-4" />
                     </div>
                     <div>
-                        <h3 className="text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">Investa AI</h3>
+                        <h3 className="text-[15px] font-semibold text-foreground">Investa AI</h3>
                         <div className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
                             <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Online</span>
@@ -239,7 +239,7 @@ export default function AIChat() {
                         {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </Button>
                 </form>
-                <p className="text-[9px] text-center text-muted-foreground/40 mt-3 uppercase tracking-[0.2em]">
+                <p className="text-[11px] text-center text-muted-foreground/40 mt-3 uppercase tracking-[0.06em]">
                     Investa AI • Wealth Intelligence
                 </p>
             </div>

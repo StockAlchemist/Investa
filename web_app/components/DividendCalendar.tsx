@@ -53,12 +53,11 @@ export default function DividendCalendar({ events, isLoading, currency }: Divide
     return (
         <div className="metric-card card-shine relative overflow-hidden transition-all">
             {/* emerald accent bar */}
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
             
             <div className="p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center justify-between w-full sm:w-auto gap-3">
                     <h3 className="section-label">Dividend Calendar</h3>
-                    <span className="px-2.5 py-1 rounded-md bg-secondary text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+                    <span className="px-2.5 py-1 rounded-md bg-secondary text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/60">
                         {filteredEvents.length} events
                     </span>
                 </div>

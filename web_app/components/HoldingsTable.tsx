@@ -102,8 +102,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
 
     return (
         <>
-            <div className="metric-card card-shine mt-6 scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent transition-all duration-300 relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
+            <div className="metric-card card-shine scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent transition-all duration-300 relative overflow-hidden">
 
                 <HoldingsToolbar
                     totalItemsCount={holdings.length}
@@ -186,7 +185,7 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                     <div className="flex justify-center gap-4 p-4">
                         <button
                             onClick={handleShowMore}
-                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[#0086a0] transition-colors text-sm font-medium"
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary-hover transition-colors text-sm font-medium"
                         >
                             Show More
                         </button>

@@ -54,7 +54,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                 <div className={cn(
                     "p-2 rounded-xl transition-all duration-300",
                     isOpen
-                        ? 'bg-primary text-primary-foreground'
+                        ? 'bg-muted text-foreground font-semibold'
                         : 'text-primary group-hover:scale-110',
                     side === 'bottom' && "p-1.5",
                     side === 'bottom' && !isOpen && "bg-secondary"
@@ -72,7 +72,7 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                     "w-56 rounded-inset border border-border shadow-lg"
                 )} style={{ backgroundColor: 'var(--menu-solid)' }}>
                     <div className="p-2 grid gap-1">
-                        <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
+                        <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/50 mb-1">
                             Navigation
                         </div>
                         {TABS.map(tab => (
@@ -85,19 +85,19 @@ export default function TabNavigation({ activeTab, onTabChange, onLogout, side =
                                 className={cn(
                                     "flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-xl transition-all duration-200 group text-left",
                                     activeTab === tab.id
-                                        ? 'bg-primary text-primary-foreground'
+                                        ? 'bg-muted text-foreground font-semibold'
                                         : "text-popover-foreground hover:bg-muted"
                                 )}
                             >
                                 <tab.icon className={cn(
                                     "w-4 h-4 transition-transform duration-300",
                                     activeTab === tab.id
-                                        ? "text-primary-foreground"
+                                        ? "text-foreground"
                                         : "text-muted-foreground group-hover:scale-110"
                                 )} />
                                 <span className="flex-1">{tab.label}</span>
                                 {activeTab === tab.id && (
-                                    <div className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                                 )}
                             </button>
                         ))}

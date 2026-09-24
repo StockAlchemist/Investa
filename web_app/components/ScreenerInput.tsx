@@ -51,7 +51,6 @@ const ScreenerInput: React.FC<ScreenerInputProps> = ({ onRunScreener, isLoading 
     return (
         <div className="metric-card card-shine p-6 relative overflow-hidden">
             {/* Accent bar - cyan */}
-            <div className="absolute top-0 left-4 right-4 h-[2px] rounded-full bg-cyan-500 opacity-40" />
             <div className="pb-4">
                 <div className="flex items-center gap-2">
                     <Filter className="w-4 h-4 text-primary" />

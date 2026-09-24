@@ -36,6 +36,172 @@
 }
 
 /*
+ * Type — the Ledger pair. Geist carries the interface and every figure;
+ * Instrument Serif is reserved for page titles and the one hero figure per
+ * screen (`font-display`). The variables come from next/font in app/layout.tsx.
+ */
+@theme inline {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-instrument-serif), "New York", Georgia, serif;
+}
+
+/*
+ * The stock Tailwind palette, re-pointed at Ledger.
+ *
+ * ~1,700 call sites name a palette colour directly (`text-emerald-600`,
+ * `bg-slate-900`, `border-indigo-500/30`). Rather than let each one keep its
+ * own idea of green, every family is aliased onto one of seven Ledger ramps,
+ * so a stray utility still lands on the design language:
+ *
+ *   slate gray zinc neutral stone  → warm neutral (paper to ink)
+ *   indigo blue                    → cobalt, the one interface accent
+ *   emerald green lime             → gain
+ *   rose red                       → loss
+ *   amber yellow orange            → caution / ochre
+ *   violet purple fuchsia pink     → plum   (chart series only)
+ *   teal cyan                      → teal   (chart series only)
+ *   sky                            → periwinkle (chart series only)
+ *
+ * New code should still reach for the semantic tokens (`text-up`,
+ * `bg-primary`, `text-muted-foreground`); these ramps exist so old code
+ * cannot drift. Each ramp keeps Tailwind's convention that 600 is legible
+ * text on white and 400 is legible text on the dark card.
+ */
+@theme {
+  --color-slate-50: #FAF9F6;  --color-slate-100: #F1F0EA; --color-slate-200: #E4E2DA;
+  --color-slate-300: #D3D0C6; --color-slate-400: #9A9CA3; --color-slate-500: #6A6C74;
+  --color-slate-600: #4C4E56; --color-slate-700: #3A3C43; --color-slate-800: #24262C;
+  --color-slate-900: #17191E; --color-slate-950: #0F1013;
+
+  --color-indigo-50: #F3F5FD;  --color-indigo-100: #E8EBFA; --color-indigo-200: #D3DAFB;
+  --color-indigo-300: #B3C0FF; --color-indigo-400: #8FA3FF; --color-indigo-500: #3A53D6;
+  --color-indigo-600: #2E46C8; --color-indigo-700: #23379E; --color-indigo-800: #1C2C7E;
+  --color-indigo-900: #172462; --color-indigo-950: #0F173F;
+
+  --color-emerald-50: #EEF6F1;  --color-emerald-100: #E3F1EA; --color-emerald-200: #BFE3D0;
+  --color-emerald-300: #8FCBAE; --color-emerald-400: #4FC897; --color-emerald-500: #127F58;
+  --color-emerald-600: #0B6B4C; --color-emerald-700: #095A40; --color-emerald-800: #084733;
+  --color-emerald-900: #173127; --color-emerald-950: #0C2219;
+
+  --color-rose-50: #FDF3EF;  --color-rose-100: #FBE9E3; --color-rose-200: #F6CDBF;
+  --color-rose-300: #F0A58C; --color-rose-400: #FF8D6B; --color-rose-500: #C9441B;
+  --color-rose-600: #B83A15; --color-rose-700: #992F10; --color-rose-800: #7A260E;
+  --color-rose-900: #3A1F17; --color-rose-950: #26140F;
+
+  --color-amber-50: #FDF8EC;  --color-amber-100: #FBF0D9; --color-amber-200: #F5DFAE;
+  --color-amber-300: #EDC878; --color-amber-400: #F1BC55; --color-amber-500: #C8921E;
+  --color-amber-600: #A87512; --color-amber-700: #8A5300; --color-amber-800: #6E4200;
+  --color-amber-900: #4A2E05; --color-amber-950: #2E1C03;
+
+  --color-violet-50: #F7F1FA;  --color-violet-100: #F0E5F5; --color-violet-200: #DFC8EA;
+  --color-violet-300: #C9A3DA; --color-violet-400: #B17FCB; --color-violet-500: #9A5DB8;
+  --color-violet-600: #8B4FA6; --color-violet-700: #723F89; --color-violet-800: #5A326C;
+  --color-violet-900: #3D2249; --color-violet-950: #28162F;
+
+  --color-teal-50: #EEF7F6;  --color-teal-100: #DCEFED; --color-teal-200: #B5DEDA;
+  --color-teal-300: #82C6C0; --color-teal-400: #4FB0A8; --color-teal-500: #259A91;
+  --color-teal-600: #1C8C84; --color-teal-700: #16706A; --color-teal-800: #125954;
+  --color-teal-900: #0E4440; --color-teal-950: #082B28;
+
+  --color-sky-50: #F1F4FD;  --color-sky-100: #E2E8FB; --color-sky-200: #C5D1F6;
+  --color-sky-300: #A3B5F0; --color-sky-400: #7C93E8; --color-sky-500: #5F79DB;
+  --color-sky-600: #4A63C4; --color-sky-700: #3B4FA0; --color-sky-800: #2F3F7E;
+  --color-sky-900: #232F5C; --color-sky-950: #161E3B;
+
+  /* Aliases onto the ramps above. */
+  --color-gray-50: var(--color-slate-50);   --color-gray-100: var(--color-slate-100);
+  --color-gray-200: var(--color-slate-200); --color-gray-300: var(--color-slate-300);
+  --color-gray-400: var(--color-slate-400); --color-gray-500: var(--color-slate-500);
+  --color-gray-600: var(--color-slate-600); --color-gray-700: var(--color-slate-700);
+  --color-gray-800: var(--color-slate-800); --color-gray-900: var(--color-slate-900);
+  --color-gray-950: var(--color-slate-950);
+  --color-zinc-50: var(--color-slate-50);   --color-zinc-100: var(--color-slate-100);
+  --color-zinc-200: var(--color-slate-200); --color-zinc-300: var(--color-slate-300);
+  --color-zinc-400: var(--color-slate-400); --color-zinc-500: var(--color-slate-500);
+  --color-zinc-600: var(--color-slate-600); --color-zinc-700: var(--color-slate-700);
+  --color-zinc-800: var(--color-slate-800); --color-zinc-900: var(--color-slate-900);
+  --color-zinc-950: var(--color-slate-950);
+  --color-neutral-50: var(--color-slate-50);   --color-neutral-100: var(--color-slate-100);
+  --color-neutral-200: var(--color-slate-200); --color-neutral-300: var(--color-slate-300);
+  --color-neutral-400: var(--color-slate-400); --color-neutral-500: var(--color-slate-500);
+  --color-neutral-600: var(--color-slate-600); --color-neutral-700: var(--color-slate-700);
+  --color-neutral-800: var(--color-slate-800); --color-neutral-900: var(--color-slate-900);
+  --color-neutral-950: var(--color-slate-950);
+  --color-stone-50: var(--color-slate-50);   --color-stone-100: var(--color-slate-100);
+  --color-stone-200: var(--color-slate-200); --color-stone-300: var(--color-slate-300);
+  --color-stone-400: var(--color-slate-400); --color-stone-500: var(--color-slate-500);
+  --color-stone-600: var(--color-slate-600); --color-stone-700: var(--color-slate-700);
+  --color-stone-800: var(--color-slate-800); --color-stone-900: var(--color-slate-900);
+  --color-stone-950: var(--color-slate-950);
+
+  --color-blue-50: var(--color-indigo-50);   --color-blue-100: var(--color-indigo-100);
+  --color-blue-200: var(--color-indigo-200); --color-blue-300: var(--color-indigo-300);
+  --color-blue-400: var(--color-indigo-400); --color-blue-500: var(--color-indigo-500);
+  --color-blue-600: var(--color-indigo-600); --color-blue-700: var(--color-indigo-700);
+  --color-blue-800: var(--color-indigo-800); --color-blue-900: var(--color-indigo-900);
+  --color-blue-950: var(--color-indigo-950);
+
+  --color-green-50: var(--color-emerald-50);   --color-green-100: var(--color-emerald-100);
+  --color-green-200: var(--color-emerald-200); --color-green-300: var(--color-emerald-300);
+  --color-green-400: var(--color-emerald-400); --color-green-500: var(--color-emerald-500);
+  --color-green-600: var(--color-emerald-600); --color-green-700: var(--color-emerald-700);
+  --color-green-800: var(--color-emerald-800); --color-green-900: var(--color-emerald-900);
+  --color-green-950: var(--color-emerald-950);
+  --color-lime-50: var(--color-emerald-50);   --color-lime-100: var(--color-emerald-100);
+  --color-lime-200: var(--color-emerald-200); --color-lime-300: var(--color-emerald-300);
+  --color-lime-400: var(--color-emerald-400); --color-lime-500: var(--color-emerald-500);
+  --color-lime-600: var(--color-emerald-600); --color-lime-700: var(--color-emerald-700);
+  --color-lime-800: var(--color-emerald-800); --color-lime-900: var(--color-emerald-900);
+  --color-lime-950: var(--color-emerald-950);
+
+  --color-red-50: var(--color-rose-50);   --color-red-100: var(--color-rose-100);
+  --color-red-200: var(--color-rose-200); --color-red-300: var(--color-rose-300);
+  --color-red-400: var(--color-rose-400); --color-red-500: var(--color-rose-500);
+  --color-red-600: var(--color-rose-600); --color-red-700: var(--color-rose-700);
+  --color-red-800: var(--color-rose-800); --color-red-900: var(--color-rose-900);
+  --color-red-950: var(--color-rose-950);
+
+  --color-yellow-50: var(--color-amber-50);   --color-yellow-100: var(--color-amber-100);
+  --color-yellow-200: var(--color-amber-200); --color-yellow-300: var(--color-amber-300);
+  --color-yellow-400: var(--color-amber-400); --color-yellow-500: var(--color-amber-500);
+  --color-yellow-600: var(--color-amber-600); --color-yellow-700: var(--color-amber-700);
+  --color-yellow-800: var(--color-amber-800); --color-yellow-900: var(--color-amber-900);
+  --color-yellow-950: var(--color-amber-950);
+  --color-orange-50: var(--color-amber-50);   --color-orange-100: var(--color-amber-100);
+  --color-orange-200: var(--color-amber-200); --color-orange-300: var(--color-amber-300);
+  --color-orange-400: var(--color-amber-400); --color-orange-500: var(--color-amber-500);
+  --color-orange-600: var(--color-amber-600); --color-orange-700: var(--color-amber-700);
+  --color-orange-800: var(--color-amber-800); --color-orange-900: var(--color-amber-900);
+  --color-orange-950: var(--color-amber-950);
+
+  --color-purple-50: var(--color-violet-50);   --color-purple-100: var(--color-violet-100);
+  --color-purple-200: var(--color-violet-200); --color-purple-300: var(--color-violet-300);
+  --color-purple-400: var(--color-violet-400); --color-purple-500: var(--color-violet-500);
+  --color-purple-600: var(--color-violet-600); --color-purple-700: var(--color-violet-700);
+  --color-purple-800: var(--color-violet-800); --color-purple-900: var(--color-violet-900);
+  --color-purple-950: var(--color-violet-950);
+  --color-fuchsia-50: var(--color-violet-50);   --color-fuchsia-100: var(--color-violet-100);
+  --color-fuchsia-200: var(--color-violet-200); --color-fuchsia-300: var(--color-violet-300);
+  --color-fuchsia-400: var(--color-violet-400); --color-fuchsia-500: var(--color-violet-500);
+  --color-fuchsia-600: var(--color-violet-600); --color-fuchsia-700: var(--color-violet-700);
+  --color-fuchsia-800: var(--color-violet-800); --color-fuchsia-900: var(--color-violet-900);
+  --color-fuchsia-950: var(--color-violet-950);
+  --color-pink-50: var(--color-violet-50);   --color-pink-100: var(--color-violet-100);
+  --color-pink-200: var(--color-violet-200); --color-pink-300: var(--color-violet-300);
+  --color-pink-400: var(--color-violet-400); --color-pink-500: var(--color-violet-500);
+  --color-pink-600: var(--color-violet-600); --color-pink-700: var(--color-violet-700);
+  --color-pink-800: var(--color-violet-800); --color-pink-900: var(--color-violet-900);
+  --color-pink-950: var(--color-violet-950);
+
+  --color-cyan-50: var(--color-teal-50);   --color-cyan-100: var(--color-teal-100);
+  --color-cyan-200: var(--color-teal-200); --color-cyan-300: var(--color-teal-300);
+  --color-cyan-400: var(--color-teal-400); --color-cyan-500: var(--color-teal-500);
+  --color-cyan-600: var(--color-teal-600); --color-cyan-700: var(--color-teal-700);
+  --color-cyan-800: var(--color-teal-800); --color-cyan-900: var(--color-teal-900);
+  --color-cyan-950: var(--color-teal-950);
+}
+
+/*
  * Colour. `inline` substitutes the value at the point of use, which is what
  * lets a `.dark` override of the underlying channel triple reach a utility.
  */
@@ -70,19 +236,29 @@
   --color-down: hsl(var(--down));
   --color-warn: hsl(var(--warn));
   --color-warn-ink: hsl(var(--warn-ink));
+
+  /* Ledger's second text tone (between foreground and muted-foreground) and
+     the stronger rule used for form fields. */
+  --color-ink-2: hsl(var(--ink-2));
+  --color-line-strong: hsl(var(--input));
+  --color-up-tint: hsl(var(--up-tint));
+  --color-down-tint: hsl(var(--down-tint));
+  --color-warn-tint: hsl(var(--warn-tint));
+  --color-primary-tint: hsl(var(--primary-tint));
 }
 
 /*
- * Numbers render in the platform system font (SF Pro on macOS/iOS) with
- * fixed-width figures — the web equivalent of SwiftUI's .monospacedDigit()
- * used throughout the native apps. Deliberately unlayered so it also wins
- * over `font-mono` on elements marked `tabular-nums` (the native apps use
- * SF Pro tabular digits, not a monospace face, in those tables).
+ * Numbers render in Geist with fixed-width figures — the web equivalent of
+ * SwiftUI's .monospacedDigit(). Deliberately unlayered so it also wins over
+ * `font-mono` on elements marked `tabular-nums` — but not over the display
+ * serif: the hero figure is `font-display tabular-nums`, and an unlayered
+ * font-family here would silently turn it back into Geist.
  */
 .tabular-nums {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
   font-variant-numeric: tabular-nums;
+}
+.tabular-nums:not(.font-display):not(.page-title) {
+  font-family: var(--font-sans);
 }
 
 @keyframes shimmer {
@@ -102,107 +278,111 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Ledger, light. Paper ground, white cards, near-black ink. */
+    --background: 50.0 23.1% 94.9%;
+    --foreground: 228.0 10.2% 9.6%;
 
-    --card: 220 35% 97%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 0.0 0.0% 100.0%;
+    --card-foreground: 228.0 10.2% 9.6%;
+    --popover: 0.0 0.0% 100.0%;
+    --popover-foreground: 228.0 10.2% 9.6%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    /* Cobalt — the one interface accent: primary buttons, active controls,
+       focus rings, links, selection. Never a gain or a loss. */
+    --primary: 230.6 62.6% 48.2%;
+    --primary-foreground: 0.0 0.0% 100.0%;
+    --primary-hover: 230.2 63.7% 37.8%;
+    --primary-ink: 230.9 62.3% 43.7%;
+    --primary-tint: 230.0 64.3% 94.5%;
 
-    /* Accent — indigo-500. The one interface accent: primary buttons, active
-       nav, focus rings, links, selection. Was blue-500, which almost nothing
-       read; indigo is what the card shadows and the native app already use. */
-    --primary: 238.7 83.5% 66.7%;
-    --primary-foreground: 0 0% 100%;
-    --primary-hover: 243.4 75.4% 58.6%;   /* indigo-600 */
-    --primary-ink: 243.4 75.4% 58.6%;     /* accent text on a tinted fill (light) */
+    --secondary: 51.4 20.0% 93.1%;
+    --secondary-foreground: 228.0 10.2% 9.6%;
+    --muted: 51.4 20.0% 93.1%;
+    --muted-foreground: 228.0 4.5% 43.5%;
+    --ink-2: 228.0 6.2% 31.8%;
+    --accent: 51.4 20.0% 93.1%;
+    --accent-foreground: 228.0 10.2% 9.6%;
+    --destructive: 13.6 79.5% 40.2%;
+    --destructive-foreground: 0.0 0.0% 100.0%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --border: 48.0 15.6% 87.5%;
+    --input: 46.2 12.9% 80.2%;
+    --ring: 230.6 62.6% 48.2%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 238.7 83.5% 66.7%;
-
-    /* Semantic — never decorative. Gain, loss, and "this data is suspect". */
-    --up: 142.1 76.2% 36.3%;
-    --down: 0 72.2% 50.6%;
-    --warn: 37.7 92.1% 50.2%;
-    --warn-ink: 26 90.5% 37.1%;   /* amber-700: #f59e0b is unreadable as text on light */
-
+    /* Semantic — never decorative. Gain, loss, and "this data is suspect".
+       Gain and loss always travel with a sign, so hue is never the only cue. */
+    --up: 160.6 81.4% 23.1%;
+    --up-tint: 150.0 33.3% 91.8%;
+    --down: 13.6 79.5% 40.2%;
+    --down-tint: 15.0 75.0% 93.7%;
+    --warn: 40.9 73.9% 45.1%;
+    --warn-ink: 36.1 100.0% 27.1%;
+    --warn-tint: 40.6 81.0% 91.8%;
+    
     --radius: 0.5rem;
-    --glass-hover: rgba(0, 0, 0, 0.03);
-
-    --card-elevated: rgba(255,255,255,0.55);
-    --card-border: rgba(255,255,255,0.55);
-    --shine: rgba(255,255,255,0.6);
-
-    --menu-solid: hsl(220 35% 97%);
-    --ring-track: #f3f4f6;
-    --pie-stroke: #ffffff;
-
+    --glass-hover: rgba(22, 23, 27, 0.04);
+    
+    --card-elevated: #FFFFFF;
+    --card-border: #E4E2DA;
+    --shine: transparent;
+    
+    --menu-solid: #FFFFFF;
+    --ring-track: #F1F0EA;
+    --pie-stroke: #FFFFFF;
+    
     /* Sidebar */
-    --sidebar-width: 216px;
+    --sidebar-width: 232px;
     --sidebar-width-collapsed: 56px;
-    --header-height: 52px;
+    --header-height: 64px;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    /* Ledger, dark. The same roles relit, not inverted. */
+    --background: 225.0 11.8% 6.7%;
+    --foreground: 50.0 14.3% 91.8%;
 
-    --card: 217 50% 8%;
-    --card-foreground: 210 40% 98%;
+    --card: 222.9 13.2% 10.4%;
+    --card-foreground: 50.0 14.3% 91.8%;
+    --popover: 225.0 12.9% 12.2%;
+    --popover-foreground: 50.0 14.3% 91.8%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --primary: 229.3 100.0% 78.0%;
+    --primary-foreground: 225.0 11.8% 6.7%;
+    --primary-hover: 229.7 100.0% 85.1%;
+    --primary-ink: 229.5 100.0% 83.1%;
+    --primary-tint: 230.0 37.5% 22.0%;
 
-    --primary: 234.5 89.5% 73.9%;         /* indigo-400 */
-    --primary-foreground: 243.4 75.4% 20%;
-    --primary-hover: 238.7 83.5% 66.7%;   /* indigo-500 */
-    --primary-ink: 229.7 93.6% 81.8%;     /* indigo-300 */
+    --secondary: 220.0 13.0% 13.5%;
+    --secondary-foreground: 50.0 14.3% 91.8%;
+    --muted: 220.0 13.0% 13.5%;
+    --muted-foreground: 223.6 5.1% 57.5%;
+    --ink-2: 226.7 6.3% 72.0%;
+    --accent: 220.0 13.0% 13.5%;
+    --accent-foreground: 50.0 14.3% 91.8%;
+    --destructive: 13.8 100.0% 71.0%;
+    --destructive-foreground: 225.0 11.8% 6.7%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --border: 222.0 10.6% 18.4%;
+    --input: 223.6 9.6% 22.5%;
+    --ring: 229.3 100.0% 78.0%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 25% 16%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 238.7 83.5% 66.7%;
-
-    --up: 142.1 70.6% 45.3%;
-    --down: 0 84.2% 60.2%;
-    --warn: 43.3 96.4% 56.3%;
-    --warn-ink: 43.3 96.4% 56.3%;
-
+    --up: 155.7 52.4% 54.7%;
+    --up-tint: 156.9 36.1% 14.1%;
+    --down: 13.8 100.0% 71.0%;
+    --down-tint: 13.7 43.2% 15.9%;
+    --warn: 39.6 84.8% 63.9%;
+    --warn-ink: 39.6 84.8% 63.9%;
+    --warn-tint: 41.1 48.7% 15.3%;
+    
     --glass-hover: rgba(255, 255, 255, 0.05);
-
-    --card-elevated: rgba(255,255,255,0.04);
-    --card-border: rgba(255,255,255,0.08);
-    --shine: rgba(255,255,255,0.04);
-
-    --menu-solid: hsl(217 50% 8%);
-    --ring-track: #27272a;
-    --pie-stroke: #030d1a;
+    
+    --card-elevated: #17191E;
+    --card-border: #2A2D34;
+    --shine: transparent;
+    
+    --menu-solid: #1B1D23;
+    --ring-track: #24262C;
+    --pie-stroke: #17191E;
   }
 }
 
@@ -228,31 +408,32 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.5);
+  background: hsl(var(--input));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.8);
+  background: hsl(var(--muted-foreground) / 0.6);
 }
 
 /* ============================
    CARD DEPTH — three tiers
    ============================
-   One border, one shadow, one radius per tier. Mirrors CardStyle in
-   Theme.swift so a card is the same object on all three clients.
+   One fill, one rule, one radius per tier. Mirrors CardStyle in Theme.swift
+   so a card is the same object on all three clients. Ledger lifts nothing
+   with colour: no tinted shadows, no glow, no hover lift on a card.
 
-   .card-inset     flush inside another card — border only
-   .card-standard  every card (alias: .glass-card, .metric-card)
-   .card-hero      one per screen, at most
+   .card-inset     a panel inside a card — muted fill, no rule
+   .card-standard  every card (alias: .glass-card, .metric-card) — white, 1px rule
+   .card-hero      one per screen, at most — the rule plus a soft neutral lift
 
-   The five overlapping styles this replaces (glass blur stacks, a 135deg
-   shine overlay, a 3-layer premium shadow, a translucent ring) are kept as
+   The five overlapping styles this replaced (glass blur stacks, a 135deg
+   shine overlay, a 3-layer premium shadow, a translucent ring) stay as
    aliases so existing markup lands on the tier it meant. */
 
 .card-inset {
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  border: 1px solid transparent;
   border-radius: var(--radius-inset);
 }
 
@@ -262,30 +443,128 @@
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius-card);
-  box-shadow: 0 3px 8px hsl(var(--primary) / 0.10);
-  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .card-hero {
   background: hsl(var(--card));
-  border: 1px solid hsl(var(--primary) / 0.30);
+  border: 1px solid hsl(var(--border));
   border-radius: var(--radius-hero);
-  box-shadow: 0 8px 18px hsl(var(--primary) / 0.20);
+  box-shadow: 0 1px 2px rgb(22 23 27 / 0.04), 0 8px 24px rgb(22 23 27 / 0.06);
 }
+.dark .card-hero { box-shadow: none; }
 
-/* Hover lifts a card. It does not lift a control — see .btn rules. */
+/* A clickable card answers the pointer with its rule, not a lift. */
 .card-standard:hover,
 .glass-card:hover,
 .metric-card:hover {
-  border-color: hsl(var(--primary) / 0.30);
-  box-shadow: 0 6px 14px hsl(var(--primary) / 0.16);
+  border-color: hsl(var(--input));
 }
 
 /* Retired: the shine overlay, the 3-layer shadow and the translucent ring.
-   Kept as no-ops so the ~29 call sites still parse while they are migrated. */
+   Kept as no-ops so the call sites still parse while they are migrated. */
 .card-shine::before { content: none; }
-.premium-shadow { box-shadow: 0 3px 8px hsl(var(--primary) / 0.10); }
+.premium-shadow { box-shadow: none; }
 .premium-ring { border: 1px solid hsl(var(--border)); }
+
+/* Segmented control — the one selector shape on every screen (period,
+   currency, group-by). A muted track, the chosen segment raised in white. */
+.segmented {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-control);
+  background: hsl(var(--muted));
+}
+.segmented > button {
+  border-radius: 6px;
+  padding: 0 10px;
+  font-weight: 500;
+  color: hsl(var(--ink-2));
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.segmented > button:hover { color: hsl(var(--foreground)); }
+.segmented > button[aria-checked="true"],
+.segmented > button[aria-pressed="true"],
+.segmented > button[data-state="on"] {
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(22 23 27 / 0.08);
+}
+.dark .segmented > button[aria-checked="true"],
+.dark .segmented > button[aria-pressed="true"],
+.dark .segmented > button[data-state="on"] {
+  background: hsl(var(--input));
+  box-shadow: none;
+}
+
+/* Select trigger — the one shape for "pick from a list" in a toolbar
+   (accounts, currency, benchmark): a white field with a hairline rule and a
+   chevron. Never gradient text. */
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-control);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: border-color 0.15s ease;
+}
+.select-trigger:hover,
+.select-trigger[aria-expanded="true"] { border-color: hsl(var(--input)); }
+
+/* Menu — popovers and dropdowns. The chosen row is marked with a check and
+   ink weight, not a solid cobalt fill: a filled row reads as a button. */
+.menu-panel {
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-inset);
+  box-shadow: 0 12px 32px rgb(22 23 27 / 0.12), 0 1px 2px rgb(22 23 27 / 0.06);
+  padding: 4px;
+}
+.dark .menu-panel { box-shadow: 0 12px 32px rgb(0 0 0 / 0.5); }
+.menu-heading {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  color: hsl(var(--ink-2));
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.menu-item:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.menu-item[aria-selected="true"],
+.menu-item[aria-pressed="true"],
+.menu-item[aria-checked="true"],
+.menu-item[aria-current="page"] {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+.menu-divider { height: 1px; margin: 4px 6px; background: hsl(var(--border)); }
 
 /* Animated background gradient shimmer for accent glows */
 .animate-shimmer {
@@ -297,13 +576,24 @@
   animation: pulse-glow 3s ease-in-out infinite;
 }
 
-/* Section dividers */
+/* Overline — the small caps label above a figure or a group ("PORTFOLIO
+   VALUE", the sidebar's "RESEARCH"). 11px, not 10: the old 10px/800 label
+   was the smallest, heaviest text on the page and read as shouting. */
 .section-label {
-  font-size: 0.625rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
+}
+
+/* Page title — Instrument Serif, the one serif on a screen besides the hero
+   figure. */
+.page-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 /* Recharts Overrides */
@@ -313,9 +603,15 @@
   outline: none !important;
 }
 
-*:focus {
-  outline: none !important;
-  box-shadow: none !important;
+/* Focus shows for the keyboard, not the mouse: a 2px cobalt ring on
+   :focus-visible, nothing on a click. The old rule stripped every focus
+   indicator, which left keyboard users with no way to see where they were. */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
 }
 
 .mask-linear-fade {
@@ -400,10 +696,10 @@
     padding: 0.625rem 1rem;
     background-color: hsl(var(--primary) / 0.05);
     border-bottom: 1px solid hsl(var(--border));
-    font-size: 10px;
-    font-weight: 800;
+    font-size: 11px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.15em;
+    letter-spacing: 0.06em;
     color: hsl(var(--muted-foreground));
   }
 

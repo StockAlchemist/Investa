@@ -25,8 +25,8 @@ interface ProjectionBacktestProps {
     compact: (value: number, currency: string) => string;
 }
 
-const ACTUAL_COLOR = '#059669';   // emerald — the path that actually happened
-const MODEL_COLOR = '#6366f1';    // indigo — the cone the model drew back then
+const ACTUAL_COLOR = '#1F9D6C';   // emerald — the path that actually happened
+const MODEL_COLOR = '#4A62E0';    // indigo — the cone the model drew back then
 
 const VERDICTS: Record<string, { label: string; className: string }> = {
     calibrated: { label: 'Well calibrated', className: 'text-up' },

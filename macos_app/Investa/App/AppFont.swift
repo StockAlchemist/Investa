@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -42,6 +43,8 @@ struct AppFont: Equatable {
         case style(Font.TextStyle)
         /// A fixed point size as written at the call site.
         case fixed(CGFloat)
+        /// Ledger's display serif at a fixed point size — see `display(size:)`.
+        case display(CGFloat)
     }
 
     fileprivate var base: Base
@@ -70,6 +73,14 @@ extension AppFont {
     static func system(size: CGFloat, weight: Font.Weight? = nil,
                        design: Font.Design? = nil) -> AppFont {
         AppFont(base: .fixed(size), weight: weight, design: design)
+    }
+
+    /// Instrument Serif — Ledger's display face, the twin of the web's
+    /// `font-display`. For page titles and the one hero figure per screen, never
+    /// for body text or table figures (those stay SF Pro with tabular digits).
+    /// Falls back to the system serif (New York) if the bundled font is missing.
+    static func display(size: CGFloat) -> AppFont {
+        AppFont(base: .display(size))
     }
 
     /// Text-style system font, e.g. `.system(.body, design: .monospaced)`.
@@ -117,6 +128,13 @@ extension AppFont {
             }
         case .fixed(let size):
             font = .system(size: size * scale, weight: .regular, design: design ?? .default)
+        case .display(let size):
+            // Relative to .largeTitle so iOS Dynamic Type still moves it.
+            font = BundledFonts.isDisplayAvailable
+                ? .custom(BundledFonts.displayPostScriptName, size: size * scale, relativeTo: .largeTitle)
+                : .system(size: size * scale, weight: .regular, design: .serif)
+            if isMonospacedDigit { font = font.monospacedDigit() }
+            return font
         }
         if let weight { font = font.weight(weight) }
         if isItalic { font = font.italic() }
@@ -187,6 +205,28 @@ extension AppFont {
         }
     }
     #endif
+}
+
+// MARK: - Bundled fonts
+
+/// Registers the fonts shipped in `Resources/Fonts` with the process, once, on
+/// first use. Registering in code rather than through `UIAppFonts` /
+/// `ATSApplicationFontsPath` keeps the two Info.plists identical on this point
+/// and works the same on macOS and iOS.
+enum BundledFonts {
+    static let displayPostScriptName = "InstrumentSerif-Regular"
+
+    /// True once Instrument Serif is registered and resolvable.
+    static let isDisplayAvailable: Bool = {
+        guard let url = Bundle.main.url(forResource: "InstrumentSerif-Regular", withExtension: "ttf") else {
+            return false
+        }
+        var error: Unmanaged<CFError>?
+        let registered = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+        // Already registered (e.g. a second window) also counts as available.
+        let resolved = CTFontCreateWithName(displayPostScriptName as CFString, 12, nil)
+        return registered || (CTFontCopyPostScriptName(resolved) as String) == displayPostScriptName
+    }()
 }
 
 // MARK: - The scale itself

@@ -76,7 +76,7 @@ export const NewsTab: React.FC<NewsTabProps> = ({ symbol, isOpen }) => {
                             {item.title}
                         </p>
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide truncate">
+                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">
                                 {item.provider}
                             </span>
                             {item.pub_date && (

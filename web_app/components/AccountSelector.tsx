@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
+import { Check, ChevronDown } from 'lucide-react';
 
 interface AccountSelectorProps {
     availableAccounts: string[];
@@ -105,20 +106,14 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
     return (
         <div className="relative" ref={triggerRef}>
             <button
+                type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className={cn(
-                    "flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl transition-all duration-300 group",
-                    variant === 'ghost' ? "bg-transparent border-none shadow-none" : "bg-card border-none shadow-none",
-                    "font-semibold tracking-tight min-w-[80px]",
-                    isOpen ? "" : "text-cyan-500",
-                    "flex-row py-2 px-2 h-[44px]"
-                )}
+                aria-haspopup="true"
+                aria-expanded={isOpen}
+                className={cn("select-trigger", variant === 'ghost' && "border-transparent bg-transparent")}
             >
-                <div className="flex flex-col items-center leading-none gap-0">
-                    <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent truncate font-bold uppercase text-[14px]">
-                        {getLabel()}
-                    </span>
-                </div>
+                <span>{getLabel()}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
             </button>
 
             {isOpen && typeof document !== 'undefined' && createPortal(
@@ -131,32 +126,30 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                         left: coords.left,
                         right: coords.right,
                     }}
+                    role="group"
+                    aria-label="Accounts"
                     className={cn(
-                        "min-w-[200px] w-max border border-border rounded-xl shadow-xl outline-none z-[100] overflow-hidden",
+                        "menu-panel min-w-[220px] w-max outline-none z-[100]",
                         align === 'left' ? "origin-top-left" : "origin-top-right"
                     )}
                 >
-                    <div className="py-1 max-h-[80vh] overflow-y-auto">
+                    <div className="max-h-[80vh] overflow-y-auto">
                         {/* All Accounts Option */}
                         <button
+                            type="button"
+                            aria-pressed={isAllSelected}
                             onClick={handleSelectAll}
-                            className={`group flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-colors ${isAllSelected
-                                ? 'bg-primary text-primary-foreground shadow-sm'
-                                : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                }`}
+                            className="menu-item justify-between"
                         >
                             <span className="whitespace-nowrap">All Accounts</span>
-                            {isAllSelected && (
-                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                            )}
+                            {isAllSelected && <Check className="w-4 h-4 text-primary" aria-hidden="true" />}
                         </button>
 
                         {/* Account Groups Section */}
                         {hasGroups && (
                             <>
-                                <div className="px-4 py-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider bg-cyan-50/50 dark:bg-cyan-950/20 border-y border-border/50">
-                                    Groups
-                                </div>
+                                <div className="menu-divider" />
+                                <div className="menu-heading">Groups</div>
                                 {Object.entries(accountGroups).map(([groupName, groupAccounts]) => {
                                     // Check if this group is currently exactly selected (ignoring order)
                                     const isGroupSelected = !isAllSelected &&
@@ -166,16 +159,13 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                     return (
                                         <button
                                             key={groupName}
+                                            type="button"
+                                            aria-pressed={isGroupSelected}
                                             onClick={() => handleSelectGroup(groupName, groupAccounts)}
-                                            className={`group flex items-center justify-between w-full px-4 py-2 text-sm font-medium transition-colors ${isGroupSelected
-                                                ? 'bg-primary text-primary-foreground shadow-sm'
-                                                : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                                }`}
+                                            className="menu-item justify-between"
                                         >
                                             <span className="whitespace-nowrap">{groupName}</span>
-                                            {isGroupSelected && (
-                                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                            )}
+                                            {isGroupSelected && <Check className="w-4 h-4 text-primary" aria-hidden="true" />}
                                         </button>
                                     );
                                 })}
@@ -185,9 +175,10 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
 
                         {/* Individual Accounts Section */}
                         {hasGroups && (
-                            <div className="px-4 py-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider bg-cyan-50/50 dark:bg-cyan-950/20 border-y border-border/50">
-                                Individual
-                            </div>
+                            <>
+                                <div className="menu-divider" />
+                                <div className="menu-heading">Individual</div>
+                            </>
                         )}
 
                         {availableAccounts
@@ -204,30 +195,22 @@ export default function AccountSelector({ availableAccounts, selectedAccounts, o
                                 return (
                                     <button
                                         key={account}
+                                        type="button"
+                                        aria-pressed={isSelected}
                                         onClick={() => toggleAccount(account)}
-                                        className={`group flex items-center justify-between gap-2 w-full px-4 py-3 text-sm font-medium transition-colors ${isSelected
-                                            ? 'bg-primary text-primary-foreground shadow-sm'
-                                            : 'text-popover-foreground hover:bg-black/5 dark:hover:bg-white/5'
-                                            } last:border-0`}
+                                        className="menu-item justify-between"
                                     >
                                         <span className={cn("whitespace-nowrap", !isSelected && isClosed && "text-muted-foreground")}>{account}</span>
                                         <span className="flex items-center gap-2">
                                             {isClosed && (
                                                 <span
                                                     title="This account is closed"
-                                                    className={cn(
-                                                        "text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full",
-                                                        isSelected
-                                                            ? "bg-white/20 text-white"
-                                                            : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                                                    )}
+                                                    className="text-xs font-medium px-1.5 py-0.5 rounded-md bg-warn-tint text-warn-ink"
                                                 >
                                                     Closed
                                                 </span>
                                             )}
-                                            {isSelected && (
-                                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                            )}
+                                            {isSelected && <Check className="w-4 h-4 text-primary" aria-hidden="true" />}
                                         </span>
                                     </button>
                                 );

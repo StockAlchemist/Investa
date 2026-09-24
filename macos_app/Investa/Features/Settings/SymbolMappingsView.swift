@@ -203,9 +203,9 @@ struct SymbolMappingsView: View {
             } label: {
                 Image(systemName: "trash")
                     .appFont(.subheadline)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.down)
                     .padding(8)
-                    .background(Color.red.opacity(0.08), in: Circle())
+                    .background(Color.down.opacity(0.08), in: Circle())
             }
             .buttonStyle(.plain)
         }

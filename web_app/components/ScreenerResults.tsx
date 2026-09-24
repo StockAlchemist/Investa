@@ -219,7 +219,6 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
     return (
         <>
         <div className="metric-card card-shine relative overflow-hidden transition-all">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-teal-500 opacity-80" />
 
             <div className="p-5 pb-2">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -265,18 +264,18 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                 {/* Results summary */}
                 <div className="mt-4 flex flex-wrap divide-x divide-border/60 rounded-xl bg-muted/20 dark:bg-white/[0.02] border border-border/30 dark:border-white/[0.04]">
                     <div className="flex-1 min-w-[110px] px-4 py-2.5">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">Results</div>
+                        <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold mb-1">Results</div>
                         <div className="text-lg font-bold tabular-nums text-foreground">{summary.count.toLocaleString()}</div>
                     </div>
                     <div className="flex-1 min-w-[110px] px-4 py-2.5">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">Undervalued</div>
+                        <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold mb-1">Undervalued</div>
                         <div className="text-lg font-bold tabular-nums text-up">
                             {summary.undervalued.toLocaleString()}
                             <span className="text-[11px] text-muted-foreground/60 font-medium ml-1">MoS &gt; 0</span>
                         </div>
                     </div>
                     <div className="flex-1 min-w-[110px] px-4 py-2.5">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">Avg Margin</div>
+                        <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold mb-1">Avg Margin</div>
                         <div className={cn(
                             'text-lg font-bold tabular-nums',
                             summary.avgMOS == null ? 'text-muted-foreground'
@@ -286,7 +285,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                         </div>
                     </div>
                     <div className="flex-1 min-w-[110px] px-4 py-2.5">
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">AI Reviewed</div>
+                        <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold mb-1">AI Reviewed</div>
                         <div className="text-lg font-bold tabular-nums text-foreground">
                             {summary.aiReviewed.toLocaleString()}
                             <span className="text-[11px] text-muted-foreground/60 font-medium ml-1">of {summary.count}</span>
@@ -299,7 +298,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {/* MOS Filter */}
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Min Margin of Safety (%)</label>
+                                <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Min Margin of Safety (%)</label>
                                 <Input
                                     type="number"
                                     placeholder="e.g. 15"
@@ -311,7 +310,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
 
                             {/* PE Filter */}
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Max P/E Ratio</label>
+                                <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Max P/E Ratio</label>
                                 <Input
                                     type="number"
                                     placeholder="e.g. 25"
@@ -323,7 +322,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
 
                             {/* Market Cap Filter */}
                             <div className="space-y-2">
-                                <label htmlFor="screener-market-cap" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Market Cap</label>
+                                <label htmlFor="screener-market-cap" className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Market Cap</label>
                                 <select
                                     id="screener-market-cap"
                                     aria-label="Market Cap"
@@ -380,7 +379,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                         <thead>
                             <tr className="bg-secondary/30 backdrop-blur-sm sticky top-0 z-10">
                                 <th
-                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer group hover:bg-secondary/50 transition-colors"
+                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('symbol')}
                                 >
                                     <div className="flex items-center">
@@ -388,7 +387,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
+                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('price')}
                                 >
                                     <div className="flex items-center justify-end">
@@ -396,7 +395,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
+                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('intrinsic_value')}
                                 >
                                     <div className="flex items-center justify-end">
@@ -404,7 +403,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
+                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('margin_of_safety')}
                                 >
                                     <div className="flex items-center justify-end">
@@ -412,7 +411,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
+                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('pe_ratio')}
                                 >
                                     <div className="flex items-center justify-end">
@@ -420,14 +419,14 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     </div>
                                 </th>
                                 <th
-                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
+                                    className="px-6 py-3 text-xs font-semibold text-muted-foreground text-right cursor-pointer group hover:bg-secondary/50 transition-colors"
                                     onClick={() => handleSort('ai_score')}
                                 >
                                     <div className="flex items-center justify-end">
                                         AI Score <SortIndicator column="ai_score" />
                                     </div>
                                 </th>
-                                <th className="px-6 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">AI Audit</th>
+                                <th className="px-6 py-3 text-xs font-semibold text-muted-foreground text-right">AI Audit</th>
                             </tr>
                         </thead>
                         <tbody className="">
@@ -555,7 +554,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                 <button
                                     onClick={() => handleRegenerate(reviewModal.symbol)}
                                     disabled={reviewModalLoading === reviewModal.symbol}
-                                    className="flex items-center gap-1 text-[10px] font-bold text-purple-500 hover:text-purple-400 uppercase tracking-wider transition-colors mt-0.5"
+                                    className="flex items-center gap-1 text-[11px] font-semibold text-purple-500 hover:text-purple-400 uppercase tracking-[0.06em] transition-colors mt-0.5"
                                 >
                                     {reviewModalLoading === reviewModal.symbol
                                         ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -585,7 +584,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     <div className="flex flex-wrap gap-2">
                                         {Object.entries(reviewModal.review.scorecard).map(([k, v]) => (
                                             <div key={k} className="px-3 py-1.5 rounded-lg bg-secondary/50 flex items-center gap-2">
-                                                <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">{k.replace('_', ' ')}</span>
+                                                <span className="text-[11px] uppercase text-muted-foreground font-semibold tracking-[0.06em]">{k.replace('_', ' ')}</span>
                                                 <span className={cn(
                                                     "text-xs font-bold",
                                                     v >= 8 ? 'text-up' : v >= 6 ? 'text-cyan-500' : 'text-amber-500'
@@ -605,7 +604,7 @@ const ScreenerResults: React.FC<ScreenerResultsProps> = ({ results, onReview, re
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         {Object.entries(reviewModal.review.analysis).map(([k, v]) => (
                                             <div key={k} className="space-y-1.5">
-                                                <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                                <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                                                     <ChevronRight className="w-3 h-3 text-purple-500" />
                                                     {k.replace('_', ' ')}
                                                 </h4>

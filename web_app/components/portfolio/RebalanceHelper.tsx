@@ -107,7 +107,7 @@ export default function RebalanceHelper({ holdings, currency }: RebalanceHelperP
                             onClick={() => setDim(d.key)}
                             className={cn(
                                 'px-2.5 py-1 rounded-md text-xs font-semibold transition-all',
-                                dim === d.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                                dim === d.key ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             {d.label}

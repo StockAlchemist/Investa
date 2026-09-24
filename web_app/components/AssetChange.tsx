@@ -68,7 +68,7 @@ export default function AssetChange({
     }
 
     return (
-        <div className="p-4 space-y-6">
+        <div className="space-y-6">
             {show('kpiStrip') && <KpiStrip data={data} summary={summary} riskMetrics={riskMetrics} benchmarks={benchmarks} />}
             {show('returnsChart') && <ReturnsChart data={data} currency={currency} />}
             {show('monthlyHeatmap') && <MonthlyHeatmap data={data} />}

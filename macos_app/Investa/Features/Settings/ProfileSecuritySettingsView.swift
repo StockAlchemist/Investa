@@ -176,7 +176,7 @@ struct ProfileSecuritySettingsView: View {
                 .padding(.vertical, 4)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .tint(.down)
         }
         .padding(.top, 4)
     }

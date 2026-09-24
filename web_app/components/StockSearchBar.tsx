@@ -11,22 +11,22 @@ import StockIcon from './StockIcon';
 function TypeBadge({ type }: { type: string }) {
     const t = type.toLowerCase();
     if (t === 'equity' || t === 'stock') return (
-        <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded">Equity</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded">Equity</span>
     );
     if (t === 'etf') return (
-        <span className="text-[9px] font-bold uppercase tracking-wide text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">ETF</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">ETF</span>
     );
     if (t === 'mutualfund' || t === 'mutual fund') return (
-        <span className="text-[9px] font-bold uppercase tracking-wide text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded">Fund</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded">Fund</span>
     );
     if (t === 'index') return (
-        <span className="text-[9px] font-bold uppercase tracking-wide text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Index</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Index</span>
     );
     if (t === 'crypto' || t === 'cryptocurrency') return (
-        <span className="text-[9px] font-bold uppercase tracking-wide text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded">Crypto</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded">Crypto</span>
     );
     if (t) return (
-        <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{type}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{type}</span>
     );
     return null;
 }

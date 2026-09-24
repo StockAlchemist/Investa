@@ -51,9 +51,9 @@ export const UpcomingEventRow: React.FC<UpcomingEventRowProps> = ({
                 <Icon className="w-3.5 h-3.5" />
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{label}</p>
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em]">{label}</p>
                 <span
-                    className={cn("text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded", badge.tone)}
+                    className={cn("text-[11px] font-semibold uppercase tracking-[0.06em] px-1 py-px rounded", badge.tone)}
                     title={badge.title}
                 >
                     {badge.text}

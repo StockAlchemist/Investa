@@ -98,7 +98,7 @@ const WeightGroup: React.FC<{
     numberClass: string;
 }> = ({ title, items, chipClass, numberClass }) => (
     <div>
-        <h3 className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
             {title}
         </h3>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -255,7 +255,7 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
                     screen — three bare numbers never said so. */}
                 <div className="mt-4 flex h-2 gap-0.5" aria-hidden="true">
                     <div
-                        className="rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400"
+                        className="rounded-full bg-teal-600"
                         style={{ width: `${(rankedShare * 100).toFixed(2)}%` }}
                     />
                     <div className="flex-1 rounded-full bg-muted-foreground/20" />
@@ -418,27 +418,27 @@ const RankTable: React.FC<{
             <table className="min-w-full divide-y divide-border">
                 <thead className="bg-secondary/30">
                     <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">#</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Company</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Score</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quality</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Value</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">#</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Company</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Score</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Quality</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Value</th>
                         {PILLARS.map((pillar) => (
                             <th
                                 key={String(pillar.key)}
-                                className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                                className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground"
                                 title={`Pillar weight ${pillar.weight}`}
                             >
                                 {pillar.label}
                             </th>
                         ))}
                         <th
-                            className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                            className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground"
                             title="Earnings yield — net income over market cap, and the heaviest input to the value score"
                         >
                             E/P
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mkt Cap</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Mkt Cap</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -581,11 +581,11 @@ const ExclusionTable: React.FC<{
                 <table className="min-w-full divide-y divide-border">
                     <thead className="bg-secondary/30">
                         <tr>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Symbol</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Name</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Model</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Years</th>
-                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reasons</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Symbol</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Name</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Model</th>
+                            <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Years</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Reasons</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border">

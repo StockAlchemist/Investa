@@ -26,19 +26,19 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
         : tone === 'warn' ? 'text-amber-600 dark:text-amber-400'
         : 'text-foreground';
 
+    void Icon;
     // Mobile → tablet: tile fills its responsive grid cell. xl+: becomes a
     // single-row flex strip item with vertical dividers (handled on the parent).
+    // Ledger tile: sentence-case label, figure, one sub-line — each on one line
+    // in full (no ellipsis: "vs Dow Jo…" names no benchmark).
     return (
         <div className="min-w-0 px-1 py-1.5 xl:flex-1 xl:min-w-[110px] xl:px-3 xl:py-2.5 xl:first:pl-0 xl:last:pr-0">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">
-                {Icon && <Icon className="w-3 h-3 shrink-0" />}
-                <span className="truncate">{label}</span>
-            </div>
-            <div className={cn('text-base sm:text-lg font-bold tabular-nums leading-none truncate', toneClass)}>
+            <div className="text-xs leading-4 text-muted-foreground mb-1 whitespace-nowrap">{label}</div>
+            <div className={cn('text-base sm:text-lg font-semibold tabular-nums leading-6 whitespace-nowrap', toneClass)}>
                 {value}
             </div>
             {sub && (
-                <div className="text-[10px] text-muted-foreground/70 tabular-nums mt-1 leading-tight truncate">
+                <div className="text-xs text-ink-2 tabular-nums mt-0.5 leading-4 whitespace-nowrap">
                     {sub}
                 </div>
             )}
@@ -121,7 +121,7 @@ export default function KpiStrip({ data, summary, riskMetrics = null, benchmarks
 
     const fmtMonth = (date: string) => {
         try {
-            return new Date(date).toLocaleDateString(undefined, { calendar: 'gregory', month: 'short', year: '2-digit' });
+            return new Date(date).toLocaleDateString(undefined, { calendar: 'gregory', month: 'short', year: 'numeric' });
         } catch {
             return date;
         }

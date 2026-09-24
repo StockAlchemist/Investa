@@ -44,7 +44,7 @@ const MetricItem = ({ label, value, icon: Icon, description, colorClass, onClick
 
         <div className="flex items-center justify-center gap-1.5 text-muted-foreground mb-2 relative z-10">
             <Icon className="w-3 h-3 group-hover/item:text-cyan-500 transition-colors" />
-            <span className="text-[9px] font-bold uppercase tracking-widest">{label}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em]">{label}</span>
         </div>
 
         <div className={cn("flex-1 flex items-center justify-center text-xl md:text-2xl font-bold tracking-tight tabular-nums relative z-10", colorClass || "text-foreground")}>
@@ -258,7 +258,6 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
     return (
         <React.Fragment>
             <div className="metric-card card-shine h-full p-5 transition-all duration-300 group relative overflow-hidden flex flex-col gap-4">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
                 <div className="flex justify-between items-start relative z-10">
                     <div className="flex items-center gap-2">
@@ -447,21 +446,21 @@ export default function RiskMetrics({ metrics, portfolioHealth, isLoading, isRef
                                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
                                         <div className="p-2 bg-background/50 rounded-lg">
                                             <div className="font-bold text-up">40%</div>
-                                            <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Diversification</div>
+                                            <div className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Diversification</div>
                                         </div>
                                         <div className="p-2 bg-background/50 rounded-lg">
                                             <div className="font-bold text-up">40%</div>
-                                            <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Efficiency</div>
+                                            <div className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Efficiency</div>
                                         </div>
                                         <div className="p-2 bg-background/50 rounded-lg">
                                             <div className="font-bold text-cyan-500">20%</div>
-                                            <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-1">Stability</div>
+                                            <div className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Stability</div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <div className="pt-3">
-                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">Score Legend</p>
+                                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] mb-2">Score Legend</p>
                                     <div className="flex items-center justify-between text-[10px]">
                                         <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500" /><span>0-39 Critical</span></div>
                                         <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-yellow-500" /><span>40-59 Fair</span></div>

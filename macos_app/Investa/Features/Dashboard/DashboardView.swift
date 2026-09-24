@@ -340,8 +340,8 @@ struct DashboardView: View {
         }
         .appFont(.callout)
         .padding(12)
-        .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-        .foregroundStyle(.red)
+        .background(.down.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .foregroundStyle(.down)
     }
 
     private var selectionSignature: String {

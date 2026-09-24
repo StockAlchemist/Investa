@@ -29,7 +29,7 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
     // single-row flex strip item with vertical dividers (handled on the parent).
     return (
         <div className="min-w-0 px-1 py-1.5 xl:flex-1 xl:min-w-[120px] xl:px-4 xl:py-3 xl:first:pl-0 xl:last:pr-0">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1.5">
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold mb-1.5">
                 {Icon && <Icon className="w-3 h-3 shrink-0" />}
                 <span className="truncate">{label}</span>
             </div>
@@ -154,7 +154,7 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                             <div className="flex items-center gap-2">
                                 <TrendingUp className="w-4 h-4 text-up" />
                                 <div>
-                                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Biggest Win</div>
+                                    <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/70 font-semibold">Biggest Win</div>
                                     <button
                                         type="button"
                                         onClick={() => openStockDetail(m.biggestWin!.symbol, currency)}
@@ -175,7 +175,7 @@ export default function CapitalGainsKpiStrip({ data, currency }: CapitalGainsKpi
                             <div className="flex items-center gap-2">
                                 <TrendingDown className="w-4 h-4 text-down" />
                                 <div>
-                                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Biggest Loss</div>
+                                    <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/70 font-semibold">Biggest Loss</div>
                                     <button
                                         type="button"
                                         onClick={() => openStockDetail(m.biggestLoss!.symbol, currency)}

@@ -166,7 +166,7 @@ func computeInsights(holdings: [Holding], currency: String,
 
 extension InsightTone {
     var color: Color {
-        switch self { case .pos: return .up; case .alert: return .down; case .warn: return .orange; case .neutral: return .primary }
+        switch self { case .pos: return .up; case .alert: return .down; case .warn: return .warn; case .neutral: return .primary }
     }
 }
 
@@ -213,7 +213,7 @@ struct InsightsDetailSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetHeader(icon: "lightbulb.fill", tint: .orange, title: "Insight Details",
+            SheetHeader(icon: "lightbulb.fill", tint: .warn, title: "Insight Details",
                         subtitle: isAll
                             ? "\(summaries.count) signal\(summaries.count == 1 ? "" : "s") flagged across your portfolio"
                             : "Underlying records behind this signal",
@@ -287,7 +287,7 @@ struct InsightsDetailSheet: View {
                                     dismiss()
                                     appState.openStock(lot.symbol)
                                 } label: {
-                                    Text(lot.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                    Text(lot.symbol).fontWeight(.bold).foregroundStyle(.brand)
                                 }
                                 .buttonStyle(.plain)
                                 if let a = lot.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
@@ -296,7 +296,7 @@ struct InsightsDetailSheet: View {
                             Text(Fmt.number(lot.quantity, fractionDigits: 0)).frame(width: 60, alignment: .trailing)
                             Text("+\(Fmt.currency(lot.gain, code: currency))").foregroundStyle(Color.up).fontWeight(.semibold)
                                 .frame(width: 90, alignment: .trailing)
-                            Text("\(lot.daysRemaining)d").fontWeight(.bold).foregroundStyle(.orange).frame(width: 70, alignment: .trailing)
+                            Text("\(lot.daysRemaining)d").fontWeight(.bold).foregroundStyle(.warn).frame(width: 70, alignment: .trailing)
                         }
                         .appFont(.caption).monospacedDigit().padding(.horizontal, 10).padding(.vertical, 7)
                         Divider()
@@ -315,12 +315,12 @@ struct InsightsDetailSheet: View {
                     dismiss()
                     appState.openStock(lot.symbol)
                 } label: {
-                    Text(lot.symbol).appFont(.callout.bold()).foregroundStyle(.indigo)
+                    Text(lot.symbol).appFont(.callout.bold()).foregroundStyle(.brand)
                 }
                 .buttonStyle(.plain)
                 if let a = lot.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
                 Spacer()
-                Text("\(lot.daysRemaining)d left").appFont(.caption.bold()).foregroundStyle(.orange)
+                Text("\(lot.daysRemaining)d left").appFont(.caption.bold()).foregroundStyle(.warn)
             }
             HStack(alignment: .top) {
                 cardMetric("Acquired", displayDate(lot.date), align: .leading)
@@ -349,7 +349,7 @@ struct InsightsDetailSheet: View {
                           "Buckets that have drifted 10% or more from their target weight.")
             ForEach(details.drift) { d in
                 let overweight = d.drift > 0
-                let tone: Color = overweight ? .down : .orange
+                let tone: Color = overweight ? .down : .warn
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 1) {
@@ -408,7 +408,7 @@ struct InsightsDetailSheet: View {
                                     dismiss()
                                     appState.openStock(u.symbol)
                                 } label: {
-                                    Text(u.symbol).fontWeight(.bold).foregroundStyle(.indigo)
+                                    Text(u.symbol).fontWeight(.bold).foregroundStyle(.brand)
                                 }
                                 .buttonStyle(.plain)
                                 if let a = u.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
@@ -437,7 +437,7 @@ struct InsightsDetailSheet: View {
                     dismiss()
                     appState.openStock(u.symbol)
                 } label: {
-                    Text(u.symbol).appFont(.callout.bold()).foregroundStyle(.indigo)
+                    Text(u.symbol).appFont(.callout.bold()).foregroundStyle(.brand)
                 }
                 .buttonStyle(.plain)
                 if let a = u.account { Text(a).appFont(.caption2).foregroundStyle(.secondary) }
@@ -551,7 +551,7 @@ struct HealthAnalysisSheet: View {
                         Text("Score Legend").appFont(.system(size: 11, weight: .bold)).textCase(.uppercase)
                             .foregroundStyle(.secondary).tracking(1).padding(.top, 4)
                         HStack(spacing: 14) {
-                            legendDot(.red, "0-39 Critical"); legendDot(.yellow, "40-59 Fair")
+                            legendDot(.down, "0-39 Critical"); legendDot(.warn, "40-59 Fair")
                             legendDot(.up, "60-79 Good"); legendDot(Theme.brand, "80-100 Excellent")
                         }.appFont(.system(size: 11))
                     }
@@ -601,8 +601,8 @@ struct HealthAnalysisSheet: View {
                 if let m = comp.metric {
                     Text(m).appFont(.caption.monospaced())
                         .padding(.horizontal, 8).padding(.vertical, 2)
-                        .background((comp.score >= 60 ? Color.up : .yellow).opacity(0.12), in: Capsule())
-                        .foregroundStyle(comp.score >= 60 ? Color.up : .yellow)
+                        .background((comp.score >= 60 ? Color.up : .warn).opacity(0.12), in: Capsule())
+                        .foregroundStyle(comp.score >= 60 ? Color.up : .warn)
                 }
             }
             (Text("Score: ").foregroundStyle(.secondary)

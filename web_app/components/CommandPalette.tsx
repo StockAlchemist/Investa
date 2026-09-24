@@ -38,17 +38,17 @@ const NAV_COMMANDS = [
 function TypeBadge({ type }: { type: string }) {
     const t = type.toLowerCase();
     if (t === 'equity' || t === 'stock')
-        return <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded">Equity</span>;
+        return <span className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded">Equity</span>;
     if (t === 'etf')
-        return <span className="text-[9px] font-bold uppercase tracking-wide text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">ETF</span>;
+        return <span className="text-[11px] font-semibold uppercase tracking-wide text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">ETF</span>;
     if (t === 'mutualfund' || t === 'mutual fund')
-        return <span className="text-[9px] font-bold uppercase tracking-wide text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded">Fund</span>;
+        return <span className="text-[11px] font-semibold uppercase tracking-wide text-purple-500 bg-purple-500/10 px-1.5 py-0.5 rounded">Fund</span>;
     if (t === 'index')
-        return <span className="text-[9px] font-bold uppercase tracking-wide text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Index</span>;
+        return <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Index</span>;
     if (t === 'crypto' || t === 'cryptocurrency')
-        return <span className="text-[9px] font-bold uppercase tracking-wide text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded">Crypto</span>;
+        return <span className="text-[11px] font-semibold uppercase tracking-wide text-orange-500 bg-orange-500/10 px-1.5 py-0.5 rounded">Crypto</span>;
     if (t)
-        return <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{type}</span>;
+        return <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{type}</span>;
     return null;
 }
 
@@ -185,7 +185,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
                     {/* Navigation sections */}
                     {Object.entries(sections).map(([section, items]) => (
                         <div key={section} className="space-y-0.5">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-2 py-1">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/60 px-2 py-1">
                                 {section}
                             </p>
                             {items.map(cmd => {
@@ -200,12 +200,12 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
                                         className={cn(
                                             'w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium text-left transition-colors',
                                             active
-                                                ? 'bg-primary text-primary-foreground'
+                                                ? 'bg-muted text-foreground font-semibold'
                                                 : 'text-foreground hover:bg-muted',
                                         )}
                                     >
                                         <div className="flex items-center gap-2.5">
-                                            <Icon className={cn('w-4 h-4', active ? 'text-primary-foreground' : 'text-muted-foreground')} />
+                                            <Icon className={cn('w-4 h-4', active ? 'text-foreground' : 'text-muted-foreground')} />
                                             <span>{cmd.label}</span>
                                         </div>
                                         {active && <ChevronRight className="w-3.5 h-3.5 opacity-70" />}
@@ -218,7 +218,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
                     {/* Stock search results */}
                     {stockResults.length > 0 && (
                         <div className="space-y-0.5 pt-1 border-t border-border">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 px-2 py-1">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/60 px-2 py-1">
                                 Stocks &amp; Assets
                             </p>
                             {stockResults.map(r => {
@@ -232,7 +232,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
                                         className={cn(
                                             'w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left transition-colors',
                                             active
-                                                ? 'bg-primary text-white'
+                                                ? 'bg-muted text-foreground font-semibold'
                                                 : 'hover:bg-muted',
                                         )}
                                     >
@@ -241,13 +241,13 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-1.5">
-                                                <span className={cn('text-xs font-bold', active ? 'text-white' : 'text-foreground')}>
+                                                <span className={cn('text-xs font-bold', 'text-foreground')}>
                                                     {r.symbol}
                                                 </span>
                                                 <TypeBadge type={r.type} />
                                             </div>
                                             {r.name && (
-                                                <p className={cn('text-[11px] truncate', active ? 'text-white/70' : 'text-muted-foreground')}>
+                                                <p className={cn('text-[11px] truncate', 'text-muted-foreground')}>
                                                     {r.name}
                                                 </p>
                                             )}

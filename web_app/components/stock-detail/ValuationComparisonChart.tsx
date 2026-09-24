@@ -415,8 +415,8 @@ export default function ValuationComparisonChart({
                         <div className={cn(
                             "relative group p-3 rounded-xl transition-all border",
                             isBlendedCustom
-                                ? "bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-transparent border-amber-500/40"
-                                : "bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent border-indigo-500/30"
+                                ? "bg-warn-tint border-amber-500/40"
+                                : "bg-primary-tint border-primary/25"
                         )}>
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                                 <div className="flex items-center gap-2 min-w-0 flex-wrap">

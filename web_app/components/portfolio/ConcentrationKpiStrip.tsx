@@ -29,7 +29,7 @@ function KpiTile({ label, value, sub, tone = 'neutral', icon: Icon }: KpiTilePro
     // single-row flex strip item with vertical dividers (handled on the parent).
     return (
         <div className="min-w-0 px-1 py-1.5 xl:flex-1 xl:min-w-[120px] xl:px-3 xl:py-2.5 xl:first:pl-0 xl:last:pr-0">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold mb-1">
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold mb-1">
                 {Icon && <Icon className="w-3 h-3 shrink-0" />}
                 <span className="truncate">{label}</span>
             </div>

@@ -135,7 +135,7 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs">
                             <thead>
-                                <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground/70 border-b border-border/50">
+                                <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground/70 border-b border-border/50">
                                     <th className="py-1.5 pr-3 font-semibold">Symbol</th>
                                     <th className="py-1.5 px-3 font-semibold">Acquired</th>
                                     <th className="py-1.5 px-3 font-semibold text-right">Qty</th>
@@ -180,7 +180,7 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
                                             </td>
                                             <td className="py-1.5 pl-3">
                                                 <span className={cn(
-                                                    'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded',
+                                                    'text-[11px] font-semibold uppercase px-1.5 py-0.5 rounded tracking-[0.06em]',
                                                     c.cls === 'LT'
                                                         ? 'bg-up/12 text-up'
                                                         : 'bg-amber-500/15 text-amber-600',
@@ -247,26 +247,21 @@ export default function UnrealizedTaxView({ holdings, currency }: Props) {
 }
 
 function SummaryTile({
-    label, value, currency, sublabel, accent,
+    label, value, currency, sublabel,
 }: {
     label: string;
     value: number;
     currency: string;
     sublabel: string;
-    accent: 'amber' | 'emerald' | 'cyan';
+    /** Retired with the tile's colour stripe; kept so call sites compile. */
+    accent?: 'amber' | 'emerald' | 'cyan';
 }) {
     const positive = value >= 0;
     const Icon = positive ? TrendingUp : TrendingDown;
     const colorClass = positive ? 'text-up' : 'text-down';
-    const accentBar = {
-        amber: 'bg-amber-500',
-        emerald: 'bg-emerald-500',
-        cyan: 'bg-primary',
-    }[accent];
 
     return (
         <div className="metric-card p-4 relative overflow-hidden">
-            <div className={cn('absolute top-0 left-0 right-0 h-[2px] opacity-80', accentBar)} />
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 mb-1">{label}</p>
             <div className="flex items-baseline gap-1.5">
                 <span className={cn('text-xl font-bold tabular-nums leading-none', colorClass)}>

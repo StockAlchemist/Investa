@@ -22,13 +22,13 @@ const PERIODS: { key: PeriodKey; label: string; defaultCount: number }[] = [
 ];
 
 const getBarColor = (name: string, index: number) => {
-    const palette = ["#ef4444", "#0097b2", "#f59e0b", "#8b5cf6", "#e11d48", "#10b981"];
+    const palette = ["#D2491F", "#259A91", "#C8921E", "#9A5DB8", "#D2491F", "#1F9D6C"];
     const n = name.toLowerCase();
-    if (n.includes('portfolio')) return "#ef4444";
-    if (n.includes('s&p 500') || n.includes('500')) return "#0097b2";
-    if (n.includes('dow')) return "#f59e0b";
-    if (n.includes('nasdaq')) return "#8b5cf6";
-    if (n.includes('russell')) return "#e11d48";
+    if (n.includes('portfolio')) return "#D2491F";
+    if (n.includes('s&p 500') || n.includes('500')) return "#259A91";
+    if (n.includes('dow')) return "#C8921E";
+    if (n.includes('nasdaq')) return "#9A5DB8";
+    if (n.includes('russell')) return "#D2491F";
     return palette[index % palette.length];
 };
 
@@ -72,7 +72,6 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
 
     return (
         <div className="metric-card p-5 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-violet-500 opacity-80" />
 
             <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
                 <h3 className="section-label shrink-0">Returns</h3>
@@ -87,7 +86,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                 className={cn(
                                     'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
                                     period === p.key
-                                        ? 'bg-primary text-primary-foreground shadow-sm'
+                                        ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                         : 'text-muted-foreground hover:text-foreground',
                                 )}
                             >
@@ -124,7 +123,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                             onClick={() => setViewMode('percent')}
                             className={cn(
                                 'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
-                                viewMode === 'percent' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                                viewMode === 'percent' ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             %
@@ -133,7 +132,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                             onClick={() => setViewMode('value')}
                             className={cn(
                                 'px-2 py-1 rounded-md text-[11px] font-semibold transition-all leading-none',
-                                viewMode === 'value' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                                viewMode === 'value' ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                             )}
                         >
                             {currency}
@@ -189,7 +188,7 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                     {viewMode === 'value' && displayData.map((entry: { [k: string]: unknown }, i: number) => (
                                         <Cell
                                             key={`cell-${i}`}
-                                            fill={((entry[key] as number) || 0) >= 0 ? '#10b981' : '#ef4444'}
+                                            fill={((entry[key] as number) || 0) >= 0 ? '#1F9D6C' : '#D2491F'}
                                         />
                                     ))}
                                 </Bar>

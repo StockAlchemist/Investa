@@ -179,7 +179,7 @@ struct BuffettRankView: View {
         if let message = viewModel.errorMessage, viewModel.loadedCount == 0 {
             Label(message, systemImage: "exclamationmark.triangle")
                 .appFont(.callout)
-                .foregroundStyle(.red)
+                .foregroundStyle(.down)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
         } else if viewModel.isLoading && viewModel.loadedCount == 0 {

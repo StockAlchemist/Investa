@@ -121,7 +121,6 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
                     <option key={acc} value={acc} />
                 ))}
             </datalist>
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500" />
             <div className="px-4 py-4 bg-indigo-500/10 flex flex-wrap justify-between items-center gap-3 border-b border-indigo-500/10">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-500/20 rounded-full">
@@ -131,11 +130,11 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
                         <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-widest">
                             Review Extracted Transactions ({reviewTransactions.length})
                         </h3>
-                        <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                        <p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-[0.06em]">
                             AI identified these from your document. Please verify before saving.
                         </p>
                         {reviewDuplicateCount > 0 && (
-                            <p className="text-[10px] text-amber-600 dark:text-amber-400 uppercase font-bold flex items-center gap-1 mt-0.5">
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 uppercase font-semibold flex items-center gap-1 mt-0.5 tracking-[0.06em]">
                                 <AlertCircle className="h-3 w-3" />
                                 {reviewDuplicateCount} already in your table (highlighted)
                             </p>
@@ -194,7 +193,7 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
             </div>
             <div className="overflow-x-auto">
                 <table className="min-w-full">
-                    <thead className="bg-indigo-500/5 text-[10px] font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-tighter">
+                    <thead className="bg-indigo-500/5 text-[11px] font-semibold text-indigo-700 dark:text-indigo-400 uppercase tracking-tighter">
                         <tr>
                             <th className="px-4 py-2 text-left">Date</th>
                             <th className="px-4 py-2 text-left">Type</th>
@@ -233,7 +232,7 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
                                             aria-label="Transaction Type"
                                             value={tx.Type}
                                             onChange={(e) => handleUpdateReviewTransaction(idx, { ...tx, Type: e.target.value })}
-                                            className="bg-transparent border-none text-[10px] p-0 font-bold uppercase tracking-widest focus:ring-0 text-indigo-500 appearance-none cursor-pointer"
+                                            className="bg-transparent border-none text-[11px] p-0 font-semibold uppercase tracking-[0.06em] focus:ring-0 text-indigo-500 appearance-none cursor-pointer"
                                         >
                                             <option value="Buy">BUY</option>
                                             <option value="Sell">SELL</option>
@@ -259,7 +258,7 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
                                                 className="bg-transparent border-none text-sm p-0 w-full font-bold focus:ring-0"
                                             />
                                             {isDuplicate && (
-                                                <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider whitespace-nowrap">
+                                                <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[11px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap">
                                                     <AlertCircle className="h-2.5 w-2.5" />
                                                     Duplicate
                                                 </span>

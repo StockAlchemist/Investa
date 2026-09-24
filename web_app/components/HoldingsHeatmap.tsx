@@ -289,7 +289,7 @@ export default function HoldingsHeatmap({ holdings, currency }: HoldingsHeatmapP
                                 onClick={() => setGroup(g.key)}
                                 className={cn(
                                     'px-2 py-1 rounded-md text-xs font-semibold transition-all',
-                                    group === g.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                                    group === g.key ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                                 )}
                             >
                                 {g.label}
@@ -304,7 +304,7 @@ export default function HoldingsHeatmap({ holdings, currency }: HoldingsHeatmapP
                                 onClick={() => setSizeMode(s)}
                                 className={cn(
                                     'px-2 py-1 rounded-md text-xs font-semibold transition-all capitalize',
-                                    sizeMode === s ? 'bg-indigo-500 text-white' : 'text-muted-foreground hover:text-foreground',
+                                    sizeMode === s ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none' : 'text-muted-foreground hover:text-foreground',
                                 )}
                                 title={s === 'value' ? 'Size tiles by position value' : 'Equal-size tiles'}
                             >
@@ -333,7 +333,7 @@ export default function HoldingsHeatmap({ holdings, currency }: HoldingsHeatmapP
                             >
                                 {renderTreemap(g.leaves, '100%')}
                                 <div className="absolute top-1 left-1.5 px-1.5 py-0.5 rounded bg-black/35 backdrop-blur-sm pointer-events-none">
-                                    <span className="text-[10px] font-bold uppercase tracking-wide text-white/95">{g.name}</span>
+                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-white/95">{g.name}</span>
                                     <span className="text-[10px] text-white/60 ml-1.5 tabular-nums">{(frac * 100).toFixed(0)}%</span>
                                 </div>
                             </div>

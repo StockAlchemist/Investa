@@ -317,7 +317,7 @@ struct HoldingsTableView: View {
             }
         }
         .padding(16)
-        .overlay(alignment: .top) { Rectangle().fill(Color(hex: 0x6366f1).opacity(0.8)).frame(height: 2) }
+        .overlay(alignment: .top) { Rectangle().fill(Color(hex: 0x4A62E0).opacity(0.8)).frame(height: 2) }
         .card(.standard)
         .sheet(item: $tagEdit) { edit in
             TagEditorSheet(edit: edit) {
@@ -518,10 +518,10 @@ struct HoldingsTableView: View {
             Image(systemName: icon).appFont(.caption)
             Text(title).appFont(.subheadline.weight(.medium))
         }
-        .foregroundStyle(active ? .white : .primary)
+        .foregroundStyle(active ? Color.brandInk : Color.primary)
         .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(active ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.background.secondary), in: Capsule())
-        .overlay(Capsule().strokeBorder(active ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.quaternary), lineWidth: 0.5))
+        .background(active ? Color.brandTint : Color.cardBg, in: Capsule())
+        .overlay(Capsule().strokeBorder(active ? Color.brand.opacity(0.3) : Color.line, lineWidth: 1))
     }
 
     // MARK: Header row
@@ -1037,7 +1037,7 @@ struct HoldingsTableView: View {
         if let v, v > 0 {
             Text(String(format: "%.1f", v)).appFont(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                 .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(v >= 8 ? Color.up : (v >= 6 ? .orange : Color.down), in: RoundedRectangle(cornerRadius: 4))
+                .background(v >= 8 ? Color.up : (v >= 6 ? .warn : Color.down), in: RoundedRectangle(cornerRadius: 4))
         } else { Text("—").foregroundStyle(.tertiary) }
     }
 
@@ -1222,8 +1222,8 @@ struct HoldingsTableView: View {
     }
 
     private func badgeColor(_ s: String) -> Color {
-        let palette = [Color(hex: 0x6366f1), Color(hex: 0x06b6d4), Color(hex: 0x10b981), Color(hex: 0xf59e0b),
-                       Color(hex: 0xec4899), Color(hex: 0x8b5cf6), Color(hex: 0xf97316)]
+        let palette = [Color(hex: 0x4A62E0), Color(hex: 0x259A91), Color(hex: 0x1F9D6C), Color(hex: 0xC8921E),
+                       Color(hex: 0xC2588A), Color(hex: 0x9A5DB8), Color(hex: 0xD07A2A)]
         return palette[abs(s.hashValue) % palette.count]
     }
 
@@ -1303,7 +1303,7 @@ private struct TagEditorSheet: View {
                 } footer: {
                     Text("Comma-separated, e.g. Core, Speculative, Dividend")
                 }
-                if let error { Text(error).foregroundStyle(.red).appFont(.callout) }
+                if let error { Text(error).foregroundStyle(.down).appFont(.callout) }
             }
             .formStyle(.grouped)
             Divider()

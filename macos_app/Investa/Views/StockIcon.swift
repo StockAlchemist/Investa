@@ -141,7 +141,7 @@ struct StockIcon: View {
     }
 
     private var monogram: some View {
-        let palette: [Color] = [.red, .orange, .yellow, .green, .mint, .teal, .cyan, .blue, .indigo, .purple, .pink, .brown]
+        let palette: [Color] = [.down, .warn, .warn, .up, .dataTeal, .dataTeal, .dataTeal, .brand, .brand, .plum, .plum, .brown]
         let color = palette[abs(hash(symbol)) % palette.count]
         return color.overlay(
             Text(symbol.prefix(1).uppercased())

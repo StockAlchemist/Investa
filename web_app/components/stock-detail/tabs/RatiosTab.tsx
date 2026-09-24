@@ -23,37 +23,37 @@ interface ChartItem {
 
 const ALL_RATIO_CHARTS: ChartItem[] = [
     // 1. Valuation
-    { group: 'Valuation', dataKey: 'P/E Ratio', title: 'Price to Earnings (P/E)', color: '#10b981' },
-    { group: 'Valuation', dataKey: 'P/S Ratio', title: 'Price to Sales (P/S)', color: '#06b6d4' },
-    { group: 'Valuation', dataKey: 'P/B Ratio', title: 'Price to Book (P/B)', color: '#8b5cf6' },
-    { group: 'Valuation', dataKey: 'EV/EBITDA', title: 'EV / EBITDA', color: '#f59e0b' },
-    { group: 'Valuation', dataKey: 'EV/Sales', title: 'EV / Sales', color: '#ec4899' },
-    { group: 'Valuation', dataKey: 'P/FCF Ratio', title: 'Price to Free Cash Flow (P/FCF)', color: '#14b8a6' },
-    { group: 'Valuation', dataKey: 'Dividend Yield (%)', title: 'Dividend Yield', color: '#10b981', suffix: '%' },
+    { group: 'Valuation', dataKey: 'P/E Ratio', title: 'Price to Earnings (P/E)', color: '#1F9D6C' },
+    { group: 'Valuation', dataKey: 'P/S Ratio', title: 'Price to Sales (P/S)', color: '#259A91' },
+    { group: 'Valuation', dataKey: 'P/B Ratio', title: 'Price to Book (P/B)', color: '#9A5DB8' },
+    { group: 'Valuation', dataKey: 'EV/EBITDA', title: 'EV / EBITDA', color: '#C8921E' },
+    { group: 'Valuation', dataKey: 'EV/Sales', title: 'EV / Sales', color: '#C2588A' },
+    { group: 'Valuation', dataKey: 'P/FCF Ratio', title: 'Price to Free Cash Flow (P/FCF)', color: '#259A91' },
+    { group: 'Valuation', dataKey: 'Dividend Yield (%)', title: 'Dividend Yield', color: '#1F9D6C', suffix: '%' },
 
     // 2. Profitability
-    { group: 'Profitability', dataKey: 'Return on Invested Capital (ROIC) (%)', title: 'Return on Invested Capital (ROIC)', color: '#ec4899', suffix: '%' },
-    { group: 'Profitability', dataKey: 'Return on Equity (ROE) (%)', title: 'Return on Equity (ROE)', color: '#10b981', suffix: '%' },
-    { group: 'Profitability', dataKey: 'Return on Assets (ROA) (%)', title: 'Return on Assets (ROA)', color: '#06b6d4', suffix: '%' },
-    { group: 'Profitability', dataKey: 'Gross Profit Margin (%)', title: 'Gross Margin', color: '#8b5cf6', suffix: '%' },
-    { group: 'Profitability', dataKey: 'Net Profit Margin (%)', title: 'Net Margin', color: '#f59e0b', suffix: '%' },
-    { group: 'Profitability', dataKey: 'Free Cash Flow Margin (%)', title: 'Free Cash Flow Margin', color: '#14b8a6', suffix: '%' },
+    { group: 'Profitability', dataKey: 'Return on Invested Capital (ROIC) (%)', title: 'Return on Invested Capital (ROIC)', color: '#C2588A', suffix: '%' },
+    { group: 'Profitability', dataKey: 'Return on Equity (ROE) (%)', title: 'Return on Equity (ROE)', color: '#1F9D6C', suffix: '%' },
+    { group: 'Profitability', dataKey: 'Return on Assets (ROA) (%)', title: 'Return on Assets (ROA)', color: '#259A91', suffix: '%' },
+    { group: 'Profitability', dataKey: 'Gross Profit Margin (%)', title: 'Gross Margin', color: '#9A5DB8', suffix: '%' },
+    { group: 'Profitability', dataKey: 'Net Profit Margin (%)', title: 'Net Margin', color: '#C8921E', suffix: '%' },
+    { group: 'Profitability', dataKey: 'Free Cash Flow Margin (%)', title: 'Free Cash Flow Margin', color: '#259A91', suffix: '%' },
 
     // 3. Balance Sheet & Solvency
-    { group: 'Balance Sheet', dataKey: 'Current Ratio', title: 'Current Ratio', color: '#10b981' },
-    { group: 'Balance Sheet', dataKey: 'Quick Ratio', title: 'Quick Ratio', color: '#06b6d4' },
-    { group: 'Balance Sheet', dataKey: 'Debt-to-Equity Ratio', title: 'Debt to Equity', color: '#f59e0b' },
-    { group: 'Balance Sheet', dataKey: 'Long-Term Debt to Equity', title: 'LT Debt to Equity', color: '#8b5cf6' },
-    { group: 'Balance Sheet', dataKey: 'Interest Coverage Ratio', title: 'Interest Coverage Ratio', color: '#ec4899' },
-    { group: 'Balance Sheet', dataKey: 'Asset Turnover', title: 'Asset Turnover', color: '#06b6d4' },
-    { group: 'Balance Sheet', dataKey: 'Diluted Shares Outstanding', title: 'Diluted Shares Outstanding', color: '#64748b', compact: true },
+    { group: 'Balance Sheet', dataKey: 'Current Ratio', title: 'Current Ratio', color: '#1F9D6C' },
+    { group: 'Balance Sheet', dataKey: 'Quick Ratio', title: 'Quick Ratio', color: '#259A91' },
+    { group: 'Balance Sheet', dataKey: 'Debt-to-Equity Ratio', title: 'Debt to Equity', color: '#C8921E' },
+    { group: 'Balance Sheet', dataKey: 'Long-Term Debt to Equity', title: 'LT Debt to Equity', color: '#9A5DB8' },
+    { group: 'Balance Sheet', dataKey: 'Interest Coverage Ratio', title: 'Interest Coverage Ratio', color: '#C2588A' },
+    { group: 'Balance Sheet', dataKey: 'Asset Turnover', title: 'Asset Turnover', color: '#259A91' },
+    { group: 'Balance Sheet', dataKey: 'Diluted Shares Outstanding', title: 'Diluted Shares Outstanding', color: '#6A6C74', compact: true },
 
     // 4. Earnings & Sales
-    { group: 'Earnings & Sales', dataKey: 'Diluted EPS', title: 'Diluted EPS ($)', color: '#10b981' },
-    { group: 'Earnings & Sales', dataKey: 'Total Revenue', title: 'Total Revenue (Sales)', color: '#06b6d4', compact: true },
-    { group: 'Earnings & Sales', dataKey: 'Revenue Growth YoY (%)', title: 'Revenue Growth YoY', color: '#8b5cf6', suffix: '%' },
-    { group: 'Earnings & Sales', dataKey: 'EPS Growth YoY (%)', title: 'EPS Growth YoY', color: '#ec4899', suffix: '%' },
-    { group: 'Earnings & Sales', dataKey: 'Operating Margin (%)', title: 'Operating Margin', color: '#f59e0b', suffix: '%' },
+    { group: 'Earnings & Sales', dataKey: 'Diluted EPS', title: 'Diluted EPS ($)', color: '#1F9D6C' },
+    { group: 'Earnings & Sales', dataKey: 'Total Revenue', title: 'Total Revenue (Sales)', color: '#259A91', compact: true },
+    { group: 'Earnings & Sales', dataKey: 'Revenue Growth YoY (%)', title: 'Revenue Growth YoY', color: '#9A5DB8', suffix: '%' },
+    { group: 'Earnings & Sales', dataKey: 'EPS Growth YoY (%)', title: 'EPS Growth YoY', color: '#C2588A', suffix: '%' },
+    { group: 'Earnings & Sales', dataKey: 'Operating Margin (%)', title: 'Operating Margin', color: '#C8921E', suffix: '%' },
 ];
 
 export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
@@ -150,9 +150,9 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
                                     onClick={() => setRatioRange(opt)}
                                     aria-pressed={ratioRange === opt}
                                     className={cn(
-                                        "px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase transition-all cursor-pointer",
+                                        "px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold uppercase transition-all cursor-pointer tracking-[0.06em]",
                                         ratioRange === opt
-                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                             : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
@@ -175,7 +175,7 @@ export const RatiosTab: React.FC<RatiosTabProps> = ({ symbol, isOpen }) => {
                                     className={cn(
                                         "px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
                                         ratioPeriod === opt.id
-                                            ? "bg-indigo-600 text-white shadow-sm"
+                                            ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                             : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >

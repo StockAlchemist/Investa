@@ -21,8 +21,8 @@ final class StockChartModel: ObservableObject {
 
     enum EventKind: String { case buy, sell, dividend, earnings
         var color: Color { switch self {
-            case .buy: return Color(hex: 0x16a34a); case .sell: return Color(hex: 0xdc2626)
-            case .dividend: return Color(hex: 0xd97706); case .earnings: return Color(hex: 0x9333ea) } }
+            case .buy: return Color(hex: 0x1F9D6C); case .sell: return Color(hex: 0xD2491F)
+            case .dividend: return Color(hex: 0xC8921E); case .earnings: return Color(hex: 0x9A5DB8) } }
         var letter: String { switch self { case .buy: return "B"; case .sell: return "S"; case .dividend: return "D"; case .earnings: return "E" } }
     }
     struct ChartEvent: Identifiable { let id = UUID(); let kind: EventKind; let y: Double; var label: String; var gain: Double?; var gainPct: Double? }
@@ -319,9 +319,9 @@ struct StockPriceChartView: View {
     enum ChartViewMode { case price, return_, tradingView }
     private struct Benchmark { let name: String; let key: String; let color: Color }
     private let benchmarks = [
-        Benchmark(name: "S&P 500", key: "^GSPC", color: Color(hex: 0xf59e0b)),
-        Benchmark(name: "NASDAQ", key: "^IXIC", color: Color(hex: 0x8b5cf6)),
-        Benchmark(name: "Dow Jones", key: "^DJI", color: Color(hex: 0x0ea5e9)),
+        Benchmark(name: "S&P 500", key: "^GSPC", color: Color(hex: 0xC8921E)),
+        Benchmark(name: "NASDAQ", key: "^IXIC", color: Color(hex: 0x9A5DB8)),
+        Benchmark(name: "Dow Jones", key: "^DJI", color: Color(hex: 0x7C93E8)),
     ]
     private let periods: [(String, String)] = [
         ("1D", "1d"), ("5D", "5d"), ("1M", "1m"), ("3M", "3m"), ("6M", "6m"), ("YTD", "ytd"),
@@ -426,7 +426,7 @@ struct StockPriceChartView: View {
                     Text(Fmt.currency(last.value, code: currency)).appFont(.title.bold())
                 }
                 Text("\(Fmt.currency(s.change, code: currency)) (\(String(format: "%.2f%%", s.pct)))")
-                    .appFont(.callout.weight(.medium)).foregroundStyle(s.change >= 0 ? .green : .red)
+                    .appFont(.callout.weight(.medium)).foregroundStyle(s.change >= 0 ? .up : .down)
             }
             // Never let a tight row wrap this into a multi-line column.
             .lineLimit(1).minimumScaleFactor(0.7)
@@ -437,8 +437,8 @@ struct StockPriceChartView: View {
 
     private var movingAverageChips: some View {
         HStack(spacing: 4) {
-            toggleChip("MA50", showSMA50, Color(hex: 0xf97316)) { showSMA50.toggle() }
-            toggleChip("MA200", showSMA200, Color(hex: 0x9333ea)) { showSMA200.toggle() }
+            toggleChip("MA50", showSMA50, Color(hex: 0xD07A2A)) { showSMA50.toggle() }
+            toggleChip("MA200", showSMA200, Color(hex: 0x9A5DB8)) { showSMA200.toggle() }
         }
     }
 
@@ -459,8 +459,8 @@ struct StockPriceChartView: View {
                     Button { period = value } label: {
                         Text(label).appFont(.caption.weight(.semibold))
                             .padding(.horizontal, 10).padding(.vertical, 4)
-                            .background(period == value ? Color.accentColor : Color.gray.opacity(0.15), in: Capsule())
-                            .foregroundStyle(period == value ? .white : .secondary)
+                            .background(period == value ? Color.brandTint : Color.inset, in: Capsule())
+                            .foregroundStyle(period == value ? Color.brandInk : Color.ink2)
                     }.buttonStyle(.plain)
                 }
             }
@@ -654,30 +654,30 @@ struct StockPriceChartView: View {
             // way down to it — past the plot, past the view's own frame — and
             // stretches this gradient over that whole invisible span.
             AreaMark(x: .value("X", x), yStart: .value("Base", lo), yEnd: .value("Price", p.value))
-                .foregroundStyle(.linearGradient(colors: [Color(hex: 0x2563eb).opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
+                .foregroundStyle(.linearGradient(colors: [Color(hex: 0x4A62E0).opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
             LineMark(x: .value("X", x), y: .value("Price", p.value))
-                .foregroundStyle(Color(hex: 0x2563eb)).lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)
+                .foregroundStyle(Color(hex: 0x4A62E0)).lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)
         }
         if showSMA50 {
             ForEach(pts.filter { $0.sma50 != nil }) { p in
                 let x = xVal(p.date)
                 LineMark(x: .value("X", x), y: .value("SMA50", p.sma50!), series: .value("s", "sma50"))
-                    .foregroundStyle(Color(hex: 0xf97316)).lineStyle(.init(lineWidth: 1.5))
+                    .foregroundStyle(Color(hex: 0xD07A2A)).lineStyle(.init(lineWidth: 1.5))
             }
         }
         if showSMA200 {
             ForEach(pts.filter { $0.sma200 != nil }) { p in
                 let x = xVal(p.date)
                 LineMark(x: .value("X", x), y: .value("SMA200", p.sma200!), series: .value("s", "sma200"))
-                    .foregroundStyle(Color(hex: 0x9333ea)).lineStyle(.init(lineWidth: 1.5))
+                    .foregroundStyle(Color(hex: 0x9A5DB8)).lineStyle(.init(lineWidth: 1.5))
             }
         }
         if let a = avgCost, a > 0 {
             RuleMark(y: .value("Avg Cost", a))
-                .foregroundStyle(Color(hex: 0x64748b)).lineStyle(.init(lineWidth: 1.5, dash: [5, 5]))
+                .foregroundStyle(Color(hex: 0x6A6C74)).lineStyle(.init(lineWidth: 1.5, dash: [5, 5]))
                 .annotation(position: .top, alignment: .trailing) {
                     Text("AVG COST: \(Fmt.currency(a, code: currency))")
-                        .appFont(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: 0x64748b))
+                        .appFont(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: 0x6A6C74))
                 }
         }
         ForEach(eventMarks) { m in
@@ -695,17 +695,17 @@ struct StockPriceChartView: View {
             let x = xVal(p.date)
             AreaMark(x: .value("X", x), y: .value("Return", p.returnPct))
                 .foregroundStyle(.linearGradient(stops: [
-                    .init(color: Color(hex: 0x10b981).opacity(0.15), location: 0),
-                    .init(color: Color(hex: 0x10b981).opacity(0.15), location: off),
-                    .init(color: Color(hex: 0xef4444).opacity(0.15), location: off),
-                    .init(color: Color(hex: 0xef4444).opacity(0.15), location: 1),
+                    .init(color: Color(hex: 0x1F9D6C).opacity(0.15), location: 0),
+                    .init(color: Color(hex: 0x1F9D6C).opacity(0.15), location: off),
+                    .init(color: Color(hex: 0xD2491F).opacity(0.15), location: off),
+                    .init(color: Color(hex: 0xD2491F).opacity(0.15), location: 1),
                 ], startPoint: .top, endPoint: .bottom))
             LineMark(x: .value("X", x), y: .value("Return", p.returnPct))
                 .foregroundStyle(.linearGradient(stops: [
-                    .init(color: Color(hex: 0x10b981), location: 0),
-                    .init(color: Color(hex: 0x10b981), location: off),
-                    .init(color: Color(hex: 0xef4444), location: off),
-                    .init(color: Color(hex: 0xef4444), location: 1),
+                    .init(color: Color(hex: 0x1F9D6C), location: 0),
+                    .init(color: Color(hex: 0x1F9D6C), location: off),
+                    .init(color: Color(hex: 0xD2491F), location: off),
+                    .init(color: Color(hex: 0xD2491F), location: 1),
                 ], startPoint: .top, endPoint: .bottom))
                 .lineStyle(.init(lineWidth: 2)).interpolationMethod(.monotone)
         }
@@ -744,12 +744,12 @@ struct StockPriceChartView: View {
         let tf = MarketTime.formatter(intraday ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy",
                                       timeZone: intraday ? MarketTime.defaultZone : MarketTime.utc)
         var rows: [ChartTooltipRow] = []
-        rows.append(ChartTooltipRow(color: Color(hex: 0x2563eb), label: symbol,
+        rows.append(ChartTooltipRow(color: Color(hex: 0x4A62E0), label: symbol,
                                     value: view == .price ? Fmt.currency(p.value, code: currency)
                                                           : String(format: "%.2f%%", p.returnPct)))
         rows.append(ChartTooltipRow(label: "Volume", value: formatVolume(p.volume)))
-        if view == .price, showSMA50, let s = p.sma50 { rows.append(ChartTooltipRow(color: Color(hex: 0xf97316), label: "SMA 50", value: Fmt.currency(s, code: currency))) }
-        if view == .price, showSMA200, let s = p.sma200 { rows.append(ChartTooltipRow(color: Color(hex: 0x9333ea), label: "SMA 200", value: Fmt.currency(s, code: currency))) }
+        if view == .price, showSMA50, let s = p.sma50 { rows.append(ChartTooltipRow(color: Color(hex: 0xD07A2A), label: "SMA 50", value: Fmt.currency(s, code: currency))) }
+        if view == .price, showSMA200, let s = p.sma200 { rows.append(ChartTooltipRow(color: Color(hex: 0x9A5DB8), label: "SMA 200", value: Fmt.currency(s, code: currency))) }
         if view == .price {
             for e in p.events {
                 var v = e.label

@@ -341,9 +341,9 @@ struct AccountGroupManagerView: View {
                 } label: {
                     Image(systemName: "trash")
                         .appFont(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(Color.down)
                         .padding(8)
-                        .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(Color.down.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help("Delete Group")

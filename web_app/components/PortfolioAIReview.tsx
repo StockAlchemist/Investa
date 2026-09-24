@@ -54,7 +54,7 @@ function ScoreCard({ title, score, icon: Icon, onClick }: { title: string; score
             className="metric-card p-4 text-left hover:bg-accent/5 transition-colors"
         >
             <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/80 font-semibold">
+                <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold">
                     <Icon className="w-3 h-3" />
                     <span>{title}</span>
                 </div>
@@ -243,7 +243,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                                 {overallGrade}
                             </div>
                             <div className="leading-tight">
-                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Overall</div>
+                                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/70 font-semibold">Overall</div>
                                 <div className={cn('text-sm font-bold tabular-nums', overallTone.text)}>
                                     {overallAvg.toFixed(1)}<span className="text-[10px] text-muted-foreground font-medium">/10</span>
                                 </div>
@@ -308,7 +308,6 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
             {/* Executive Summary */}
             <div className="metric-card card-shine p-6 relative overflow-hidden group">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                 <h3 className="section-label text-down mb-4 relative z-10">
                     Executive Summary
                 </h3>
@@ -328,7 +327,6 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {analysis?.business_quality && (
                     <div className="metric-card p-6 relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                         <h3 className="section-label mb-4 relative z-10">Business Quality</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <div className="markdown-content">
@@ -339,7 +337,6 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                 )}
                 {analysis?.value_discipline && (
                     <div className="metric-card p-6 relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                         <h3 className="section-label mb-4 relative z-10">Value Discipline</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <div className="markdown-content">
@@ -350,7 +347,6 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                 )}
                 {analysis?.thesis_integrity && (
                     <div className="metric-card p-6 relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                         <h3 className="section-label mb-4 relative z-10">Thesis Integrity</h3>
                         <div className="prose dark:prose-invert max-w-none text-sm text-muted-foreground opacity-90 relative z-10">
                             <div className="markdown-content">
@@ -362,7 +358,6 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
 
                 {/* Actionable Recommendations */}
                 <div className="metric-card card-shine lg:col-span-2 p-6 relative overflow-hidden group">
-                    <div className="absolute top-0 left-0 right-0 h-[2px] bg-rose-500 opacity-80" />
                     <h3 className="section-label text-down flex items-center gap-2 mb-4 relative z-10">
                         <Lightbulb className="w-4 h-4" />
                         Actionable Recommendations
@@ -423,7 +418,7 @@ export default function PortfolioAIReview({ currency, accounts }: PortfolioAIRev
                 </div>
             )}
 
-            <div className="text-[10px] text-muted-foreground/50 text-center mt-8 uppercase tracking-widest font-medium">
+            <div className="text-[11px] text-muted-foreground/50 text-center mt-8 uppercase tracking-[0.06em] font-medium">
                 AI-Generated Analysis • Not Financial Advice
             </div>
         </div>

@@ -156,8 +156,8 @@ struct WatchlistView: View {
                     Button { viewModel.activeId = wl.id } label: {
                         Text(wl.name).appFont(.callout.weight(.medium))
                             .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(viewModel.activeId == wl.id ? Color.accentColor : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
-                            .foregroundStyle(viewModel.activeId == wl.id ? .white : .primary)
+                            .background(viewModel.activeId == wl.id ? Color.brandTint : Color.inset, in: RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(viewModel.activeId == wl.id ? Color.brandInk : Color.ink2)
                     }.buttonStyle(.plain)
                 }
                 if creatingList {
@@ -176,8 +176,8 @@ struct WatchlistView: View {
                 Button { viewModel.activeId = wl.id } label: {
                     Text(wl.name).appFont(.callout.weight(.medium))
                         .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(viewModel.activeId == wl.id ? Color.accentColor : Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
-                        .foregroundStyle(viewModel.activeId == wl.id ? .white : .primary)
+                        .background(viewModel.activeId == wl.id ? Color.brandTint : Color.inset, in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(viewModel.activeId == wl.id ? Color.brandInk : Color.ink2)
                 }.buttonStyle(.plain)
             }
             if creatingList {
@@ -206,7 +206,7 @@ struct WatchlistView: View {
                     Button { renameName = currentListName; renaming = true } label: { Image(systemName: "pencil") }.buttonStyle(.borderless)
                     if viewModel.watchlists.count > 1 {
                         Button { Task { await viewModel.deleteList(currency: cur) } } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless).foregroundStyle(.red)
+                            .buttonStyle(.borderless).foregroundStyle(.down)
                     }
                 }
                 Spacer()
@@ -335,7 +335,7 @@ struct WatchlistView: View {
                 noteCell(item)
                 Spacer()
                 Button { Task { await viewModel.remove(symbol: item.symbol, currency: cur) } } label: { Image(systemName: "trash") }
-                    .buttonStyle(.borderless).foregroundStyle(.red)
+                    .buttonStyle(.borderless).foregroundStyle(.down)
             }
         }
         .padding(12)
@@ -390,11 +390,11 @@ struct WatchlistView: View {
             Text(item.intrinsicValue.map { Fmt.currency($0, code: item.currency ?? cur) } ?? "-").monospacedDigit().foregroundStyle(.secondary)
             sentimentCell(item.sentiment)
             Text(item.catalystCount > 0 ? "\(item.catalystCount)" : "–").appFont(.caption2)
-                .foregroundStyle(item.catalystCount > 0 ? .orange : .secondary)
+                .foregroundStyle(item.catalystCount > 0 ? .warn : .secondary)
             sparkline(item.sparkline).gridColumnAlignment(.leading)
             noteCell(item).gridColumnAlignment(.leading)
             Button { Task { await viewModel.remove(symbol: item.symbol, currency: cur) } } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless).foregroundStyle(.red).gridColumnAlignment(.trailing)
+                .buttonStyle(.borderless).foregroundStyle(.down).gridColumnAlignment(.trailing)
         }
         .appFont(.caption)
         .padding(.vertical, 6)
@@ -402,7 +402,7 @@ struct WatchlistView: View {
 
     @ViewBuilder private func sentimentCell(_ s: Double?) -> some View {
         if let s {
-            Circle().fill(s > 0.1 ? .green : (s < -0.1 ? .red : .gray)).frame(width: 8, height: 8)
+            Circle().fill(s > 0.1 ? .up : (s < -0.1 ? .down : .gray)).frame(width: 8, height: 8)
         } else { Text("–").foregroundStyle(.secondary) }
     }
 
@@ -410,7 +410,7 @@ struct WatchlistView: View {
         if data.count > 1 {
             let up = (data.last ?? 0) >= (data.first ?? 0)
             Chart(Array(data.enumerated()), id: \.offset) { i, v in
-                LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(up ? .green : .red)
+                LineMark(x: .value("i", i), y: .value("v", v)).foregroundStyle(up ? .up : .down)
             }
             .chartXAxis(.hidden).chartYAxis(.hidden).frame(width: 70, height: 22)
         } else { Text("–").foregroundStyle(.secondary) }

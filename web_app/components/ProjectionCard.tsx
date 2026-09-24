@@ -75,7 +75,6 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
 
     return (
         <div className="metric-card card-shine p-4 sm:p-6 mb-6 overflow-visible relative">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-indigo-500 opacity-80" />
 
             <div className="flex flex-col gap-1 md:flex-row md:justify-between md:items-center mb-4">
                 <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2 tracking-tight">
@@ -169,11 +168,11 @@ export default function ProjectionCard({ data, isLoading, isRefreshing, currency
                                     labelFormatter={(y) => `In ${y}Y`}
                                     contentStyle={{ background: 'var(--background)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
                                 />
-                                <Area dataKey="band90" stroke="none" fill="#6366f1" fillOpacity={0.12} isAnimationActive={false} />
-                                <Area dataKey="band50" stroke="none" fill="#6366f1" fillOpacity={0.22} isAnimationActive={false} />
+                                <Area dataKey="band90" stroke="none" fill="#4A62E0" fillOpacity={0.12} isAnimationActive={false} />
+                                <Area dataKey="band50" stroke="none" fill="#4A62E0" fillOpacity={0.22} isAnimationActive={false} />
                                 {/* Invisible line so "Expected" appears in the tooltip without cluttering the chart. */}
-                                <Line dataKey="expected" stroke="#6366f1" strokeOpacity={0} dot={false} activeDot={false} isAnimationActive={false} legendType="none" />
-                                <Line dataKey="median" stroke="#6366f1" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                                <Line dataKey="expected" stroke="#4A62E0" strokeOpacity={0} dot={false} activeDot={false} isAnimationActive={false} legendType="none" />
+                                <Line dataKey="median" stroke="#4A62E0" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                             </ComposedChart>
                         </ResponsiveContainer>
                     </div>

@@ -74,7 +74,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
     return (
         <div className={`${mobileViewMode === 'table' ? 'block' : 'hidden'} md:block overflow-x-auto [overflow-y:clip]`}>
             <table className="min-w-full">
-                <thead className="bg-secondary sticky top-0 z-30 font-semibold border-b">
+                <thead className="bg-slate-50 dark:bg-muted sticky top-0 z-30 border-b border-border">
                     <tr>
                         {visibleColumns.map(header => {
                             const isLeftAligned = ['Symbol', 'Account', 'Sector', 'Industry', 'Tags'].includes(header);
@@ -87,13 +87,13 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                     onDragStart={(e) => handleDragStart(e, header)}
                                     onDragOver={handleDragOver}
                                     onDrop={(e) => handleDrop(e, header)}
-                                    className={`px-6 py-3 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:bg-accent/10 cursor-pointer ${draggedColumn === header ? 'opacity-50 bg-secondary' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${isSticky ? 'sticky left-0 z-40 bg-secondary/95 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]' : ''}`}
+                                    className={`px-4 h-10 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:text-foreground cursor-pointer ${draggedColumn === header ? 'opacity-50' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${isSticky ? 'sticky left-0 z-40 bg-slate-50 dark:bg-muted shadow-[1px_0_0_hsl(var(--border))]' : ''}`}
                                     onClick={() => handleSort(header)}
                                 >
                                     <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
                                         {header}
                                         {sortConfig.key === header && (
-                                            <span className="text-cyan-500">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                            <span className="text-foreground">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                                         )}
                                     </div>
                                 </th>
@@ -106,7 +106,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                         Array.from({ length: 5 }).map((_, i) => (
                             <tr key={`skeleton-${i}`}>
                                 {visibleColumns.map((header, j) => (
-                                    <td key={`skeleton-${i}-${j}`} className="px-6 py-4">
+                                    <td key={`skeleton-${i}-${j}`} className="px-4 py-3.5">
                                         <Skeleton className="h-6 w-full ml-auto" />
                                     </td>
                                 ))}
@@ -117,7 +117,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                             <React.Fragment key={group.key}>
                                 {/* Group Header Row */}
                                 <tr
-                                    className="bg-secondary/30 hover:bg-secondary/50 cursor-pointer transition-colors"
+                                    className="bg-muted/60 hover:bg-muted cursor-pointer transition-colors"
                                     onClick={() => toggleGroup(group.key)}
                                 >
                                     <td colSpan={visibleColumns.length} className="px-4 py-3">
@@ -129,7 +129,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                                 )}
                                                 <span className="font-semibold text-foreground">{group.key}</span>
-                                                <span className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded-full">
+                                                <span className="text-xs text-ink-2 bg-card border border-border px-1.5 py-0.5 rounded-md">
                                                     {group.holdings.length}
                                                 </span>
                                             </div>
@@ -172,7 +172,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                 {/* Group Items */}
                                 {expandedGroups.has(group.key) && group.holdings.map((holding, idx) => (
                                     <React.Fragment key={`${holding.Symbol}-${idx}`}>
-                                        <tr className="hover:bg-accent/5 transition-colors">
+                                        <tr className="group/row border-b border-muted last:border-0 hover:bg-slate-50 dark:hover:bg-muted/40 transition-colors">
                                             {visibleColumns.map(header => {
                                                 const val = getValue(holding, header);
                                                 const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
@@ -181,7 +181,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                 const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
 
                                                 return (
-                                                    <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80' : ''} ${heatmapClass}`}>
+                                                    <td key={header} className={`px-4 py-2.5 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-card group-hover/row:bg-slate-50 dark:group-hover/row:bg-muted shadow-[1px_0_0_hsl(var(--border))]' : ''} ${heatmapClass}`}>
                                                         {header === '1M Trend' ? (
                                                             <div className="h-10 w-28 ml-auto">
                                                                 {val && Array.isArray(val) && val.length > 1 ? (
@@ -202,13 +202,13 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                             <div className="flex items-center gap-3">
                                                                 <WatchlistStar
                                                                     symbol={holding.Symbol}
-                                                                    className="text-muted-foreground hover:text-amber-400"
+                                                                    className="text-muted-foreground hover:text-amber-500"
                                                                     onIconClick={() => openStockDetail(holding.Symbol, currency)}
                                                                 />
                                                                 <div className="flex flex-col">
                                                                     <div className="flex items-center gap-2">
                                                                         <span
-                                                                            className="font-bold text-foreground hover:text-cyan-500 cursor-pointer transition-colors"
+                                                                            className="font-semibold text-foreground hover:text-primary cursor-pointer transition-colors"
                                                                             onClick={() => openStockDetail(holding.Symbol, currency)}
                                                                         >
                                                                             {holding.Symbol}
@@ -223,7 +223,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                                                 title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
                                                                             >
                                                                                 {expandedLots.has(getExpansionKey(holding)) ? (
-                                                                                    <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
+                                                                                    <ChevronDown className="w-3.5 h-3.5 text-foreground" />
                                                                                 ) : (
                                                                                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                                                                                 )}
@@ -233,7 +233,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                                     {holding.lots && holding.lots.length > 0 && (
                                                                         <div className="flex items-center gap-1 mt-0.5" title={`${holding.lots.length} tax lots`}>
                                                                             <Layers className="w-3 h-3 text-muted-foreground" />
-                                                                            <span className="text-[10px] text-muted-foreground">{holding.lots.length} Lots</span>
+                                                                            <span className="text-xs text-muted-foreground">{holding.lots.length} lots</span>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -343,7 +343,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                         const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                         return (
-                                                            <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}>
+                                                            <td key={header} className={`px-4 py-2 whitespace-nowrap text-xs text-right ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-card shadow-[1px_0_0_hsl(var(--border))]' : ''}`}>
                                                                 {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                                 {formatValue(val, header)}
                                                             </td>
@@ -359,7 +359,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                     ) : (
                         visibleHoldings.map((holding, idx) => (
                             <React.Fragment key={`${holding.Symbol}-${idx}`}>
-                                <tr className="hover:bg-accent/5 transition-colors">
+                                <tr className="group/row border-b border-muted last:border-0 hover:bg-slate-50 dark:hover:bg-muted/40 transition-colors">
                                     {visibleColumns.map(header => {
                                         const val = getValue(holding, header);
                                         const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
@@ -368,13 +368,13 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                         const heatmapClass = isHeatmap ? getHeatmapClass(val as number) : '';
 
                                         return (
-                                            <td key={header} className={`px-6 py-3 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-lg shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''} ${heatmapClass}`}>
+                                            <td key={header} className={`px-4 py-2.5 whitespace-nowrap text-sm ${isLeftAligned ? 'text-left' : 'text-right'} ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' || header === 'Account' ? 'text-foreground font-medium' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-card group-hover/row:bg-slate-50 dark:group-hover/row:bg-muted shadow-[1px_0_0_hsl(var(--border))]' : ''} ${heatmapClass}`}>
                                                 {header === '1M Trend' ? (
                                                     <div className="h-10 w-28 ml-auto">
                                                         {val && Array.isArray(val) && val.length > 1 ? (
                                                             <TrendSparkline data={val as number[]} />
                                                         ) : (
-                                                            <div className="h-full w-full flex items-center justify-center text-[10px] text-muted-foreground/30">
+                                                            <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
                                                                 no data
                                                             </div>
                                                         )}
@@ -406,7 +406,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                                         title={expandedLots.has(getExpansionKey(holding)) ? "Hide Lots" : "Show Lots"}
                                                                     >
                                                                         {expandedLots.has(getExpansionKey(holding)) ? (
-                                                                            <ChevronDown className="w-3.5 h-3.5 text-cyan-500" />
+                                                                            <ChevronDown className="w-3.5 h-3.5 text-foreground" />
                                                                         ) : (
                                                                             <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                                                                         )}
@@ -488,7 +488,7 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                                 const isNumeric = ['Quantity', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L', 'Unreal. G/L %', 'Cost Basis', 'Avg Cost'].some(k => header.includes(k) || header === k);
 
                                                 return (
-                                                    <td key={header} className={`px-6 py-2 whitespace-nowrap text-xs text-right border-none ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-background/90 backdrop-blur-md shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}>
+                                                    <td key={header} className={`px-4 py-2 whitespace-nowrap text-xs text-right border-none ${isNumeric ? 'tabular-nums' : ''} ${getCellClass(val, header) || (header === 'Symbol' ? 'pl-10 text-muted-foreground italic flex items-center justify-end gap-2' : 'text-muted-foreground')} ${header === 'Symbol' ? 'sticky left-0 z-20 bg-card shadow-[1px_0_0_hsl(var(--border))]' : ''}`}>
                                                         {header === 'Symbol' && <span className="text-[10px] opacity-50">↳</span>}
                                                         {formatValue(val, header)}
                                                     </td>

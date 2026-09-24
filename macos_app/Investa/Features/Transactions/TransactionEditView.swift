@@ -142,7 +142,7 @@ struct TransactionEditView: View {
                 }
 
                 if let error {
-                    Text(error).foregroundStyle(.red).appFont(.callout)
+                    Text(error).foregroundStyle(.down).appFont(.callout)
                 }
             }
             .formStyle(.grouped)

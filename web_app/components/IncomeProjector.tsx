@@ -18,8 +18,8 @@ interface IncomeProjectorProps {
 export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorProps) {
     // Generate unique colors for each symbol dynamically
     const colors = [
-        "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#ef4444",
-        "#f59e0b", "#10b981", "#6366f1", "#14b8a6", "#f97316"
+        "#259A91", "#4A62E0", "#9A5DB8", "#C2588A", "#D2491F",
+        "#C8921E", "#1F9D6C", "#4A62E0", "#259A91", "#D07A2A"
     ];
 
     // Memoize keys to prevent re-renders and ensure consistent order
@@ -47,7 +47,6 @@ export function IncomeProjector({ data, isLoading, currency }: IncomeProjectorPr
 
     return (
         <div className="metric-card card-shine mb-6 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500 opacity-80" />
 
             <div className="flex flex-row items-center justify-between p-6 pb-2 space-y-0">
                 <div>

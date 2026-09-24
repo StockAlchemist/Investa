@@ -141,7 +141,7 @@ const ConfidenceChip: React.FC<{ confidence: number }> = ({ confidence }) => {
             className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-muted border border-border/60"
             aria-label={`Valuation confidence ${Math.round(pct * 100)} percent`}
         >
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">Confidence</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Confidence</span>
             <span className="h-[5px] w-[54px] rounded-full bg-secondary/80 overflow-hidden">
                 <span className={cn('block h-full rounded-full transition-all', tone)} style={{ width: `${pct * 100}%` }} />
             </span>
@@ -211,7 +211,7 @@ const ValuationHeadlineCard: React.FC<ValuationHeadlineCardProps> = ({
         >
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[1.5px] text-muted-foreground">
+                    <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[1.5px] text-muted-foreground">
                         {valueLabel}
                         {hasAnyCustom && <Sparkles className="w-3 h-3 text-amber-500" />}
                     </p>
@@ -232,7 +232,7 @@ const ValuationHeadlineCard: React.FC<ValuationHeadlineCardProps> = ({
                 </div>
 
                 <div className={cn('rounded-2xl px-4 py-3 shrink-0 sm:text-right', mosBg)}>
-                    <p className="text-[10px] font-extrabold uppercase tracking-[1.5px] text-muted-foreground">
+                    <p className="text-[11px] font-semibold uppercase tracking-[1.5px] text-muted-foreground">
                         Margin of Safety
                     </p>
                     <p className={cn('mt-0.5 text-2xl sm:text-3xl font-bold tabular-nums', mosText)}>

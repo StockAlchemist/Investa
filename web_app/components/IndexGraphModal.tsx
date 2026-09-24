@@ -32,11 +32,11 @@ interface IndexGraphModalProps {
 }
 
 const COLORS = [
-    "#0097b2", // Investa Cyan
-    "#f59e0b", // Amber
-    "#8b5cf6", // Violet
-    "#e11d48", // Rose
-    "#10b981", // Emerald
+    "#259A91", // Investa Cyan
+    "#C8921E", // Amber
+    "#9A5DB8", // Violet
+    "#D2491F", // Rose
+    "#1F9D6C", // Emerald
 ];
 
 const CustomTooltip = ({ active, payload, label, period }: {
@@ -48,7 +48,7 @@ const CustomTooltip = ({ active, payload, label, period }: {
     if (active && payload && payload.length) {
         return (
             <div className="bg-background/60 backdrop-blur-xl p-4 rounded-2xl min-w-[280px] border border-border/50 shadow-2xl">
-                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 pb-2">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.06em] mb-3 pb-2">
                     {label === undefined ? '' : period === '1d' || period === '5d'
                         ? formatMarketTime(label, { year: period !== '1d' })
                         : formatCalendarDate(chartDay(label))}
@@ -179,7 +179,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                     <div className="p-8 pb-6 flex justify-between items-start">
                         <div className="flex items-center gap-6 text-foreground">
                             {/* Icon Stack/Placeholder */}
-                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#0097b2] to-primary flex items-center justify-center flex-shrink-0 p-3 overflow-hidden">
+                            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center flex-shrink-0 p-3 overflow-hidden">
                                 <TrendingUp className="w-full h-full text-white" />
                             </div>
 
@@ -255,7 +255,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                         className={cn(
                                             'px-3 py-1 text-[11px] font-bold rounded-full border transition-all',
                                             bench === tvSelected
-                                                ? 'bg-primary text-primary-foreground border-transparent shadow-sm'
+                                                ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                                 : 'text-muted-foreground border-border bg-secondary hover:text-foreground hover:bg-accent/10',
                                         )}
                                     >
@@ -289,7 +289,7 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                             className={cn(
                                                 'px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all whitespace-nowrap',
                                                 view === key
-                                                    ? 'bg-primary text-primary-foreground shadow-sm'
+                                                    ? 'bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none'
                                                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/10',
                                             )}
                                         >

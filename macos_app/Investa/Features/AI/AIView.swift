@@ -42,7 +42,7 @@ struct AIView: View {
     private static func md(_ s: String) -> AttributedString {
         (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
     }
-    private func tone(_ score: Double) -> Color { score == 0 ? .secondary : (score >= 8 ? .green : (score >= 5 ? .yellow : .red)) }
+    private func tone(_ score: Double) -> Color { score == 0 ? .secondary : (score >= 8 ? .up : (score >= 5 ? .warn : .down)) }
     private func letterGrade(_ avg: Double) -> String { avg >= 8.5 ? "A" : (avg >= 7 ? "B" : (avg >= 5.5 ? "C" : "D")) }
 
     var body: some View {
@@ -164,7 +164,7 @@ struct AIView: View {
                     banner(review.message ?? "AI service busy. Showing cached analysis.", warning: w)
                 }
                 scorecardGrid(review)
-                if let summary = review.summary, !summary.isEmpty { sectionCard("Executive Summary", summary, accent: .pink) }
+                if let summary = review.summary, !summary.isEmpty { sectionCard("Executive Summary", summary, accent: .plum) }
                 if !review.optimizations.isEmpty { optimizationHub(review.optimizations) }
                 detailedAnalysis(review)
             }
@@ -186,7 +186,7 @@ struct AIView: View {
                         banner(review.message ?? "AI service busy. Showing cached analysis.", warning: w)
                     }
                     scorecardGrid(review)
-                    if let summary = review.summary, !summary.isEmpty { sectionCard("Executive Summary", summary, accent: .pink) }
+                    if let summary = review.summary, !summary.isEmpty { sectionCard("Executive Summary", summary, accent: .plum) }
                     if !review.optimizations.isEmpty { optimizationHub(review.optimizations) }
                     detailedAnalysis(review)
                 }
@@ -199,7 +199,7 @@ struct AIView: View {
 
     private var unavailable: some View {
         VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle").appFont(.largeTitle).foregroundStyle(.red)
+            Image(systemName: "exclamationmark.triangle").appFont(.largeTitle).foregroundStyle(.down)
             Text("Unable to generate analysis").appFont(.headline)
             Text(viewModel.errorMessage ?? viewModel.review?.message ?? "Generate an AI review of your portfolio.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -212,8 +212,8 @@ struct AIView: View {
 
     private func banner(_ msg: String, warning: String) -> some View {
         HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(msg).appFont(.callout); Spacer() }
-            .foregroundStyle(.yellow).padding(12)
-            .background(.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(.warn).padding(12)
+            .background(.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Scorecard
@@ -223,7 +223,7 @@ struct AIView: View {
             scoreCard("Business Quality", "gem", review.scorecard?.businessQuality, review.analysis?.businessQuality)
             scoreCard("Value Discipline", "scalemass", review.scorecard?.valueDiscipline, review.analysis?.valueDiscipline)
             scoreCard("Thesis Integrity", "target", review.scorecard?.thesisIntegrity, review.analysis?.thesisIntegrity)
-            MetricCardView(card: MetricCard(title: "Key Actions", value: "\(review.recommendations?.count ?? review.optimizations.count)", tint: .pink))
+            MetricCardView(card: MetricCard(title: "Key Actions", value: "\(review.recommendations?.count ?? review.optimizations.count)", tint: .plum))
         }
     }
 
@@ -298,7 +298,7 @@ struct AIView: View {
 
     private func recommendationsCard(_ review: PortfolioAIReview) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Actionable Recommendations", systemImage: "lightbulb").appFont(.headline).foregroundStyle(.pink)
+            Label("Actionable Recommendations", systemImage: "lightbulb").appFont(.headline).foregroundStyle(.plum)
             if let rec = review.analysis?.actionableRecommendations, !rec.isEmpty {
                 Text(Self.md(rec)).appFont(.callout)
             } else if let recs = review.recommendations, !recs.isEmpty {
@@ -318,7 +318,7 @@ struct AIView: View {
 
     private func optimizationHub(_ opts: [PortfolioAIReview.Optimization]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("AI Optimization Hub", systemImage: "bolt.fill").appFont(.headline).foregroundStyle(.orange)
+            Label("AI Optimization Hub", systemImage: "bolt.fill").appFont(.headline).foregroundStyle(.warn)
             #if os(iOS)
             LazyVStack(spacing: 12) {
                 ForEach(opts) { opt in optimizationCard(opt) }
@@ -343,7 +343,7 @@ struct AIView: View {
                         Button {
                             appState.openStock(opt.symbol)
                         } label: {
-                            Text(opt.symbol).appFont(.caption2.weight(.bold)).foregroundStyle(.indigo)
+                            Text(opt.symbol).appFont(.caption2.weight(.bold)).foregroundStyle(.brand)
                         }
                         .buttonStyle(.plain)
                     } else if !opt.symbol.isEmpty {
@@ -380,11 +380,11 @@ struct AIView: View {
     }
     private func optTint(_ type: String) -> Color {
         switch type {
-        case "add": return .green; case "trim": return .orange; case "exit": return .red
-        case "monitor": return .indigo; default: return .purple
+        case "add": return .up; case "trim": return .warn; case "exit": return .down
+        case "monitor": return .brand; default: return .plum
         }
     }
-    private func priorityColor(_ p: String) -> Color { p == "High" ? .red : (p == "Medium" ? .orange : .indigo) }
+    private func priorityColor(_ p: String) -> Color { p == "High" ? .down : (p == "Medium" ? .warn : .brand) }
 
     // MARK: - Metric sheet
 
@@ -419,7 +419,7 @@ struct AIView: View {
 private struct BulletStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle().fill(.pink).frame(width: 4, height: 4)
+            Circle().fill(.plum).frame(width: 4, height: 4)
             configuration.title
         }
     }

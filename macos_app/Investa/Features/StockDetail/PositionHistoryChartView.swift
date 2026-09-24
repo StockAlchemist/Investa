@@ -50,9 +50,9 @@ struct PositionHistoryChartView: View {
     }
 
     private let benchmarks = [
-        Benchmark(name: "S&P 500", color: Color(hex: 0xf59e0b)),
-        Benchmark(name: "NASDAQ", color: Color(hex: 0x8b5cf6)),
-        Benchmark(name: "Dow Jones", color: Color(hex: 0x0ea5e9)),
+        Benchmark(name: "S&P 500", color: Color(hex: 0xC8921E)),
+        Benchmark(name: "NASDAQ", color: Color(hex: 0x9A5DB8)),
+        Benchmark(name: "Dow Jones", color: Color(hex: 0x7C93E8)),
     ]
 
     private let periods: [(String, String)] = [
@@ -155,7 +155,7 @@ struct PositionHistoryChartView: View {
     private var titleGroup: some View {
         HStack(spacing: 6) {
             Image(systemName: viewMode == .value ? "chart.pie.fill" : "chart.line.uptrend.xyaxis")
-                .foregroundStyle(viewMode == .value ? Color.indigo : Color.green)
+                .foregroundStyle(viewMode == .value ? Color.brand : Color.up)
                 .appFont(.system(size: 14))
             Text("Position History")
                 .appFont(.headline)
@@ -172,12 +172,12 @@ struct PositionHistoryChartView: View {
                 badge("Closed Position", tint: .secondary, background: Color.secondary.opacity(0.12))
             } else if viewMode == .value {
                 badge("\(last.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(last.unrealizedGain, currency: currency)) (\(Fmt.percent(last.unrealizedGainPct)))",
-                      tint: last.unrealizedGain >= 0 ? .green : .red,
-                      background: (last.unrealizedGain >= 0 ? Color.green : Color.red).opacity(0.12))
+                      tint: last.unrealizedGain >= 0 ? .up : .down,
+                      background: (last.unrealizedGain >= 0 ? Color.up : Color.down).opacity(0.12))
             } else {
                 badge("\(last.returnPct >= 0 ? "+" : "")\(Fmt.percent(last.returnPct))",
-                      tint: last.returnPct >= 0 ? .green : .red,
-                      background: (last.returnPct >= 0 ? Color.green : Color.red).opacity(0.12))
+                      tint: last.returnPct >= 0 ? .up : .down,
+                      background: (last.returnPct >= 0 ? Color.up : Color.down).opacity(0.12))
             }
         }
     }
@@ -212,8 +212,8 @@ struct PositionHistoryChartView: View {
                         Text(label)
                             .appFont(.caption2.weight(.semibold))
                             .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(period == value ? Color.accentColor : Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-                            .foregroundStyle(period == value ? .white : .secondary)
+                            .background(period == value ? Color.brandTint : Color.inset, in: RoundedRectangle(cornerRadius: 6))
+                            .foregroundStyle(period == value ? Color.brandInk : Color.ink2)
                     }
                     .buttonStyle(.plain)
                 }
@@ -307,7 +307,7 @@ struct PositionHistoryChartView: View {
                         )
                         .foregroundStyle(
                             .linearGradient(
-                                colors: [Color.indigo.opacity(0.30), Color.indigo.opacity(0.02)],
+                                colors: [Color.brand.opacity(0.30), Color.brand.opacity(0.02)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -324,7 +324,7 @@ struct PositionHistoryChartView: View {
                             y: .value("Market Value", p.value),
                             series: .value("Series", "Market Value")
                         )
-                        .foregroundStyle(Color.indigo)
+                        .foregroundStyle(Color.brand)
                         .lineStyle(.init(lineWidth: 2.0))
                         .interpolationMethod(.monotone)
                     }
@@ -339,7 +339,7 @@ struct PositionHistoryChartView: View {
                                 y: .value("Cost Basis", p.costBasis),
                                 series: .value("Series", "Cost Basis")
                             )
-                            .foregroundStyle(Color(hex: 0x94a3b8))
+                            .foregroundStyle(Color(hex: 0x8E9099))
                             .lineStyle(.init(lineWidth: 1.5, dash: [4, 4]))
                             .interpolationMethod(.monotone)
                         }
@@ -348,7 +348,7 @@ struct PositionHistoryChartView: View {
             } else {
                 // Return % View
                 let isPos = (pts.last?.returnPct ?? 0) >= 0
-                let strokeColor = isPos ? Color.green : Color.red
+                let strokeColor = isPos ? Color.up : Color.down
 
                 RuleMark(y: .value("Zero", 0))
                     .foregroundStyle(Color.secondary.opacity(0.35))
@@ -389,7 +389,7 @@ struct PositionHistoryChartView: View {
 
                 // 3. Benchmark overlays
                 ForEach(selectedBenchmarks, id: \.self) { bmName in
-                    let bmColor = benchmarks.first(where: { $0.name == bmName })?.color ?? .orange
+                    let bmColor = benchmarks.first(where: { $0.name == bmName })?.color ?? .warn
                     ForEach(pts) { p in
                         if let d = p.parsedDate, let bVal = p.benchmarks[bmName] {
                             LineMark(
@@ -444,11 +444,11 @@ struct PositionHistoryChartView: View {
         var rows: [ChartTooltipRow] = []
 
         if viewMode == .value {
-            rows.append(ChartTooltipRow(color: .indigo, label: "Market Value", value: Fmt.currency(p.value, currency: currency)))
-            rows.append(ChartTooltipRow(color: Color(hex: 0x94a3b8), label: "Cost Basis", value: Fmt.currency(p.costBasis, currency: currency)))
+            rows.append(ChartTooltipRow(color: .brand, label: "Market Value", value: Fmt.currency(p.value, currency: currency)))
+            rows.append(ChartTooltipRow(color: Color(hex: 0x8E9099), label: "Cost Basis", value: Fmt.currency(p.costBasis, currency: currency)))
             if p.costBasis > 0 {
                 rows.append(ChartTooltipRow(
-                    color: p.unrealizedGain >= 0 ? .green : .red,
+                    color: p.unrealizedGain >= 0 ? .up : .down,
                     label: "Unrealized G/L",
                     value: "\(p.unrealizedGain >= 0 ? "+" : "")\(Fmt.currency(p.unrealizedGain, currency: currency)) (\(Fmt.percent(p.unrealizedGainPct)))"
                 ))
@@ -459,13 +459,13 @@ struct PositionHistoryChartView: View {
         } else {
             let isPos = p.returnPct >= 0
             rows.append(ChartTooltipRow(
-                color: isPos ? .green : .red,
+                color: isPos ? .up : .down,
                 label: "Position Return",
                 value: "\(isPos ? "+" : "")\(Fmt.percent(p.returnPct))"
             ))
             for bmName in selectedBenchmarks {
                 if let bVal = p.benchmarks[bmName] {
-                    let bmColor = benchmarks.first(where: { $0.name == bmName })?.color ?? .orange
+                    let bmColor = benchmarks.first(where: { $0.name == bmName })?.color ?? .warn
                     rows.append(ChartTooltipRow(
                         color: bmColor,
                         label: bmName,

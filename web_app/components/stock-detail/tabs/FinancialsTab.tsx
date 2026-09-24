@@ -98,7 +98,7 @@ export const FinancialsTab: React.FC<FinancialsTabProps> = ({ symbol, fundamenta
                         className={cn(
                             "flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 cursor-pointer",
                             finType === btn.id
-                                ? "bg-indigo-500 text-white"
+                                ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgb(22_23_27/0.08)] dark:bg-input dark:shadow-none"
                                 : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                         )}
                         title={btn.fullLabel}
@@ -276,7 +276,7 @@ export const FinancialsTab: React.FC<FinancialsTabProps> = ({ symbol, fundamenta
                                     onClick={() => setFinRange(opt)}
                                     aria-pressed={range === opt}
                                     className={cn(
-                                        "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-all cursor-pointer",
+                                        "px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase transition-all cursor-pointer tracking-[0.06em]",
                                         range === opt
                                             ? "bg-white dark:bg-zinc-800 text-foreground shadow-sm"
                                             : "text-muted-foreground hover:text-foreground"

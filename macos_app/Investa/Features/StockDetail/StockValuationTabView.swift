@@ -147,7 +147,7 @@ struct StockValuationTabView: View {
                 valuationSummaryCards(iv)
 
                 if let note = iv.valuationNote {
-                    let tint: Color = iv.isRefusal ? .secondary : .orange
+                    let tint: Color = iv.isRefusal ? .secondary : .warn
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: iv.isRefusal ? "info.circle.fill" : "exclamationmark.triangle.fill")
                             .foregroundStyle(tint).appFont(.title3)
@@ -158,7 +158,7 @@ struct StockValuationTabView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
-                    .background((iv.isRefusal ? Color.secondary : Color.orange).opacity(0.1),
+                    .background((iv.isRefusal ? Color.secondary : Color.warn).opacity(0.1),
                                 in: RoundedRectangle(cornerRadius: 12))
                 }
 
@@ -196,12 +196,12 @@ struct StockValuationTabView: View {
     private func customParametersAlertBar() -> some View {
         HStack(spacing: 12) {
             Image(systemName: "sparkles")
-                .foregroundStyle(.orange)
+                .foregroundStyle(.warn)
                 .appFont(.title3)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Custom Parameters Active")
                     .appFont(.caption.weight(.bold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.warn)
                 Text("Intrinsic values and composite score are recalculated in real time.")
                     .appFont(.caption2)
                     .foregroundStyle(.secondary)
@@ -219,13 +219,13 @@ struct StockValuationTabView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color.orange, in: Capsule())
+                .background(Color.warn, in: Capsule())
             }
             .buttonStyle(.plain)
         }
         .padding(14)
-        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+        .background(Color.warn.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.warn.opacity(0.3), lineWidth: 1))
     }
 
     @ViewBuilder
@@ -267,7 +267,7 @@ struct StockValuationTabView: View {
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color.inset, in: RoundedRectangle(cornerRadius: 10))
                 }
             }
 
@@ -290,42 +290,42 @@ struct StockValuationTabView: View {
     private func valuationModelCards(_ iv: IntrinsicValueResponse, models: IntrinsicValueResponse.Models) -> some View {
         Group {
             if showsModel("dcf"), let dcf = models.dcf {
-                dcfCard("Discounted Cash Flow", "chart.line.uptrend.xyaxis", .green, dcf, modelKey: "dcf", iv: iv)
+                dcfCard("Discounted Cash Flow", "chart.line.uptrend.xyaxis", .up, dcf, modelKey: "dcf", iv: iv)
             }
             if showsModel("dcfo"), let dcfo = models.dcfo {
-                dcfoCard("Discounted Cash from Operations", "dollarsign.circle", .teal, dcfo, modelKey: "dcfo", iv: iv)
+                dcfoCard("Discounted Cash from Operations", "dollarsign.circle", .dataTeal, dcfo, modelKey: "dcfo", iv: iv)
             }
             if showsModel("dni"), let dni = models.dni {
-                dniCard("Discounted Net Income", "building.columns", .blue, dni, modelKey: "dni", iv: iv)
+                dniCard("Discounted Net Income", "building.columns", .brand, dni, modelKey: "dni", iv: iv)
             }
             if showsModel("mean_pe"), let pe = models.meanPe {
-                meanPeCard("Mean P/E Ratio", "percent", .indigo, pe, modelKey: "mean_pe", iv: iv)
+                meanPeCard("Mean P/E Ratio", "percent", .brand, pe, modelKey: "mean_pe", iv: iv)
             }
             if showsModel("peg"), let peg = models.peg {
-                pegCard("PEG Ratio Fair Value", "bolt", .yellow, peg, modelKey: "peg", iv: iv)
+                pegCard("PEG Ratio Fair Value", "bolt", .warn, peg, modelKey: "peg", iv: iv)
             }
             if showsModel("mean_pb"), let pb = models.meanPb {
-                meanPbCard("Mean P/B Ratio", "book", .orange, pb, modelKey: "mean_pb", iv: iv)
+                meanPbCard("Mean P/B Ratio", "book", .warn, pb, modelKey: "mean_pb", iv: iv)
             }
         }
         Group {
             if showsModel("mean_ps"), let ps = models.meanPs {
-                meanPsCard("Mean P/S Ratio", "chart.line.uptrend.xyaxis", .pink, ps, modelKey: "mean_ps", iv: iv)
+                meanPsCard("Mean P/S Ratio", "chart.line.uptrend.xyaxis", .plum, ps, modelKey: "mean_ps", iv: iv)
             }
             if showsModel("psg"), let psg = models.psg {
-                psgCard("Price-to-Sales Growth (PSG)", "sparkles", .purple, psg, modelKey: "psg", iv: iv)
+                psgCard("Price-to-Sales Growth (PSG)", "sparkles", .plum, psg, modelKey: "psg", iv: iv)
             }
             if showsModel("graham"), let g = models.graham {
-                grahamCard("Graham Formula", "scalemass", .orange, g, modelKey: "graham", iv: iv)
+                grahamCard("Graham Formula", "scalemass", .warn, g, modelKey: "graham", iv: iv)
             }
             if showsModel("ddm"), let ddm = models.ddm {
-                ddmCard("Dividend Discount Model", "dollarsign.circle", .purple, ddm, modelKey: "ddm", iv: iv)
+                ddmCard("Dividend Discount Model", "dollarsign.circle", .plum, ddm, modelKey: "ddm", iv: iv)
             }
             if showsModel("lynch"), let lynch = models.lynch {
-                lynchCard("Peter Lynch Fair Value", "equal.circle", .cyan, lynch, modelKey: "lynch", iv: iv)
+                lynchCard("Peter Lynch Fair Value", "equal.circle", .dataTeal, lynch, modelKey: "lynch", iv: iv)
             }
             if showsModel("epv"), let epv = models.epv {
-                epvCard("Earnings Power Value (EPV Floor)", "anchor", .blue, epv, modelKey: "epv", iv: iv)
+                epvCard("Earnings Power Value (EPV Floor)", "anchor", .brand, epv, modelKey: "epv", iv: iv)
             }
         }
     }
@@ -355,11 +355,11 @@ struct StockValuationTabView: View {
             HStack(spacing: 4) {
                 SectionLabel(title: label)
                 if isCustom {
-                    Circle().fill(Color.orange).frame(width: 5, height: 5)
+                    Circle().fill(Color.warn).frame(width: 5, height: 5)
                 }
             }
             Text(val).appFont(isNote ? .caption : .subheadline.weight(.semibold))
-                .foregroundStyle(isCustom ? Color.orange : (isNote ? Color.secondary : .primary))
+                .foregroundStyle(isCustom ? Color.warn : (isNote ? Color.secondary : .primary))
             if isCustom, let defVal {
                 Text("Default: \(defVal)")
                     .appFont(.system(size: 9))
@@ -821,14 +821,14 @@ struct StockValuationTabView: View {
 
     private var bestFitBadge: some View {
         HStack(spacing: 6) {
-            Image(systemName: "sparkles").foregroundStyle(.yellow)
+            Image(systemName: "sparkles").foregroundStyle(.warn)
             Text("Best-Fit Valuation Method")
                 .appFont(.caption.weight(.bold))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(.brand)
                 .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(Color.indigo.opacity(0.15), in: Capsule())
+        .background(Color.brand.opacity(0.15), in: Capsule())
     }
 
     @ViewBuilder
@@ -837,12 +837,12 @@ struct StockValuationTabView: View {
             HStack(spacing: 8) {
                 Text(Fmt.currency(val, code: nativeCur))
                     .appFont(.headline.weight(.bold))
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(.brand)
                 if let cp = currentPrice, cp > 0 {
                     let up = ((val - cp) / cp) * 100
                     Text(Fmt.percent(up, includeSign: true))
                         .appFont(.caption.weight(.bold))
-                        .foregroundStyle(up >= 0 ? Color.green : Color.red)
+                        .foregroundStyle(up >= 0 ? Color.up : Color.down)
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
@@ -880,8 +880,8 @@ struct StockValuationTabView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.indigo.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.indigo.opacity(0.2), lineWidth: 1))
+        .background(Color.brand.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.brand.opacity(0.2), lineWidth: 1))
     }
 
     private func valuationSpectrumSection(_ iv: IntrinsicValueResponse) -> some View {
@@ -1130,7 +1130,7 @@ private struct ValuationHeadlineCard: View {
             }
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
-            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+            .background(Color.inset, in: RoundedRectangle(cornerRadius: 12))
         }
     }
 
@@ -1246,7 +1246,7 @@ private struct ValuationFactChip: View {
         .lineLimit(1)
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(Color.secondary.opacity(0.09), in: Capsule())
+        .background(Color.inset, in: Capsule())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label) \(value)")
     }
@@ -1489,7 +1489,7 @@ private struct ConfidenceMeter: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
-        .background(Color.secondary.opacity(0.09), in: Capsule())
+        .background(Color.inset, in: Capsule())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Valuation confidence \(Int((pct * 100).rounded())) percent")
     }
@@ -1568,7 +1568,7 @@ private struct BlendCompositionCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            .background(Color.inset, in: RoundedRectangle(cornerRadius: 12))
             // Must be the *offered* width. See `readingContainerWidth`.
             .readingContainerWidth { width = $0 }
         }
@@ -1592,7 +1592,7 @@ private struct BlendCompositionCard: View {
                     .lineLimit(1)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                    .background(Color.inset, in: RoundedRectangle(cornerRadius: 5))
             }
         }
     }
@@ -1626,7 +1626,7 @@ private struct BlendCompositionCard: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(10)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.inset, in: RoundedRectangle(cornerRadius: 10))
     }
 
     /// A held-out model, as a heading and a reason rather than one paragraph
@@ -1688,14 +1688,14 @@ private struct LimitationCallout: View {
                 .accessibilityHint(expanded ? "Collapse" : "Expand")
             }
             if expanded || !collapsible {
-                limitationLine("checkmark.seal.fill", .green, "Best Suited For", bestSuitedFor)
+                limitationLine("checkmark.seal.fill", .up, "Best Suited For", bestSuitedFor)
                 Divider().opacity(0.5)
-                limitationLine("exclamationmark.triangle.fill", .orange, "Key Caveats", keyCaveats)
+                limitationLine("exclamationmark.triangle.fill", .warn, "Key Caveats", keyCaveats)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.inset, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func limitationLine(_ icon: String, _ tint: Color, _ label: String, _ text: String) -> some View {
@@ -1747,7 +1747,7 @@ struct ValuationModelCard<Details: View>: View {
             modelCardHeader()
 
             if let e = model.error {
-                Text(e).appFont(.callout).foregroundStyle(.red)
+                Text(e).appFont(.callout).foregroundStyle(.down)
             } else {
                 if editingModelKeys.contains(modelKey) {
                     modelParameterEditor()
@@ -1855,7 +1855,7 @@ struct ValuationModelCard<Details: View>: View {
                 }
 
                 HStack(spacing: 8) {
-                    scenarioPill(label: "Bear (10th)", value: mc.bear, color: .red)
+                    scenarioPill(label: "Bear (10th)", value: mc.bear, color: .down)
                     scenarioPill(label: "Median (50th)", value: mc.base, color: Color.brandIndigo)
                     scenarioPill(label: "Bull (90th)", value: mc.bull, color: Color.brandEmerald)
                 }
@@ -1910,17 +1910,17 @@ struct ValuationModelCard<Details: View>: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             if let p = primaryBadge {
-                Text(p).appFont(.system(size: 9, weight: .bold)).foregroundStyle(.green)
+                Text(p).appFont(.system(size: 9, weight: .bold)).foregroundStyle(.up)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.green.opacity(0.15), in: Capsule())
+                    .background(Color.up.opacity(0.15), in: Capsule())
                     .fixedSize()
             }
             if isCustom {
                 Text("CUSTOM")
                     .appFont(.system(size: 8, weight: .black))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.warn)
                     .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.15), in: Capsule())
+                    .background(Color.warn.opacity(0.15), in: Capsule())
                     .fixedSize()
             }
         }
@@ -1931,11 +1931,11 @@ struct ValuationModelCard<Details: View>: View {
         if model.error == nil, let v = activeVal {
             Text(Fmt.currency(v, code: nativeCur))
                 .appFont(.subheadline.weight(.bold))
-                .foregroundStyle(isCustom ? Color.orange : color)
+                .foregroundStyle(isCustom ? Color.warn : color)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 10).padding(.vertical, 4)
-                .background((isCustom ? Color.orange : color).opacity(0.15), in: Capsule())
+                .background((isCustom ? Color.warn : color).opacity(0.15), in: Capsule())
         }
     }
 
@@ -1949,11 +1949,11 @@ struct ValuationModelCard<Details: View>: View {
                 Text(isEditing ? "Done" : "Edit")
             }
             .appFont(.system(size: 10, weight: .bold))
-            .foregroundStyle(isEditing ? .white : Color.primary)
+            .foregroundStyle(isEditing ? Color.primary : Color.ink2)
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(isEditing ? Color.indigo : Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+            .background(isEditing ? Color.segmentOn : Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
 
@@ -1978,7 +1978,7 @@ struct ValuationModelCard<Details: View>: View {
             let diff = ((actVal - defVal) / defVal) * 100
             Text("Def: \(Fmt.currency(defVal, code: nativeCur)) (\(Fmt.percent(diff, includeSign: true)))")
                 .appFont(.system(size: 10, weight: .bold))
-                .foregroundStyle(diff >= 0 ? Color.green : Color.red)
+                .foregroundStyle(diff >= 0 ? Color.up : Color.down)
                 .lineLimit(1)
         }
     }
@@ -2039,14 +2039,14 @@ struct ValuationModelCard<Details: View>: View {
                 HStack {
                     Label("Custom Parameters", systemImage: "slider.horizontal.3")
                         .appFont(.caption.weight(.bold))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(.brand)
                     Spacer()
                     if hasModifications {
                         Button("Reset Card Defaults") {
                             customOverrides.removeValue(forKey: modelKey)
                         }
                         .appFont(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.warn)
                         .buttonStyle(.plain)
                     }
                 }
@@ -2079,7 +2079,7 @@ struct ValuationModelCard<Details: View>: View {
                                         }
                                     }
                                     .appFont(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(.warn)
                                     .buttonStyle(.plain)
                                 }
                             }
@@ -2099,7 +2099,7 @@ struct ValuationModelCard<Details: View>: View {
 
                                 Text(displayVal)
                                     .appFont(.subheadline.weight(.bold))
-                                    .foregroundStyle(isCustom ? Color.orange : Color.primary)
+                                    .foregroundStyle(isCustom ? Color.warn : Color.primary)
 
                                 Spacer()
 
@@ -2124,8 +2124,8 @@ struct ValuationModelCard<Details: View>: View {
                                 .labelsHidden()
                             }
                             .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(isCustom ? Color.orange.opacity(0.08) : Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isCustom ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1))
+                            .background(isCustom ? Color.warn.opacity(0.08) : Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isCustom ? Color.warn.opacity(0.5) : Color.clear, lineWidth: 1))
 
                             let displayDef = cfg.isPercent
                                 ? Fmt.percent(defVal * 100.0)
@@ -2145,7 +2145,7 @@ struct ValuationModelCard<Details: View>: View {
                 }
             }
             .padding(14)
-            .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+            .background(Color.inset, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.15), lineWidth: 1))
         }
     }
@@ -2178,7 +2178,7 @@ private struct ValuationSpectrumSection: View {
     /// tally stranded beside it. `ViewThatFits` measures the row at its one-line
     /// ideal width and falls back to stacking.
     private func spectrumHeader(undervaluedCount: Int, total: Int, currentPrice: Double) -> some View {
-        let tint = undervaluedCount > total / 2 ? Color.green : Color.orange
+        let tint = undervaluedCount > total / 2 ? Color.up : Color.warn
         let title = VStack(alignment: .leading, spacing: 4) {
             Label("Valuation Comparison Spectrum", systemImage: "chart.bar.xaxis")
                 .appFont(.headline)
@@ -2233,18 +2233,18 @@ private struct ValuationSpectrumSection: View {
                     }
                 }
 
-                addSpectrum("dcf", "Discounted Cash Flow (DCF)", models.dcf?.intrinsicValue, models.dcf?.mc, .green)
-                addSpectrum("dcfo", "Discounted Cash from Operations (D-CFO)", models.dcfo?.intrinsicValue, models.dcfo?.mc, .teal)
-                addSpectrum("dni", "Discounted Net Income (D-NI)", models.dni?.intrinsicValue, models.dni?.mc, .blue)
-                addSpectrum("mean_pe", "Mean P/E Valuation", models.meanPe?.intrinsicValue, models.meanPe?.mc, .indigo)
-                addSpectrum("peg", "PEG Ratio Fair Value", models.peg?.intrinsicValue, models.peg?.mc, .yellow)
-                addSpectrum("mean_pb", "Mean P/B Valuation", models.meanPb?.intrinsicValue, models.meanPb?.mc, .orange)
-                addSpectrum("mean_ps", "Mean P/S Valuation", models.meanPs?.intrinsicValue, models.meanPs?.mc, .pink)
-                addSpectrum("psg", "Price-to-Sales Growth (PSG)", models.psg?.intrinsicValue, models.psg?.mc, .purple)
-                addSpectrum("graham", "Graham Formula", models.graham?.intrinsicValue, models.graham?.mc, .orange)
-                addSpectrum("ddm", "Dividend Discount Model (DDM)", models.ddm?.intrinsicValue, models.ddm?.mc, .purple)
-                addSpectrum("lynch", "Peter Lynch Fair Value", models.lynch?.intrinsicValue, models.lynch?.mc, .cyan)
-                addSpectrum("epv", "Earnings Power Value (EPV)", models.epv?.intrinsicValue, models.epv?.mc, .cyan)
+                addSpectrum("dcf", "Discounted Cash Flow (DCF)", models.dcf?.intrinsicValue, models.dcf?.mc, .up)
+                addSpectrum("dcfo", "Discounted Cash from Operations (D-CFO)", models.dcfo?.intrinsicValue, models.dcfo?.mc, .dataTeal)
+                addSpectrum("dni", "Discounted Net Income (D-NI)", models.dni?.intrinsicValue, models.dni?.mc, .brand)
+                addSpectrum("mean_pe", "Mean P/E Valuation", models.meanPe?.intrinsicValue, models.meanPe?.mc, .brand)
+                addSpectrum("peg", "PEG Ratio Fair Value", models.peg?.intrinsicValue, models.peg?.mc, .warn)
+                addSpectrum("mean_pb", "Mean P/B Valuation", models.meanPb?.intrinsicValue, models.meanPb?.mc, .warn)
+                addSpectrum("mean_ps", "Mean P/S Valuation", models.meanPs?.intrinsicValue, models.meanPs?.mc, .plum)
+                addSpectrum("psg", "Price-to-Sales Growth (PSG)", models.psg?.intrinsicValue, models.psg?.mc, .plum)
+                addSpectrum("graham", "Graham Formula", models.graham?.intrinsicValue, models.graham?.mc, .warn)
+                addSpectrum("ddm", "Dividend Discount Model (DDM)", models.ddm?.intrinsicValue, models.ddm?.mc, .plum)
+                addSpectrum("lynch", "Peter Lynch Fair Value", models.lynch?.intrinsicValue, models.lynch?.mc, .dataTeal)
+                addSpectrum("epv", "Earnings Power Value (EPV)", models.epv?.intrinsicValue, models.epv?.mc, .dataTeal)
             }
             return items
         }()
@@ -2302,19 +2302,19 @@ private struct ValuationSpectrumSection: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             HStack(spacing: 4) {
-                                Image(systemName: "sparkles").foregroundStyle(isBlendedCustom ? .orange : .yellow)
+                                Image(systemName: "sparkles").foregroundStyle(isBlendedCustom ? .warn : .warn)
                                 Text(isBlendedCustom ? "Custom Blended Value" : "Blended Intrinsic Value")
                                     .appFont(.caption.weight(.bold))
                             }
                             Spacer()
                             Text(Fmt.currency(avg, code: nativeCur))
                                 .appFont(.caption.weight(.bold))
-                                .foregroundStyle(isBlendedCustom ? Color.orange : Color.indigo)
+                                .foregroundStyle(isBlendedCustom ? Color.warn : Color.brand)
                             Text(Fmt.percent(up, includeSign: true))
                                 .appFont(.caption2.weight(.bold))
-                                .foregroundStyle(isUnder ? Color.green : Color.red)
+                                .foregroundStyle(isUnder ? Color.up : Color.down)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background((isUnder ? Color.green : Color.red).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                                .background((isUnder ? Color.up : Color.down).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                         }
 
                         GeometryReader { geo in
@@ -2329,14 +2329,14 @@ private struct ValuationSpectrumSection: View {
                                     let bearX = max(0, min(w, CGFloat((bear - minBound) / spread) * w))
                                     let bullX = max(0, min(w, CGFloat((bull - minBound) / spread) * w))
                                     if bearX.isFinite && bullX.isFinite {
-                                        Capsule().fill(Color.indigo.opacity(0.3))
+                                        Capsule().fill(Color.brand.opacity(0.3))
                                             .frame(width: max(2, abs(bullX - bearX)), height: 10)
                                             .offset(x: min(bearX, bullX))
                                     }
                                 }
 
                                 if let sx = spotX, sx.isFinite, valX.isFinite {
-                                    Rectangle().fill(isUnder ? Color.green.opacity(0.7) : Color.red.opacity(0.7))
+                                    Rectangle().fill(isUnder ? Color.up.opacity(0.7) : Color.down.opacity(0.7))
                                         .frame(width: max(2, abs(valX - sx)), height: 3)
                                         .offset(x: min(valX, sx))
 
@@ -2346,7 +2346,7 @@ private struct ValuationSpectrumSection: View {
                                 }
 
                                 if valX.isFinite {
-                                    Circle().fill(isBlendedCustom ? Color.orange : Color.indigo)
+                                    Circle().fill(isBlendedCustom ? Color.warn : Color.brand)
                                         .frame(width: 12, height: 12)
                                         .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
                                         .shadow(radius: 1)
@@ -2358,8 +2358,8 @@ private struct ValuationSpectrumSection: View {
                         .frame(height: 16)
                     }
                     .padding(10)
-                    .background((isBlendedCustom ? Color.orange : Color.indigo).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke((isBlendedCustom ? Color.orange : Color.indigo).opacity(0.2), lineWidth: 1))
+                    .background((isBlendedCustom ? Color.warn : Color.brand).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke((isBlendedCustom ? Color.warn : Color.brand).opacity(0.2), lineWidth: 1))
                 }
 
                 Divider()
@@ -2378,23 +2378,23 @@ private struct ValuationSpectrumSection: View {
                                     if item.isRecommended {
                                         Text("BEST-FIT").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.white)
                                             .padding(.horizontal, 4).padding(.vertical, 1)
-                                            .background(Color.indigo, in: Capsule())
+                                            .background(Color.brand, in: Capsule())
                                     }
                                     if item.isCustom {
-                                        Text("CUSTOM").appFont(.system(size: 7, weight: .bold)).foregroundStyle(.orange)
+                                        Text("CUSTOM").appFont(.system(size: 7, weight: .bold)).foregroundStyle(.warn)
                                             .padding(.horizontal, 3).padding(.vertical, 1)
-                                            .background(Color.orange.opacity(0.15), in: Capsule())
+                                            .background(Color.warn.opacity(0.15), in: Capsule())
                                     }
                                 }
                                 Spacer()
                                 Text(Fmt.currency(item.value, code: nativeCur))
                                     .appFont(.caption.weight(.bold))
-                                    .foregroundStyle(item.isCustom ? Color.orange : Color.primary)
+                                    .foregroundStyle(item.isCustom ? Color.warn : Color.primary)
                                 Text(Fmt.percent(up, includeSign: true))
                                     .appFont(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(isUnder ? Color.green : Color.red)
+                                    .foregroundStyle(isUnder ? Color.up : Color.down)
                                     .padding(.horizontal, 5).padding(.vertical, 1)
-                                    .background((isUnder ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                                    .background((isUnder ? Color.up : Color.down).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
                             }
 
                             GeometryReader { geo in
@@ -2409,14 +2409,14 @@ private struct ValuationSpectrumSection: View {
                                         let bearX = max(0, min(w, CGFloat((bear - minBound) / spread) * w))
                                         let bullX = max(0, min(w, CGFloat((bull - minBound) / spread) * w))
                                         if bearX.isFinite && bullX.isFinite {
-                                            Capsule().fill((isUnder ? Color.green : Color.red).opacity(0.25))
+                                            Capsule().fill((isUnder ? Color.up : Color.down).opacity(0.25))
                                                 .frame(width: max(2, abs(bullX - bearX)), height: 8)
                                                 .offset(x: min(bearX, bullX))
                                         }
                                     }
 
                                     if let sx = spotX, sx.isFinite, valX.isFinite {
-                                        Rectangle().fill((isUnder ? Color.green : Color.red).opacity(0.6))
+                                        Rectangle().fill((isUnder ? Color.up : Color.down).opacity(0.6))
                                             .frame(width: max(2, abs(valX - sx)), height: 2)
                                             .offset(x: min(valX, sx))
 
@@ -2426,7 +2426,7 @@ private struct ValuationSpectrumSection: View {
                                     }
 
                                     if valX.isFinite {
-                                        Circle().fill(item.isCustom ? Color.orange : item.tint)
+                                        Circle().fill(item.isCustom ? Color.warn : item.tint)
                                             .frame(width: 10, height: 10)
                                             .overlay(Circle().stroke(Color.white, lineWidth: 1.2))
                                             .shadow(radius: 1)
@@ -2480,10 +2480,10 @@ struct HistogramChartView: View {
 
             if let bear = mc?.bear {
                 RuleMark(x: .value("Bear", bear))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.down)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                     .annotation(position: .top) {
-                        Text("Bear").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.red)
+                        Text("Bear").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.down)
                     }
             }
 
@@ -2507,10 +2507,10 @@ struct HistogramChartView: View {
 
             if let cp = currentPrice, cp > 0 {
                 RuleMark(x: .value("Current", cp))
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(.plum)
                     .lineStyle(StrokeStyle(lineWidth: 2))
                     .annotation(position: .bottom) {
-                        Text("Price").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.purple)
+                        Text("Price").appFont(.system(size: 8, weight: .bold)).foregroundStyle(.plum)
                     }
             }
         }
@@ -2594,7 +2594,7 @@ struct DistributionModalView: View {
             }
 
             HStack(spacing: isPhoneLayout ? 8 : 12) {
-                scenarioCard("Bear (10th)", item.mc.bear, .red)
+                scenarioCard("Bear (10th)", item.mc.bear, .down)
                 scenarioCard("Median (50th)", item.mc.base, Color.brandIndigo)
                 scenarioCard("Bull (90th)", item.mc.bull, Color.brandEmerald)
             }

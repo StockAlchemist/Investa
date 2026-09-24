@@ -171,7 +171,7 @@ export function MetricChangeStrip({ label, color, points, seriesKey, periodType 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {cells.map((cell, i) => (
                 <div key={cell.title} className="bg-background/60 rounded-xl px-3 py-2">
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground truncate">
                         {i === 0 && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />}
                         <span className="truncate" title={cell.title}>{cell.title}</span>
                     </div>

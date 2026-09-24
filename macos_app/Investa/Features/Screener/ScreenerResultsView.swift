@@ -158,20 +158,20 @@ struct ScreenerResultsView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 24) {
                 stat("Results", "\(summary.count)", .primary)
-                stat("Undervalued", "\(summary.undervalued)", .green)
+                stat("Undervalued", "\(summary.undervalued)", .up)
                 stat("Avg MOS", summary.avgMOS.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))%" } ?? "–",
                      Fmt.tint(for: summary.avgMOS))
-                stat("AI Reviewed", "\(summary.aiReviewed) of \(summary.count)", .purple)
+                stat("AI Reviewed", "\(summary.aiReviewed) of \(summary.count)", .plum)
                 Spacer()
             }
         }
         #else
         HStack(spacing: 24) {
             stat("Results", "\(summary.count)", .primary)
-            stat("Undervalued", "\(summary.undervalued)", .green)
+            stat("Undervalued", "\(summary.undervalued)", .up)
             stat("Avg MOS", summary.avgMOS.map { "\($0 >= 0 ? "+" : "")\(String(format: "%.1f", $0))%" } ?? "–",
                  Fmt.tint(for: summary.avgMOS))
-            stat("AI Reviewed", "\(summary.aiReviewed) of \(summary.count)", .purple)
+            stat("AI Reviewed", "\(summary.aiReviewed) of \(summary.count)", .plum)
             Spacer()
         }
         #endif
@@ -322,7 +322,7 @@ struct ScreenerResultsView: View {
 
     @ViewBuilder private func mosCell(_ mos: Double?) -> some View {
         if let mos {
-            let tone: Color = mos > 15 ? .green : (mos > 0 ? .cyan : .red)
+            let tone: Color = mos > 15 ? .up : (mos > 0 ? .dataTeal : .down)
             HStack(spacing: 2) {
                 Image(systemName: mos > 0 ? "arrow.up.right" : "arrow.down.right").appFont(.system(size: 10))
                 Text(String(format: "%.1f%%", mos)).monospacedDigit()
@@ -332,7 +332,7 @@ struct ScreenerResultsView: View {
 
     @ViewBuilder private func aiScoreCell(_ score: Double?) -> some View {
         if let s = score {
-            let tone: Color = s >= 8 ? .green : (s >= 6 ? .cyan : (s >= 4 ? .orange : .red))
+            let tone: Color = s >= 8 ? .up : (s >= 6 ? .dataTeal : (s >= 4 ? .warn : .down))
             Text(String(format: "%.1f/10", s)).monospacedDigit().fontWeight(.bold).foregroundStyle(tone)
         } else { Text("N/A").foregroundStyle(.secondary.opacity(0.5)).appFont(.caption) }
     }
@@ -354,7 +354,7 @@ struct ScreenerResultsView: View {
         }
         .appFont(.caption2.weight(.bold))
         .buttonStyle(.bordered)
-        .tint((row.hasAIReview ?? false) ? .purple : nil)
+        .tint((row.hasAIReview ?? false) ? .plum : nil)
         .disabled(viewModel.reviewingSymbol == row.symbol)
     }
 
@@ -403,7 +403,7 @@ private struct FlowChips: View {
                         .appFont(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     Text("\(Int(item.value))/10").appFont(.caption.bold())
-                        .foregroundStyle(item.value >= 8 ? .green : (item.value >= 6 ? .cyan : .orange))
+                        .foregroundStyle(item.value >= 8 ? .up : (item.value >= 6 ? .dataTeal : .warn))
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))

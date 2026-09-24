@@ -191,7 +191,7 @@ export default function TradingViewChart({ symbol, exchange, height = 560 }: Tra
                     onClick={fullscreen ? exitFullscreen : enterFullscreen}
                     title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
                     aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
-                    className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-border bg-secondary text-[10px] font-bold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/10"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-border bg-secondary text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/10"
                 >
                     {fullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
                     {fullscreen ? 'Exit Full Screen' : 'Full Screen'}
