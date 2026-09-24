@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Transaction } from '../lib/api';
+import { marketToday } from '../lib/market_time';
 
 // Dynamic transaction form blob: keys hold strings or auto-computed numbers,
 // and fields are added/updated dynamically by name.
@@ -32,7 +33,7 @@ const isCashSymbol = (symbol: string) => {
 
 export default function TransactionModal({ isOpen, onClose, onSubmit, initialData, mode, accountCurrencyMap, existingAccounts = [], existingSymbols = [], accountCashModeMap = {} }: TransactionModalProps) {
     const [formData, setFormData] = useState<TxForm>({
-        Date: new Date().toISOString().split('T')[0],
+        Date: marketToday(),
         Type: 'Buy',
         Symbol: '',
         Quantity: '',
@@ -94,7 +95,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
                 });
             } else {
                 setFormData({
-                    Date: new Date().toISOString().split('T')[0],
+                    Date: marketToday(),
                     Type: 'Buy',
                     Symbol: '',
                     Quantity: '',

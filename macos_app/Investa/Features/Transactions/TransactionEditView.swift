@@ -19,7 +19,8 @@ struct TransactionEditView: View {
     /// Symbols already used in the table, for autocomplete suggestions.
     var existingSymbols: [String] = []
 
-    @State private var date = Date()
+    /// A new trade defaults to today on the market's clock, as on the web.
+    @State private var date = MarketTime.todayForPicker()
     @State private var type = "Buy"
     @State private var symbol = ""
     @State private var account = ""

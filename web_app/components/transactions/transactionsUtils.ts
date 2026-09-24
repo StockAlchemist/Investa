@@ -1,5 +1,6 @@
 import { Transaction } from '../../lib/api';
 import { CANONICAL_TYPES, DatePreset } from './types';
+import { marketToday } from '../../lib/market_time';
 
 // Identity key for duplicate detection: same symbol + date + type + |qty| + amount + account + note.
 export function dupKey(tx: Transaction): string {
@@ -60,17 +61,32 @@ export function getTotalAmountStyle(tx: Transaction): { className: string; displ
 }
 
 // Returns inclusive [from, to] as YYYY-MM-DD strings (or null bounds for open ends).
-export function computeDateRange(preset: DatePreset, customFrom: string, customTo: string): { from: string | null; to: string | null } {
+// Presets start on the market's day (lib/market_time.ts) and never end.
+//
+// Reckoned on calendar days, never instants. This used to build local midnight
+// (`new Date(y, m, 1)`) and read it back through `toISOString()`, which is UTC:
+// east of UTC that is the previous day, so in Bangkok "This month" began on the
+// last day of the month before and "YTD" on 31 December.
+export function computeDateRange(
+    preset: DatePreset,
+    customFrom: string,
+    customTo: string,
+    now: Date = new Date(),
+): { from: string | null; to: string | null } {
     if (preset === 'all') return { from: null, to: null };
     if (preset === 'custom') return { from: customFrom || null, to: customTo || null };
-    const now = new Date();
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
-    const to = iso(now);
-    let from: Date;
-    if (preset === 'mtd') from = new Date(now.getFullYear(), now.getMonth(), 1);
-    else if (preset === 'ytd') from = new Date(now.getFullYear(), 0, 1);
-    else if (preset === '30d') from = new Date(now.getTime() - 30 * 86400000);
-    else if (preset === '90d') from = new Date(now.getTime() - 90 * 86400000);
-    else from = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); // 1y
-    return { from: iso(from), to };
+    const today = marketToday(null, now);
+    const [y, m, d] = today.split('-').map(Number);
+    const day = (year: number, month: number, date: number) =>
+        new Date(Date.UTC(year, month - 1, date)).toISOString().slice(0, 10);
+    let from: string;
+    if (preset === 'mtd') from = day(y, m, 1);
+    else if (preset === 'ytd') from = day(y, 1, 1);
+    else if (preset === '30d') from = day(y, m, d - 30);
+    else if (preset === '90d') from = day(y, m, d - 90);
+    else from = day(y - 1, m, d); // 1y
+    // Open-ended, as on the native clients. Capping at the market's today
+    // would hide a SET trade entered in Bangkok, which is dated a day ahead of
+    // New York, every morning until the US session catches up.
+    return { from, to: null };
 }

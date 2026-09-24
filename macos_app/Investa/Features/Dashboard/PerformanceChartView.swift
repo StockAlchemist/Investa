@@ -467,7 +467,7 @@ struct PerformanceChartView: View {
     private func tooltipString(_ d: Date) -> String {
         let f = period == .oneDay || period == .fiveDays
             ? MarketTime.formatter("EEE, dd MMM h:mm a", timeZone: MarketTime.defaultZone)
-            : MarketTime.formatter("dd MMM yyyy")
+            : MarketTime.formatter("dd MMM yyyy", timeZone: MarketTime.utc)
         return f.string(from: d)
     }
 
@@ -501,9 +501,10 @@ struct PerformanceChartView: View {
         switch period {
         case .oneDay: f = MarketTime.formatter("h:mm a", timeZone: MarketTime.defaultZone)
         case .fiveDays: f = MarketTime.formatter("E", timeZone: MarketTime.defaultZone)
-        case .oneMonth: f = MarketTime.formatter("dd MMM")
-        case .oneYear, .ytd: f = MarketTime.formatter("MMM")
-        default: f = MarketTime.formatter("yyyy")
+        // Daily points: read in UTC, the zone the API wrote them in.
+        case .oneMonth: f = MarketTime.formatter("dd MMM", timeZone: MarketTime.utc)
+        case .oneYear, .ytd: f = MarketTime.formatter("MMM", timeZone: MarketTime.utc)
+        default: f = MarketTime.formatter("yyyy", timeZone: MarketTime.utc)
         }
         return f.string(from: d)
     }

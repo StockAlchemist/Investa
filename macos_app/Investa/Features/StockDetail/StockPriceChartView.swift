@@ -735,13 +735,14 @@ struct StockPriceChartView: View {
     }
 
     private func xLabel(_ d: Date) -> String {
-        let f = MarketTime.formatter(intraday ? "h:mm a" : "dd MMM", timeZone: MarketTime.defaultZone)
+        let f = MarketTime.formatter(intraday ? "h:mm a" : "dd MMM",
+                                     timeZone: intraday ? MarketTime.defaultZone : MarketTime.utc)
         return f.string(from: d)
     }
 
     private func tooltip(_ p: StockChartModel.ChartPoint) -> ChartTooltipContent {
         let tf = MarketTime.formatter(intraday ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy",
-                                      timeZone: MarketTime.defaultZone)
+                                      timeZone: intraday ? MarketTime.defaultZone : MarketTime.utc)
         var rows: [ChartTooltipRow] = []
         rows.append(ChartTooltipRow(color: Color(hex: 0x2563eb), label: symbol,
                                     value: view == .price ? Fmt.currency(p.value, code: currency)

@@ -11,7 +11,11 @@ enum MarketTime {
     /// Fallback zone for events that do not name their exchange's (Investa is US-first).
     static let defaultTimeZoneIdentifier = "America/New_York"
 
-    private static let utc = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
+    /// The zone a *daily* chart point is read in. The API ships daily bars at
+    /// UTC midnight (or as a bare day, parsed there), so on New York's clock
+    /// they fall on the evening before: a tooltip formatted in `defaultZone`
+    /// shows the previous day. Intraday instants stay on `defaultZone`.
+    static let utc = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
 
     /// Calendar days are compared in UTC so that no exchange's DST transition can
     /// land between the two dates being subtracted.
@@ -193,6 +197,24 @@ enum MarketTime {
         marketCalendar.timeZone = zone(identifier)
         let parts = marketCalendar.dateComponents([.year, .month, .day], from: Date())
         return utcCalendar.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day))
+    }
+
+    /// Today on a market's clock as the wire's `yyyy-MM-dd` — for comparing
+    /// against dates the API ships (an account's closure date, say). The
+    /// device's date is up to a day ahead of New York in Bangkok, and UTC's
+    /// half a day, so neither agrees with the backend's `get_est_today()`.
+    static func todayISO(timeZone identifier: String? = nil) -> String {
+        guard let day = today(timeZone: identifier) else { return isoFormatter().string(from: Date()) }
+        return isoFormatter(timeZone: utc).string(from: day)
+    }
+
+    /// Today on a market's clock as a `Date` a `DatePicker` shows as that day:
+    /// the market's year/month/day at midnight on the device's own calendar,
+    /// which is the zone a picker (and `isoFormatter()`) reads it back in.
+    static func todayForPicker(timeZone identifier: String? = nil) -> Date {
+        guard let day = today(timeZone: identifier) else { return Date() }
+        let parts = utcCalendar.dateComponents([.year, .month, .day], from: day)
+        return localCalendar.date(from: parts) ?? Date()
     }
 
     /// Whole days from today-on-the-market to `iso`. Negative for the past, nil if

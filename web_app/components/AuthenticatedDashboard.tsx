@@ -29,6 +29,7 @@ import {
   PortfolioSummary
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { marketToday } from '@/lib/market_time';
 import type { MarketIndex } from '@/components/MarketsTab';
 import { INITIAL_VISIBLE_ITEMS, TAB_THEMES } from '@/lib/dashboard_constants';
 import { TAB_LAYOUT_ITEMS, TAB_INITIAL_VISIBLE, TAB_SECTION_LABELS } from '@/lib/layout_registry';
@@ -113,10 +114,12 @@ export default function AuthenticatedDashboard() {
   const [benchmarks, setBenchmarks]                 = useState<string[]>(['S&P 500', 'Dow Jones', 'NASDAQ']);
   const [graphPeriod, setGraphPeriod]               = useState('1y');
   const [graphView, setGraphView]                   = useState<'return' | 'value' | 'drawdown'>('return');
+  // A year to today, on the market's clock.
   const [graphCustomFromDate, setGraphCustomFromDate] = useState(() => {
-    const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().split('T')[0];
+    const [y, m, d] = marketToday().split('-');
+    return `${Number(y) - 1}-${m}-${d === '29' && m === '02' ? '28' : d}`;
   });
-  const [graphCustomToDate, setGraphCustomToDate]   = useState(() => new Date().toISOString().split('T')[0]);
+  const [graphCustomToDate, setGraphCustomToDate]   = useState(() => marketToday());
   const [capitalGainsDates, setCapitalGainsDates]   = useState<{ from?: string; to?: string }>({});
   const [visibleItems, setVisibleItems]             = useState<string[]>(INITIAL_VISIBLE_ITEMS);
   const [tabLayouts, setTabLayouts]                 = useState<Record<string, string[]>>({});
@@ -591,7 +594,8 @@ export default function AuthenticatedDashboard() {
   const closedAccounts = (() => {
     const dates = settingsQuery.data?.account_closure_dates;
     if (!dates) return [];
-    const today = new Date().toISOString().slice(0, 10);
+    // The market's day, as the backend decides closure (`get_est_today`).
+    const today = marketToday();
     return Object.entries(dates)
       .filter(([, d]) => d && d <= today)
       .map(([acc]) => acc);

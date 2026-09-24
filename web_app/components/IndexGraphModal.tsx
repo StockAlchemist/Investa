@@ -19,6 +19,7 @@ import { benchmarkYahooSymbol, toTradingViewSymbol } from '../lib/tradingview';
 import { Badge } from './ui/badge';
 import type { MarketIndex } from './MarketsTab';
 import { cn } from '@/lib/utils';
+import { chartDay, chartInstant, formatCalendarDate, formatCalendarDayMonth, formatMarketTime } from '@/lib/market_time';
 
 interface IndexGraphModalProps {
     isOpen: boolean;
@@ -48,15 +49,9 @@ const CustomTooltip = ({ active, payload, label, period }: {
         return (
             <div className="bg-background/60 backdrop-blur-xl p-4 rounded-2xl min-w-[280px] border border-border/50 shadow-2xl">
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-3 pb-2">
-                    {new Date(label as string | number).toLocaleString([], {
-                        calendar: 'gregory',
-                        timeZone: 'America/New_York',
-                        month: 'short',
-                        day: 'numeric',
-                        year: period === '1d' ? undefined : 'numeric',
-                        hour: period === '1d' || period === '5d' ? '2-digit' : undefined,
-                        minute: period === '1d' || period === '5d' ? '2-digit' : undefined
-                    })}
+                    {label === undefined ? '' : period === '1d' || period === '5d'
+                        ? formatMarketTime(label, { year: period !== '1d' })
+                        : formatCalendarDate(chartDay(label))}
                 </p>
                 <div className="space-y-2.5">
                     {payload.map((entry, index: number) => (
@@ -337,11 +332,16 @@ export default function IndexGraphModal({ isOpen, onClose, benchmarks, currentIn
                                 <XAxis
                                     dataKey="date"
                                     tickFormatter={(val) => {
-                                        const d = new Date(val);
+                                        // Intraday bars arrive as zoneless UTC wall-clock
+                                        // strings, daily ones as bare days: `chartInstant`
+                                        // and `chartDay` read each in the zone it was written.
                                         if (period === '1d' || period === '5d') {
-                                            return d.toLocaleTimeString([], { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
+                                            return new Date(chartInstant(val)).toLocaleTimeString([], { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' });
                                         }
-                                        return d.toLocaleDateString([], { calendar: 'gregory', timeZone: 'America/New_York', month: 'short', day: 'numeric' });
+                                        // Long ranges would repeat `05 Aug` across years.
+                                        return ['3y', '5y', '10y', 'all'].includes(period)
+                                            ? formatCalendarDate(chartDay(val), { month: 'short', year: 'numeric' })
+                                            : formatCalendarDayMonth(chartDay(val));
                                     }}
                                     tick={{ fontSize: 10, fontWeight: 700, fill: 'currentColor' }}
                                     axisLine={false}

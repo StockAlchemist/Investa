@@ -27,6 +27,7 @@ import {
     CapitalGain
 } from '../lib/api';
 import { formatCurrency } from '../lib/utils';
+import { chartDay, formatCalendarDate, formatCalendarDayMonth, formatMarketTime } from '../lib/market_time';
 
 // --- Types ---
 interface StockPriceChartProps {
@@ -608,28 +609,25 @@ export default function StockPriceChart({ symbol, currency, avgCost, hidePrice, 
     }, [period, chartedData]);
 
     // Formatting Functions (EST Forced)
+    // 1D and 5D carry real instants, read on the market clock. Every other
+    // period is daily bars at UTC midnight, whose day is read in UTC — on New
+    // York's clock they fall on the evening before (see `chartDay`).
+    const isIntraday = period === '1d' || period === '5d';
+
     const formatXAxis = (tickItem: number) => {
-        const date = new Date(tickItem);
-        if (period === '1d' || period === '5d') {
-            return date.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: '2-digit', minute: '2-digit', hour12: true });
-        } else if (period === '1m') {
-            return date.toLocaleDateString("en-US", { timeZone: "America/New_York", month: 'short', day: 'numeric' });
-        } else {
-            return date.toLocaleDateString("en-US", { timeZone: "America/New_York", month: 'short', day: 'numeric' });
+        if (isIntraday) {
+            return new Date(tickItem).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: '2-digit', minute: '2-digit', hour12: true });
         }
+        return formatCalendarDayMonth(chartDay(tickItem));
     };
 
     const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
         if (active && payload && payload.length) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recharts tooltip point carries dynamic price/benchmark fields
             const dataPoint = payload[0].payload as any;
-            const dateStr = new Date(dataPoint.date).toLocaleString("en-US", {
-                timeZone: "America/New_York",
-                weekday: 'short', month: 'short', day: 'numeric',
-                hour: (period === '1d' || period === '5d') ? '2-digit' : undefined,
-                minute: (period === '1d' || period === '5d') ? '2-digit' : undefined,
-                year: (period !== '1d' && period !== '5d') ? 'numeric' : undefined
-            });
+            const dateStr = isIntraday
+                ? formatMarketTime(dataPoint.date, { weekday: true })
+                : formatCalendarDate(chartDay(dataPoint.date));
 
             return (
                 <div className="bg-background/98 backdrop-blur-2xl p-3 border border-border/60 shadow-2xl rounded-xl min-w-[240px] !opacity-100">

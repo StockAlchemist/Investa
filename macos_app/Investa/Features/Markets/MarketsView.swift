@@ -294,9 +294,12 @@ private struct IndexCard: View {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(identifier: "UTC"); f.dateFormat = "yyyy-MM-dd"; return f
     }()
+    /// `/market_history` writes intraday bars as zoneless UTC wall-clock time
+    /// (`13:30:00` is the New York open). Read on the device clock, as this
+    /// used to, they landed seven hours early for a reader in Bangkok.
     private static let intraday: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"; return f
+        f.timeZone = TimeZone(identifier: "UTC"); f.dateFormat = "yyyy-MM-dd HH:mm:ss"; return f
     }()
 }
 
@@ -307,6 +310,9 @@ private struct IndexGraphSheet: View {
     @State private var period = "1y"
     @State private var view: ViewMode = .return_
     @State private var showTradingViewFullScreen = false
+    @State private var width: CGFloat = 0
+    @Environment(\.appFontScale) private var fontScale
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `tradingView` hands the whole plot over to TradingView's embedded
     /// Advanced Chart; `return_` is the return-% series drawn from our history.
@@ -314,6 +320,29 @@ private struct IndexGraphSheet: View {
 
     private var isUp: Bool { (index.change ?? 0) >= 0 }
     private var intradayPeriod: Bool { period == "1d" || period == "5d" }
+    /// Ranges long enough that `05 Aug` would recur: label the month and year.
+    private var multiYearPeriod: Bool { ["3y", "5y", "10y", "all"].contains(period) }
+
+    /// The x-axis in the app's notation. Charts' automatic date labels follow
+    /// the device locale ("Aug 5") and zone; intraday reads New York's clock,
+    /// daily bars the UTC day the API wrote them on (see `MarketTime.utc`).
+    private func xLabel(_ d: Date) -> String {
+        let f: DateFormatter
+        switch period {
+        case "1d": f = MarketTime.formatter("h:mm a", timeZone: MarketTime.defaultZone)
+        case "5d": f = MarketTime.formatter("EEE", timeZone: MarketTime.defaultZone)
+        default: f = MarketTime.formatter(multiYearPeriod ? "MMM yyyy" : "dd MMM", timeZone: MarketTime.utc)
+        }
+        return f.string(from: d)
+    }
+
+    private var xLabelSample: String {
+        switch period {
+        case "1d": return "10:30 AM"
+        case "5d": return "Wed"
+        default: return multiYearPeriod ? "Sep 2026" : "30 Sep"
+        }
+    }
     /// The Yahoo symbol behind this index, when TradingView carries it. Both
     /// hops have to land: an index we know (`.DJI` → `^DJI`) and an instrument
     /// the free widget will actually draw.
@@ -421,9 +450,25 @@ private struct IndexGraphSheet: View {
             }
             .chartYScale(domain: chartDomain(pts.map(\.ret) + [0]))
             .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let d = v.as(Double.self) { Text(String(format: "%.1f%%", d)).fixedSize() } } } }
+            .chartXAxis {
+                let ticks = ChartAxis.ticks(
+                    pts.map(\.date),
+                    count: ChartAxis.tickCapacity(xLabelSample, width: width,
+                                                  scale: fontScale, typeSize: typeSize)
+                )
+                AxisMarks(values: ticks) { v in
+                    AxisGridLine()
+                    if let d = v.as(Date.self) {
+                        AxisValueLabel(anchor: ChartAxis.anchor(d, in: ticks)) {
+                            Text(xLabel(d)).fixedSize()
+                        }
+                    }
+                }
+            }
+            .readingContainerWidth { width = $0 }
             .chartHoverTooltip(pts.map(\.date)) { i in
                 let f = MarketTime.formatter(intradayPeriod ? "EEE, dd MMM h:mm a" : "EEE, dd MMM yyyy",
-                                             timeZone: MarketTime.defaultZone)
+                                             timeZone: intradayPeriod ? MarketTime.defaultZone : MarketTime.utc)
                 return ChartTooltipContent(title: f.string(from: pts[i].date),
                                            rows: [ChartTooltipRow(color: isUp ? .green : .red, label: index.name ?? "Index",
                                                                   value: String(format: "%.2f%%", pts[i].ret))])
