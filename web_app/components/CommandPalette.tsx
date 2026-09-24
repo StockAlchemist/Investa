@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import dynamic from 'next/dynamic';
 import {
     LayoutDashboard, PieChart, TrendingUp, ArrowLeftRight,
     DollarSign, BarChart3, Search, Star, Globe, Sparkles, Trophy,

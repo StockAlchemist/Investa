@@ -103,7 +103,7 @@ describe('required list and map fields on object responses', () => {
 
     it('fetchBuffettRankings guarantees rows', async () => {
         GET.mockResolvedValue(ok({ total: 0 }));
-        await expect(fetchBuffettRankings({})).resolves.toMatchObject({ rows: [] });
+        await expect(fetchBuffettRankings()).resolves.toMatchObject({ rows: [] });
     });
 
     it('fetchTrendSignal guarantees history', async () => {

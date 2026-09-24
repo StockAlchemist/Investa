@@ -27,7 +27,7 @@ export const SymbolsTab: React.FC<SymbolsTabProps> = ({ settings }) => {
     const [mappingSearch, setMappingSearch] = useState('');
     const [excludeSymbol, setExcludeSymbol] = useState('');
 
-    const symbolMap = settings?.user_symbol_map || {};
+    const symbolMap = useMemo(() => settings?.user_symbol_map || {}, [settings?.user_symbol_map]);
     const excluded = settings?.user_excluded_symbols || [];
 
     const sortedMapEntries = useMemo(() => {

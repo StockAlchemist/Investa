@@ -89,7 +89,9 @@ describe('Transactions Import Account Selection', () => {
             Quantity: 10,
             'Price/Share': 200,
             'Total Amount': -2000,
+            Commission: 0,
             Account: 'IBKR Atcha',
+            'Local Currency': 'USD',
         };
 
         const setReviewTransactions = vi.fn();

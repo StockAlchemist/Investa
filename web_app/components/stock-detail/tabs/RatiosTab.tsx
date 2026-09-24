@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchRatios, fetchTrackRecord, type FinancialRatio } from '../../../lib/api';
-import { StatementPeriod, StatementRange, defaultRange, periodsInRange } from '../../../lib/statement_chart';
+import { StatementPeriod, StatementRange, periodsInRange } from '../../../lib/statement_chart';
 import { cn } from '../../../lib/utils';
 import { Skeleton } from '../../ui/skeleton';
 import { RatioChart } from '../components/RatioChart';
