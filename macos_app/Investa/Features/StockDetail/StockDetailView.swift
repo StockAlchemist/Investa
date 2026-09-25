@@ -187,27 +187,33 @@ struct StockDetailView: View {
 
     private var regularHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button {
-                appState.closeStock()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left")
-                        .appFont(.system(size: 13, weight: .bold))
-                    if let previous = appState.stockHistory.last {
-                        Text("Back to \(previous)")
-                            .appFont(.system(size: 13, weight: .semibold))
-                    } else {
-                        Text("Back")
-                            .appFont(.system(size: 13, weight: .semibold))
+            // Back on the left, favourite and watchlists on the right: the row
+            // was otherwise empty, and it stays put while the tabs change.
+            HStack(spacing: 8) {
+                Button {
+                    appState.closeStock()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .appFont(.system(size: 13, weight: .bold))
+                        if let previous = appState.stockHistory.last {
+                            Text("Back to \(previous)")
+                                .appFont(.system(size: 13, weight: .semibold))
+                        } else {
+                            Text("Back")
+                                .appFont(.system(size: 13, weight: .semibold))
+                        }
                     }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                Spacer(minLength: 12)
+                StockWatchlistControls(symbol: viewModel.symbol)
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
 
             HStack(alignment: .center, spacing: 16) {
                 ZStack {
@@ -257,27 +263,31 @@ struct StockDetailView: View {
 
     private var compactHeader: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button {
-                appState.closeStock()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .appFont(.system(size: 12, weight: .bold))
-                    if let previous = appState.stockHistory.last {
-                        Text("Back to \(previous)")
-                            .appFont(.system(size: 12, weight: .semibold))
-                    } else {
-                        Text("Back")
-                            .appFont(.system(size: 12, weight: .semibold))
+            HStack(spacing: 8) {
+                Button {
+                    appState.closeStock()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .appFont(.system(size: 12, weight: .bold))
+                        if let previous = appState.stockHistory.last {
+                            Text("Back to \(previous)")
+                                .appFont(.system(size: 12, weight: .semibold))
+                        } else {
+                            Text("Back")
+                                .appFont(.system(size: 12, weight: .semibold))
+                        }
                     }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(Color.cardBorder.opacity(0.2), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                Spacer(minLength: 8)
+                StockWatchlistControls(symbol: viewModel.symbol)
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
 
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
@@ -920,30 +930,9 @@ struct StockDetailView: View {
             ProgressView("Generating analysis…").frame(maxWidth: .infinity).padding(40)
         } else if let a = viewModel.analysis, a.scorecard != nil || a.summary != nil {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 16) {
-                        Image(systemName: "sparkles")
-                            .appFont(.system(size: 27))
-                            .foregroundStyle(.white)
-                            .frame(width: 48, height: 48)
-                            .background(Color.plum, in: RoundedRectangle(cornerRadius: 12))
-                        
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("AI Fundamental Review").appFont(.title3.bold())
-                                Spacer()
-                                Button { Task { await viewModel.loadAnalysis(force: true) } } label: { 
-                                    Label("Regenerate", systemImage: "arrow.clockwise") 
-                                }
-                                .appFont(.caption2.weight(.bold)).foregroundStyle(.plum)
-                                .buttonStyle(.plain)
-                            }
-                            if let s = a.summary { Text(Self.md(s)).appFont(.subheadline).foregroundStyle(.secondary) }
-                        }
-                    }
+                AIReviewSummaryCard(summary: a.summary) {
+                    Task { await viewModel.loadAnalysis(force: true) }
                 }
-                .padding(24).frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.plum.opacity(0.1), in: RoundedRectangle(cornerRadius: 24))
                 
                 let topics: [(String, String, Double?, String?, Color)] = [
                     ("Moat & Edge", "shield", a.scorecard?.moat, a.analysis?.moat, .brand),
@@ -2089,5 +2078,72 @@ struct StockDetailView: View {
 
     static func md(_ s: String) -> AttributedString {
         (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+    }
+}
+
+/// The AI review's headline card: the badge, title and Regenerate on one row,
+/// and the verdict underneath at the card's full width.
+///
+/// The summary used to sit in a column beside the badge, so every line of it
+/// was indented by the badge's width — on a phone, a fifth of the card spent
+/// on empty space down the left edge. Its own view rather than more of
+/// `analysisTab`, which is already a large body (see the iPhone stack-overflow
+/// note on this screen).
+struct AIReviewSummaryCard: View {
+    let summary: String?
+    let onRegenerate: () -> Void
+
+    private var badgeSize: CGFloat { isPhoneLayout ? 34 : 44 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: isPhoneLayout ? 10 : 14) {
+            HStack(spacing: isPhoneLayout ? 10 : 14) {
+                Image(systemName: "sparkles")
+                    .appFont(.system(size: isPhoneLayout ? 17 : 22))
+                    .foregroundStyle(.white)
+                    .frame(width: badgeSize, height: badgeSize)
+                    .background(Color.plum, in: RoundedRectangle(cornerRadius: isPhoneLayout ? 9 : 11, style: .continuous))
+
+                Text("AI Fundamental Review")
+                    .appFont(isPhoneLayout ? .headline : .title3.bold())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    // Claims its width before the button does, so the button
+                    // drops to its icon rather than the title shrinking.
+                    .layoutPriority(1)
+
+                Spacer(minLength: 8)
+
+                regenerateButton
+            }
+
+            if let summary {
+                Text(StockDetailView.md(summary))
+                    .appFont(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(isPhoneLayout ? 16 : 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.plum.opacity(0.1), in: RoundedRectangle(cornerRadius: isPhoneLayout ? 18 : 24, style: .continuous))
+    }
+
+    /// Labelled where there is room, the icon alone where the label would
+    /// squeeze the title — the title is what the card is.
+    private var regenerateButton: some View {
+        Button(action: onRegenerate) {
+            ViewThatFits(in: .horizontal) {
+                Label("Regenerate", systemImage: "arrow.clockwise")
+                Image(systemName: "arrow.clockwise")
+                    .padding(6)
+                    .background(Color.plum.opacity(0.12), in: Circle())
+            }
+        }
+        .appFont(.caption.weight(.bold))
+        .foregroundStyle(Color.plum)
+        .lineLimit(1)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Regenerate AI review")
     }
 }

@@ -227,4 +227,60 @@ final class ModelDecodingTests: XCTestCase {
         let invalid = APIError.invalidURL
         XCTAssertEqual(invalid.errorDescription, "The server address is invalid.")
     }
+
+    /// The AI review travels on every ranked row. `rank` is the blended
+    /// position and `base_rank` the stored one; the shift between them is what
+    /// the row marks, and an unreviewed company must decode as nil, not 0.
+    func testBuffettRankRowDecodesTheAIReview() throws {
+        let json = """
+        {
+            "total": 2,
+            "ai_weight": 0.2,
+            "rows": [
+                {"symbol": "DECK", "model": "generic", "rank": 1, "base_rank": 3,
+                 "ai_moat": 8.5, "ai_financial_strength": 9.0, "ai_predictability": 7.0,
+                 "ai_growth": 8.0, "ai_rating": 8.125, "ai_score": 94.0},
+                {"symbol": "WTM", "model": "insurer", "rank": 5, "base_rank": 5,
+                 "ai_rating": null, "ai_score": null}
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let page = try JSONDecoder().decode(BuffettRankPage.self, from: json)
+        let reviewed = page.rows[0]
+        let unreviewed = page.rows[1]
+
+        XCTAssertEqual(reviewed.baseRank, 3)
+        XCTAssertEqual(reviewed.rankShift, 2, "rose from 3 to 1")
+        XCTAssertEqual(reviewed.aiMoat, 8.5)
+        XCTAssertEqual(reviewed.aiScore, 94.0)
+        XCTAssertNil(unreviewed.aiScore)
+        XCTAssertNil(unreviewed.rankShift, "an unmoved company carries no marker")
+    }
+
+    func testAIReviewWeightOnlyHonoursPresets() {
+        XCTAssertEqual(AIReviewWeight.normalised(0.3), 0.3)
+        XCTAssertEqual(AIReviewWeight.normalised(0.37), AIReviewWeight.defaultValue)
+        XCTAssertEqual(AIReviewWeight.label(0), "Off")
+        XCTAssertEqual(AIReviewWeight.label(0.2), "20%")
+        XCTAssertEqual(AIReviewWeight.queryItem(0.5).value, "0.5")
+    }
+
+    /// Favorites is marked by the server, never inferred from the name, and an
+    /// older server that omits the flag must decode as "not favorites".
+    func testWatchlistMetaAndMembershipDecoding() throws {
+        let lists = """
+        [{"id": 7, "name": "Favorites", "created_at": "2026-09-25", "is_favorites": true},
+         {"id": 1, "name": "My Watchlist", "created_at": "2026-01-01"}]
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode([WatchlistMeta].self, from: lists)
+        XCTAssertEqual(decoded[0].isFavorites, true)
+        XCTAssertNil(decoded[1].isFavorites)
+
+        let membership = """
+        {"symbol": "AAPL", "watchlist_ids": [1, 7]}
+        """.data(using: .utf8)!
+        let parsed = try JSONDecoder().decode(WatchlistMembership.self, from: membership)
+        XCTAssertEqual(parsed.watchlistIDs, [1, 7])
+    }
 }

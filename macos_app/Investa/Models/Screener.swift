@@ -60,6 +60,25 @@ struct ScreenReview: Decodable, Sendable {
 struct WatchlistMeta: Codable, Sendable, Identifiable {
     let id: Int
     let name: String
+    /// The built-in Favorites list. The server lists it first and creates it
+    /// on first use (`POST /api/watchlists/favorites`).
+    var isFavorites: Bool? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name
+        case isFavorites = "is_favorites"
+    }
+}
+
+/// `GET /api/watchlists/membership/{symbol}` — which lists hold a symbol.
+struct WatchlistMembership: Decodable, Sendable {
+    let symbol: String
+    let watchlistIDs: [Int]
+
+    private enum CodingKeys: String, CodingKey {
+        case symbol
+        case watchlistIDs = "watchlist_ids"
+    }
 }
 
 /// Body for `POST /api/screener/run`.

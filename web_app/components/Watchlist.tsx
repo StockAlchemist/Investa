@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, RefreshCw, Pencil, Check, X, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Search } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Pencil, Check, X, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Search, Heart } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent, formatCompactNumber, cn, getHeatmapClass } from "@/lib/utils";
 import { normalizeDividendYield } from "@/lib/dividend";
@@ -77,6 +77,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
 
     // Find current watchlist object for display name usually
     const currentList = watchlists.find(w => w.id === activeWatchlistId) || { name: 'Watchlist', id: 1 };
+    const isFavoritesList = watchlists.some(w => w.id === activeWatchlistId && w.is_favorites);
 
     // Mutations
     const createListMutation = useMutation({
@@ -342,7 +343,10 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                 : "text-indigo-500 hover:bg-accent/10"
                         )}
                     >
-                        {wl.name}
+                        <span className="inline-flex items-center gap-1.5">
+                            {wl.is_favorites && <Heart className="h-3.5 w-3.5" aria-hidden />}
+                            {wl.name}
+                        </span>
                     </button>
                 ))}
 
@@ -410,7 +414,8 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                     </h2>
 
                                     <div className="flex items-center gap-0.5">
-                                        <Button
+                                        {/* Favorites is found by its name, so it keeps it. */}
+                                        {!isFavoritesList && <Button
                                             variant="ghost"
                                             size="icon"
                                             className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 ml-1"
@@ -418,7 +423,7 @@ export default function Watchlist({ currency }: WatchlistProps) {
                                             title="Rename Watchlist"
                                         >
                                             <Pencil className="h-4 w-4" />
-                                        </Button>
+                                        </Button>}
 
                                         {(watchlists.length > 1) && (
                                             <Button

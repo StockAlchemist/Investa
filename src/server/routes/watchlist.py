@@ -4,8 +4,10 @@ Watchlist routes — extracted from server/api.py as the first slice of the
 sub-router split (item #4 part 2).
 
 Exposes the same paths as before so the OpenAPI surface is unchanged:
-    GET  /watchlists                — list user's watchlists
+    GET  /watchlists                — list user's watchlists (Favorites first)
     POST /watchlists                — create a watchlist
+    POST /watchlists/favorites      — the built-in Favorites list, created on first use
+    GET  /watchlists/membership/{symbol} — ids of the lists holding a symbol
     PUT  /watchlists/{id}           — rename
     DEL  /watchlists/{id}           — delete
     GET  /watchlist?id=             — read items in a watchlist (enriched)
@@ -31,12 +33,16 @@ from pydantic import BaseModel
 import config
 from config_manager import ConfigManager
 from db_utils import (
+    FAVORITES_WATCHLIST_NAME,
     add_to_watchlist,
     create_watchlist,
     delete_watchlist,
     get_all_watchlists,
     get_cached_screener_results,
+    get_or_create_favorites_watchlist,
     get_watchlist,
+    get_watchlist_ids_for_symbol,
+    is_favorites_name,
     remove_from_watchlist,
     rename_watchlist,
 )
@@ -72,13 +78,67 @@ class WatchlistRename(BaseModel):
     name: str
 
 
+def _favorites_id(watchlists: list) -> Optional[int]:
+    """The id of the oldest list carrying the reserved name, if any."""
+    for watchlist in watchlists:
+        if is_favorites_name(watchlist["name"]):
+            return watchlist["id"]
+    return None
+
+
+def _reserved_name_error() -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail=f"'{FAVORITES_WATCHLIST_NAME}' is the built-in favourites list. Choose another name.",
+    )
+
+
 @router.get("/watchlists")
 async def get_watchlists_endpoint(
     current_user: _User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
-    """List all watchlists for the current user."""
-    return get_all_watchlists(conn)
+    """
+    List all watchlists for the current user.
+
+    The built-in Favorites list is flagged `is_favorites` and listed first, so
+    every client can mark it and find it without matching on its name.
+    """
+    watchlists = get_all_watchlists(conn)
+    favorites_id = _favorites_id(watchlists)
+    for watchlist in watchlists:
+        watchlist["is_favorites"] = watchlist["id"] == favorites_id
+    return sorted(watchlists, key=lambda w: not w["is_favorites"])
+
+
+@router.post("/watchlists/favorites")
+async def ensure_favorites_endpoint(
+    current_user: _User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection),
+):
+    """The Favorites watchlist, created if this user has none yet. Idempotent."""
+    favorites = get_or_create_favorites_watchlist(conn, user_id=current_user.id)
+    if not favorites:
+        raise HTTPException(status_code=500, detail="Failed to create Favorites")
+    return {**favorites, "is_favorites": True}
+
+
+@router.get("/watchlists/membership/{symbol}")
+async def get_watchlist_membership_endpoint(
+    symbol: str,
+    current_user: _User = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_user_db_connection),
+):
+    """
+    Which of the user's watchlists hold `symbol`.
+
+    Cheap by design: the stock window needs only membership, and reading every
+    list through `GET /watchlist` would enrich each item with market data.
+    """
+    return {
+        "symbol": symbol.strip().upper(),
+        "watchlist_ids": get_watchlist_ids_for_symbol(conn, symbol),
+    }
 
 
 @router.post("/watchlists")
@@ -87,11 +147,15 @@ async def create_watchlist_endpoint(
     current_user: _User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
-    """Create a new watchlist."""
-    new_id = create_watchlist(conn, item.name, user_id=current_user.id)
+    """Create a new watchlist. The Favorites name is reserved."""
+    if not item.name.strip():
+        raise HTTPException(status_code=400, detail="Name is required")
+    if is_favorites_name(item.name):
+        raise _reserved_name_error()
+    new_id = create_watchlist(conn, item.name.strip(), user_id=current_user.id)
     if not new_id:
         raise HTTPException(status_code=500, detail="Failed to create watchlist")
-    return {"id": new_id, "name": item.name}
+    return {"id": new_id, "name": item.name.strip(), "is_favorites": False}
 
 
 @router.put("/watchlists/{watchlist_id}")
@@ -101,7 +165,15 @@ async def rename_watchlist_endpoint(
     current_user: _User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
-    """Rename a watchlist."""
+    """
+    Rename a watchlist.
+
+    Favorites keeps its name, and no other list may take it: the list is found
+    by name, so either rename would silently move a user's favourites.
+    """
+    favorites_id = _favorites_id(get_all_watchlists(conn))
+    if watchlist_id == favorites_id or is_favorites_name(item.name):
+        raise _reserved_name_error()
     success = rename_watchlist(conn, watchlist_id, item.name)
     if not success:
         raise HTTPException(

@@ -148,13 +148,27 @@ struct WatchlistView: View {
 
     // MARK: - List selector
 
+    /// Favorites carries a heart so it reads as the built-in list.
+    @ViewBuilder
+    private func listName(_ wl: WatchlistMeta) -> some View {
+        if wl.isFavorites == true {
+            Label(wl.name, systemImage: "heart.fill").lineLimit(1)
+        } else {
+            Text(wl.name).lineLimit(1)
+        }
+    }
+
+    private var isFavoritesActive: Bool {
+        viewModel.watchlists.contains { $0.id == viewModel.activeId && $0.isFavorites == true }
+    }
+
     private var listSelector: some View {
         #if os(iOS)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(viewModel.watchlists) { wl in
                     Button { viewModel.activeId = wl.id } label: {
-                        Text(wl.name).appFont(.callout.weight(.medium))
+                        listName(wl).appFont(.callout.weight(.medium))
                             .padding(.horizontal, 12).padding(.vertical, 6)
                             .background(viewModel.activeId == wl.id ? Color.brandTint : Color.inset, in: RoundedRectangle(cornerRadius: 8))
                             .foregroundStyle(viewModel.activeId == wl.id ? Color.brandInk : Color.ink2)
@@ -174,7 +188,7 @@ struct WatchlistView: View {
         HStack(spacing: 8) {
             ForEach(viewModel.watchlists) { wl in
                 Button { viewModel.activeId = wl.id } label: {
-                    Text(wl.name).appFont(.callout.weight(.medium))
+                    listName(wl).appFont(.callout.weight(.medium))
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(viewModel.activeId == wl.id ? Color.brandTint : Color.inset, in: RoundedRectangle(cornerRadius: 8))
                         .foregroundStyle(viewModel.activeId == wl.id ? Color.brandInk : Color.ink2)
@@ -203,7 +217,10 @@ struct WatchlistView: View {
                     Button { renaming = false } label: { Image(systemName: "xmark") }
                 } else {
                     Text(currentListName).appFont(.headline)
-                    Button { renameName = currentListName; renaming = true } label: { Image(systemName: "pencil") }.buttonStyle(.borderless)
+                    // Favorites is found by its name, so it keeps it.
+                    if !isFavoritesActive {
+                        Button { renameName = currentListName; renaming = true } label: { Image(systemName: "pencil") }.buttonStyle(.borderless)
+                    }
                     if viewModel.watchlists.count > 1 {
                         Button { Task { await viewModel.deleteList(currency: cur) } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless).foregroundStyle(.down)
