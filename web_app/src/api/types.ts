@@ -1318,14 +1318,60 @@ export interface paths {
         /**
          * Get Watchlists Endpoint
          * @description List all watchlists for the current user.
+         *
+         *     The built-in Favorites list is flagged `is_favorites` and listed first, so
+         *     every client can mark it and find it without matching on its name.
          */
         get: operations["get_watchlists_endpoint_api_watchlists_get"];
         put?: never;
         /**
          * Create Watchlist Endpoint
-         * @description Create a new watchlist.
+         * @description Create a new watchlist. The Favorites name is reserved.
          */
         post: operations["create_watchlist_endpoint_api_watchlists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlists/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ensure Favorites Endpoint
+         * @description The Favorites watchlist, created if this user has none yet. Idempotent.
+         */
+        post: operations["ensure_favorites_endpoint_api_watchlists_favorites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlists/membership/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Watchlist Membership Endpoint
+         * @description Which of the user's watchlists hold `symbol`.
+         *
+         *     Cheap by design: the stock window needs only membership, and reading every
+         *     list through `GET /watchlist` would enrich each item with market data.
+         */
+        get: operations["get_watchlist_membership_endpoint_api_watchlists_membership__symbol__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1343,6 +1389,9 @@ export interface paths {
         /**
          * Rename Watchlist Endpoint
          * @description Rename a watchlist.
+         *
+         *     Favorites keeps its name, and no other list may take it: the list is found
+         *     by name, so either rename would silently move a user's favourites.
          */
         put: operations["rename_watchlist_endpoint_api_watchlists__watchlist_id__put"];
         post?: never;
@@ -1431,10 +1480,14 @@ export interface paths {
          * Get Rankings
          * @description The ranked list, best first.
          *
-         *     Each row carries its pillar breakdown and confidence so a client can explain
-         *     a position without a second request. `search` is applied across the whole
-         *     run rather than the returned page, so a client never has to load the full
-         *     list to find one company.
+         *     Each row carries its pillar breakdown, confidence and AI review scores so a
+         *     client can explain a position without a second request. `search` is applied
+         *     across the whole run rather than the returned page, so a client never has
+         *     to load the full list to find one company.
+         *
+         *     `rank` is the position under the requested AI weight; `base_rank` is the
+         *     stored quality/value rank the run produced. Companies without an AI review
+         *     keep their quality/value score rather than being penalised.
          */
         get: operations["get_rankings_api_buffett_rank_get"];
         put?: never;
@@ -1582,6 +1635,10 @@ export interface paths {
          *     weights into share counts are live quotes, falling back to the snapshot's
          *     stored close when a quote is unavailable (`price_source` says which). The
          *     weights are the part of the answer that is actually fixed.
+         *
+         *     `ai_weight` re-blends the AI review (moat, financial strength,
+         *     predictability, growth) into the score before the top N is taken. It is
+         *     not part of the backtested rule; the catalogue's risks say so.
          */
         get: operations["get_allocation_api_strategies__strategy_id__allocation_get"];
         put?: never;
@@ -2906,14 +2963,60 @@ export interface paths {
         /**
          * Get Watchlists Endpoint
          * @description List all watchlists for the current user.
+         *
+         *     The built-in Favorites list is flagged `is_favorites` and listed first, so
+         *     every client can mark it and find it without matching on its name.
          */
         get: operations["get_watchlists_endpoint_watchlists_get"];
         put?: never;
         /**
          * Create Watchlist Endpoint
-         * @description Create a new watchlist.
+         * @description Create a new watchlist. The Favorites name is reserved.
          */
         post: operations["create_watchlist_endpoint_watchlists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlists/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ensure Favorites Endpoint
+         * @description The Favorites watchlist, created if this user has none yet. Idempotent.
+         */
+        post: operations["ensure_favorites_endpoint_watchlists_favorites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlists/membership/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Watchlist Membership Endpoint
+         * @description Which of the user's watchlists hold `symbol`.
+         *
+         *     Cheap by design: the stock window needs only membership, and reading every
+         *     list through `GET /watchlist` would enrich each item with market data.
+         */
+        get: operations["get_watchlist_membership_endpoint_watchlists_membership__symbol__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2931,6 +3034,9 @@ export interface paths {
         /**
          * Rename Watchlist Endpoint
          * @description Rename a watchlist.
+         *
+         *     Favorites keeps its name, and no other list may take it: the list is found
+         *     by name, so either rename would silently move a user's favourites.
          */
         put: operations["rename_watchlist_endpoint_watchlists__watchlist_id__put"];
         post?: never;
@@ -3019,10 +3125,14 @@ export interface paths {
          * Get Rankings
          * @description The ranked list, best first.
          *
-         *     Each row carries its pillar breakdown and confidence so a client can explain
-         *     a position without a second request. `search` is applied across the whole
-         *     run rather than the returned page, so a client never has to load the full
-         *     list to find one company.
+         *     Each row carries its pillar breakdown, confidence and AI review scores so a
+         *     client can explain a position without a second request. `search` is applied
+         *     across the whole run rather than the returned page, so a client never has
+         *     to load the full list to find one company.
+         *
+         *     `rank` is the position under the requested AI weight; `base_rank` is the
+         *     stored quality/value rank the run produced. Companies without an AI review
+         *     keep their quality/value score rather than being penalised.
          */
         get: operations["get_rankings_buffett_rank_get"];
         put?: never;
@@ -3170,6 +3280,10 @@ export interface paths {
          *     weights into share counts are live quotes, falling back to the snapshot's
          *     stored close when a quote is unavailable (`price_source` says which). The
          *     weights are the part of the answer that is actually fixed.
+         *
+         *     `ai_weight` re-blends the AI review (moat, financial strength,
+         *     predictability, growth) into the score before the top N is taken. It is
+         *     not part of the backtested rule; the catalogue's risks say so.
          */
         get: operations["get_allocation_strategies__strategy_id__allocation_get"];
         put?: never;
@@ -5513,6 +5627,57 @@ export interface operations {
             };
         };
     };
+    ensure_favorites_endpoint_api_watchlists_favorites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_watchlist_membership_endpoint_api_watchlists_membership__symbol__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rename_watchlist_endpoint_api_watchlists__watchlist_id__put: {
         parameters: {
             query?: never;
@@ -5708,6 +5873,8 @@ export interface operations {
                 search?: string | null;
                 /** @description Defaults to the latest run */
                 run_id?: number | null;
+                /** @description Share of the final score given to the AI review (moat, financial strength, predictability, growth), 0-1. 0 serves the stored ranking. */
+                ai_weight?: number;
             };
             header?: never;
             path?: never;
@@ -5893,6 +6060,8 @@ export interface operations {
             query: {
                 /** @description Amount to allocate, in USD */
                 capital: number;
+                /** @description Share of the final score given to the AI review (0-1). Omit to use the strategy's own weight. */
+                ai_weight?: number | null;
             };
             header?: never;
             path: {
@@ -7894,6 +8063,57 @@ export interface operations {
             };
         };
     };
+    ensure_favorites_endpoint_watchlists_favorites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_watchlist_membership_endpoint_watchlists_membership__symbol__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rename_watchlist_endpoint_watchlists__watchlist_id__put: {
         parameters: {
             query?: never;
@@ -8089,6 +8309,8 @@ export interface operations {
                 search?: string | null;
                 /** @description Defaults to the latest run */
                 run_id?: number | null;
+                /** @description Share of the final score given to the AI review (moat, financial strength, predictability, growth), 0-1. 0 serves the stored ranking. */
+                ai_weight?: number;
             };
             header?: never;
             path?: never;
@@ -8274,6 +8496,8 @@ export interface operations {
             query: {
                 /** @description Amount to allocate, in USD */
                 capital: number;
+                /** @description Share of the final score given to the AI review (0-1). Omit to use the strategy's own weight. */
+                ai_weight?: number | null;
             };
             header?: never;
             path: {

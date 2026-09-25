@@ -2,13 +2,23 @@
 
 import React, { createContext, useContext, useMemo, useState, useEffect, ReactNode } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getWatchlists, fetchWatchlist, addToWatchlist, removeFromWatchlist, WatchlistItem } from '@/lib/api';
+import {
+    getWatchlists, fetchWatchlist, addToWatchlist, removeFromWatchlist, createWatchlist,
+    ensureFavoritesWatchlist, WatchlistItem, WatchlistMeta,
+} from '@/lib/api';
 
 interface WatchlistContextType {
-    watchlists: { id: number; name: string }[];
+    watchlists: { id: number; name: string; is_favorites?: boolean }[];
     symbolWatchlistMap: Record<string, Set<number>>;
     starredSymbols: Set<string>;
     toggleWatchlist: (symbol: string, watchlistId: number) => void;
+    /** The built-in Favorites list's id, once the user has one. */
+    favoritesId: number | null;
+    isFavorite: (symbol: string) => boolean;
+    /** Adds to or removes from Favorites, creating the list on first use. */
+    toggleFavorite: (symbol: string) => Promise<void>;
+    /** Creates a watchlist and puts `symbol` on it. Rejects with the server's reason. */
+    createListWithSymbol: (name: string, symbol: string) => Promise<void>;
     isLoading: boolean;
 }
 
@@ -134,12 +144,50 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const favoritesId = watchlists.find(wl => wl.is_favorites)?.id ?? null;
+
+    const isFavorite = (symbol: string) =>
+        favoritesId !== null && !!symbolWatchlistMap[symbol]?.has(favoritesId);
+
+    /** Put a list the server just made into the cached catalogue, so its
+     *  items query starts and the new membership shows without a refetch. */
+    const adoptList = (list: WatchlistMeta) => {
+        queryClient.setQueryData<WatchlistMeta[]>(['watchlists'], (old = []) =>
+            old.some(wl => wl.id === list.id)
+                ? old
+                : list.is_favorites ? [list, ...old] : [...old, list]
+        );
+        queryClient.setQueryData<WatchlistItem[]>(['watchlist', 'USD', list.id], (old) => old ?? []);
+    };
+
+    const toggleFavorite = async (symbol: string) => {
+        if (favoritesId !== null) {
+            toggleWatchlist(symbol, favoritesId);
+            return;
+        }
+        const favorites = await ensureFavoritesWatchlist();
+        adoptList({ ...favorites, is_favorites: true });
+        addMutation.mutate({ symbol, watchlistId: favorites.id });
+        queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+    };
+
+    const createListWithSymbol = async (name: string, symbol: string) => {
+        const list = await createWatchlist(name.trim());
+        adoptList(list);
+        addMutation.mutate({ symbol, watchlistId: list.id });
+        queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+    };
+
     return (
         <WatchlistContext.Provider value={{
             watchlists,
             symbolWatchlistMap,
             starredSymbols,
             toggleWatchlist,
+            favoritesId,
+            isFavorite,
+            toggleFavorite,
+            createListWithSymbol,
             isLoading: isLoadingLists || isLoadingItems
         }}>
             {children}

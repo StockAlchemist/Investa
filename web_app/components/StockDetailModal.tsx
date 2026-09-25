@@ -17,6 +17,7 @@ import { Skeleton } from './ui/skeleton';
 import { TabType, StockDetailModalProps } from './stock-detail/types';
 import { StockDetailHeader } from './stock-detail/components/StockDetailHeader';
 import { StockDetailTabs } from './stock-detail/components/StockDetailTabs';
+import { StockWatchlistActions } from './stock-detail/components/StockWatchlistActions';
 import { OverviewTab } from './stock-detail/tabs/OverviewTab';
 
 // Dynamically import heavier tabs for optimal code splitting & Lighthouse performance
@@ -287,6 +288,7 @@ export default function StockDetailModal({
                     <ArrowLeft className="w-4 h-4 text-indigo-500" />
                     <span>{previousViewName ? `Back to ${previousViewName}` : 'Back'}</span>
                 </button>
+                <StockWatchlistActions symbol={symbol} />
             </div>
 
             {/* Main Stock Detail Card */}

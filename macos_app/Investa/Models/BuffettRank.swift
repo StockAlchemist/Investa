@@ -66,6 +66,19 @@ struct BuffettRankRow: Decodable, Sendable, Identifiable {
     /// record the prices do not reflect, and the pipeline excludes those from
     /// ranking rather than scoring value off a series known to be wrong.
     let dataQuality: DataQualityFlag?
+    /// The stored quality/value rank; `rank` is the position once the AI
+    /// review is weighted in at the requested share.
+    let baseRank: Int?
+    /// The AI review's four 1–10 judgements, nil when not yet reviewed.
+    let aiMoat: Double?
+    let aiFinancialStrength: Double?
+    let aiPredictability: Double?
+    let aiGrowth: Double?
+    /// Mean of the four, on the review's own 1–10 scale.
+    let aiRating: Double?
+    /// `aiRating` as a 0–100 percentile across reviewed companies — the part
+    /// of the review the blend uses, on the same scale as quality and value.
+    let aiScore: Double?
 
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode([String: JSONValue].self)
@@ -89,6 +102,13 @@ struct BuffettRankRow: Decodable, Sendable, Identifiable {
         fcfYield = raw["fcf_yield"]?.doubleValue
         periodCount = raw["period_count"]?.doubleValue.map { Int($0) }
         latestPeriod = raw["latest_period"]?.stringValue
+        baseRank = raw["base_rank"]?.doubleValue.map { Int($0) }
+        aiMoat = raw["ai_moat"]?.doubleValue
+        aiFinancialStrength = raw["ai_financial_strength"]?.doubleValue
+        aiPredictability = raw["ai_predictability"]?.doubleValue
+        aiGrowth = raw["ai_growth"]?.doubleValue
+        aiRating = raw["ai_rating"]?.doubleValue
+        aiScore = raw["ai_score"]?.doubleValue
         if let dq = raw["data_quality"], case .object = dq,
            let data = try? JSONEncoder().encode(dq) {
             dataQuality = try? JSONDecoder().decode(DataQualityFlag.self, from: data)
@@ -115,6 +135,23 @@ struct BuffettRankRow: Decodable, Sendable, Identifiable {
     /// alone. Worth distinguishing in the UI: a dash reads as data that went
     /// missing, when this is a model that does not use the input.
     var scoresFcfYield: Bool { model != .bank && model != .insurer }
+
+    /// Places the AI review moved this company, positive when it rose. Nil
+    /// when it did not move, so a list with the review off reads as before.
+    var rankShift: Int? {
+        guard let rank, let baseRank, rank != baseRank else { return nil }
+        return baseRank - rank
+    }
+
+    /// The four review dimensions, for the expanded breakdown.
+    var aiDimensions: [(label: String, value: Double?)] {
+        [
+            ("Moat", aiMoat),
+            ("Strength", aiFinancialStrength),
+            ("Predictable", aiPredictability),
+            ("Growth", aiGrowth),
+        ]
+    }
 
     /// The five quality pillars in weighted order, for a compact breakdown.
     var pillars: [(label: String, value: Double?)] {

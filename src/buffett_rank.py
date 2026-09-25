@@ -57,6 +57,13 @@ PILLAR_WEIGHTS: Dict[str, float] = {
 QUALITY_WEIGHT = 0.60
 VALUE_WEIGHT = 0.40
 
+# Share of the final score taken by the AI review (moat, financial strength,
+# predictability, growth — see `ai_review_scores`), applied on top of the
+# quality/value blend when the ranking is served. Adjustable per request; this
+# is the default the clients start from. Unlike every other weight here it is
+# not measured: there is no point-in-time AI review to backtest against.
+DEFAULT_AI_WEIGHT = 0.20
+
 # (metric, higher_is_better) per pillar, per model.
 PillarSpec = Dict[str, List[Tuple[str, bool]]]
 
@@ -455,5 +462,68 @@ def combine(
     result = result.sort_values("composite_score", ascending=False, na_position="last")
     result["rank"] = np.where(
         result["composite_score"].notna(), range(1, len(result) + 1), np.nan
+    )
+    return result
+
+
+def blend_scores(
+    frame: pd.DataFrame,
+    quality_weight: float = QUALITY_WEIGHT,
+    ai_weight: float = 0.0,
+) -> pd.Series:
+    """
+    The final score for each row of a scored frame, re-blended from its parts.
+
+    `score = ((1 - a) * base + a * ai_score) * confidence`, where
+    `base = q * quality + (1 - q) * value` is the stored quality/value blend.
+
+    Each term falls back rather than penalising: a company with no value score
+    keeps its quality score (as `combine` does), and one with no AI review keeps
+    its base score. Confidence multiplies the whole, so thin filings still
+    demote a company however highly the review rates it.
+    """
+    quality = pd.to_numeric(frame["quality_score"], errors="coerce")
+    value = pd.to_numeric(frame.get("value_score"), errors="coerce")
+    if not isinstance(value, pd.Series):
+        value = pd.Series(np.nan, index=frame.index)
+    confidence = pd.to_numeric(frame.get("confidence"), errors="coerce")
+    if not isinstance(confidence, pd.Series):
+        confidence = pd.Series(1.0, index=frame.index)
+
+    base = quality.where(
+        value.isna(), quality * quality_weight + value * (1.0 - quality_weight)
+    )
+
+    ai_weight = float(min(max(ai_weight, 0.0), 1.0))
+    if ai_weight > 0.0 and "ai_score" in frame.columns:
+        ai = pd.to_numeric(frame["ai_score"], errors="coerce")
+        base = base.where(ai.isna(), base * (1.0 - ai_weight) + ai * ai_weight)
+
+    return base * confidence.fillna(1.0)
+
+
+def rerank(
+    frame: pd.DataFrame,
+    quality_weight: float = QUALITY_WEIGHT,
+    ai_weight: float = 0.0,
+) -> pd.DataFrame:
+    """
+    A stored run re-ordered under a different blend, best first.
+
+    The stored `rank` survives as `base_rank` so a reader can see how far the
+    AI review moved a company; `rank` and `composite_score` become the blended
+    ones. Expects the AI columns already attached when `ai_weight` is non-zero.
+    """
+    result = frame.copy()
+    if result.empty:
+        result["base_rank"] = pd.Series(dtype=float)
+        return result
+    result["base_rank"] = result.get("rank")
+    result["composite_score"] = blend_scores(result, quality_weight, ai_weight)
+    result = result.sort_values(
+        ["composite_score", "base_rank"], ascending=[False, True], na_position="last"
+    )
+    result["rank"] = np.where(
+        result["composite_score"].notna(), np.arange(1, len(result) + 1), np.nan
     )
     return result

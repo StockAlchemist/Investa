@@ -64,6 +64,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
+from ai_review_scores import attach_ai_scores
+from buffett_rank import DEFAULT_AI_WEIGHT, blend_scores
 from utils_time import get_est_today
 
 # How much history to pull for the signal. A 10-month average needs 10 completed
@@ -135,6 +137,10 @@ class RankingSleeve:
     sector_digits: int = 2
     # Optional minimum market cap filter (e.g. 10_000_000_000 for $10B+ large-cap).
     min_market_cap: Optional[float] = None
+    # Share of the final score given to the AI review, on top of the
+    # quality/value blend. A request may override it (`build_allocation`). Not
+    # part of any backtest below: the reviews are not point-in-time.
+    ai_weight: float = DEFAULT_AI_WEIGHT
 
     @property
     def kind(self) -> str:
@@ -555,7 +561,10 @@ def market_trend_signal(
 
 
 def _ranking_positions(
-    sleeve: RankingSleeve, capital: float, today: Optional[date] = None
+    sleeve: RankingSleeve,
+    capital: float,
+    today: Optional[date] = None,
+    ai_weight: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     The top-N names from the stored ranking snapshot, equally weighted.
@@ -564,7 +573,11 @@ def _ranking_positions(
     pipeline: the snapshot keeps the two components separately, so changing the
     blend is arithmetic on data already computed. This is the same path
     `scripts/buffett_live_picks.py` takes, so the app and the script cannot
-    disagree.
+    disagree — until the AI review is weighted in, which the script does not
+    do (it reproduces the backtest, and the review cannot be backtested).
+
+    The AI review is joined over the *whole* run before any filter, so its
+    percentile means the same here as on the ranking page.
 
     **Membership comes from the snapshot; prices do not.** Which twenty
     companies to hold is the rule's output and must not drift with the tape.
@@ -585,6 +598,9 @@ def _ranking_positions(
     if frame is None or frame.empty:
         return {"positions": [], "run": run, "error": "Ranking run has no scores"}
 
+    weight = sleeve.ai_weight if ai_weight is None else ai_weight
+    frame = attach_ai_scores(frame)
+
     if sleeve.min_market_cap and "market_cap" in frame.columns:
         caps = pd.to_numeric(frame["market_cap"], errors="coerce")
         frame = frame[caps >= sleeve.min_market_cap]
@@ -595,18 +611,9 @@ def _ranking_positions(
                 "error": f"No companies meet the minimum market cap of ${sleeve.min_market_cap:,.0f}",
             }
 
-    quality = pd.to_numeric(frame["quality_score"], errors="coerce")
-    value = pd.to_numeric(frame["value_score"], errors="coerce")
-    confidence = pd.to_numeric(frame.get("confidence"), errors="coerce").fillna(1.0)
-    # A company with no value score keeps its quality score rather than being
-    # dropped — the same fallback `buffett_rank.combine` applies.
-    blended = (
-        quality.where(
-            value.isna(),
-            quality * sleeve.quality_weight + value * (1.0 - sleeve.quality_weight),
-        )
-        * confidence
-    )
+    # A company with no value score keeps its quality score, and one with no
+    # AI review keeps its quality/value score — neither gap counts against it.
+    blended = blend_scores(frame, sleeve.quality_weight, weight)
 
     picked = _apply_sector_cap(frame, blended, sleeve)
     per_position = capital / sleeve.top_n if sleeve.top_n else 0.0
@@ -641,6 +648,10 @@ def _ranking_positions(
                 "cost": (shares * price) if (shares and price) else None,
                 "score": float(row["_score"]),
                 "industry": row.get("_industry"),
+                # The review's own 1-10 mean, or None when the company has not
+                # been reviewed — so a client can mark the names the AI term
+                # did not touch.
+                "ai_rating": _optional_float(row.get("ai_rating")),
             }
         )
 
@@ -658,7 +669,16 @@ def _ranking_positions(
         "run": run,
         "error": None,
         "price_source": price_source,
+        "ai_weight": weight,
     }
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(number) else number
 
 
 def _apply_sector_cap(
@@ -785,7 +805,10 @@ def ranking_age_days(
 
 
 def build_allocation(
-    strategy: Strategy, capital: float, today: Optional[date] = None
+    strategy: Strategy,
+    capital: float,
+    today: Optional[date] = None,
+    ai_weight: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     What the strategy says to hold today, sized to `capital`.
@@ -811,9 +834,16 @@ def build_allocation(
     money has nowhere to go. This has happened in practice — a truncated
     smoke-test run became the newest snapshot and the sleeve served five names
     against a twenty-name rule without a word.
+
+    `ai_weight` overrides the strategy's AI-review weight for this request;
+    None keeps the strategy's own.
     """
     warnings: List[str] = []
-    built = _ranking_positions(strategy.ranking, capital, today)
+    built = _ranking_positions(strategy.ranking, capital, today, ai_weight)
+    applied_ai_weight = built.get(
+        "ai_weight",
+        strategy.ranking.ai_weight if ai_weight is None else ai_weight,
+    )
     if built["error"]:
         warnings.append(built["error"])
 
@@ -842,10 +872,7 @@ def build_allocation(
     sleeves = [
         {
             "key": "ranking",
-            "label": (
-                f"Quality sleeve (top {strategy.ranking.top_n}, "
-                f"{strategy.ranking.quality_weight:.0%} quality)"
-            ),
+            "label": _sleeve_label(strategy.ranking, applied_ai_weight),
             "weight": 1.0,
             "amount": capital,
             # What the rule asked for against what the ranking could supply, so a
@@ -872,9 +899,30 @@ def build_allocation(
             age_days is not None and age_days >= STALE_RANKING_DAYS
         ),
         "is_short": bool(positions and len(positions) < wanted),
+        # The AI-review weight this answer was built with, so a client showing
+        # a picker can confirm the server applied the choice.
+        "ai_weight": applied_ai_weight,
         "sleeves": sleeves,
         "warnings": warnings,
     }
+
+
+def _sleeve_label(sleeve: RankingSleeve, ai_weight: float) -> str:
+    parts = [f"top {sleeve.top_n}", f"{sleeve.quality_weight:.0%} quality"]
+    if ai_weight > 0:
+        # The review is blended over the quality/value score, so it reads as a
+        # share of the final score rather than a third weight summing with them.
+        parts.append(f"AI review {ai_weight:.0%} of the score")
+    return f"Quality sleeve ({', '.join(parts)})"
+
+
+# Shown beside a strategy while the AI review carries weight: the backtest
+# figures beside it were measured without that term.
+AI_BACKTEST_CAVEAT = (
+    "The AI review's share of the score is not in the backtest: the reviews are "
+    "written today, so there is no point-in-time version of them to test. The "
+    "historical figures are for the quality/value ranking alone."
+)
 
 
 def strategy_payload(strategy: Strategy) -> Dict[str, Any]:
@@ -893,6 +941,10 @@ def strategy_payload(strategy: Strategy) -> Dict[str, Any]:
             "max_per_sector": strategy.ranking.max_per_sector,
             "sector_digits": strategy.ranking.sector_digits,
             "min_market_cap": strategy.ranking.min_market_cap,
+            "ai_weight": strategy.ranking.ai_weight,
+            # Its own field rather than a risk, because the reader can switch the
+            # AI term off per request — the note applies only while it is on.
+            "ai_note": AI_BACKTEST_CAVEAT,
             "rebalance": "Each January",
         },
     }

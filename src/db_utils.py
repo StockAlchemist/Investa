@@ -1256,6 +1256,55 @@ def delete_transaction_from_db(
         return False
 
 
+# The one built-in list. It is an ordinary watchlist found by name rather than a
+# flagged row, so no schema change is needed and every existing watchlist
+# screen shows it without knowing it is special.
+FAVORITES_WATCHLIST_NAME = "Favorites"
+
+
+def is_favorites_name(name: Optional[str]) -> bool:
+    return (name or "").strip().casefold() == FAVORITES_WATCHLIST_NAME.casefold()
+
+
+def get_or_create_favorites_watchlist(
+    db_conn: sqlite3.Connection, user_id: Optional[int] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    The user's Favorites watchlist, created on first use.
+
+    The oldest list with the reserved name wins, so a stray duplicate can never
+    split one user's favourites across two lists.
+    """
+    for watchlist in get_all_watchlists(db_conn):
+        if is_favorites_name(watchlist["name"]):
+            return watchlist
+    new_id = create_watchlist(db_conn, FAVORITES_WATCHLIST_NAME, user_id=user_id)
+    if not new_id:
+        return None
+    return {
+        "id": new_id,
+        "name": FAVORITES_WATCHLIST_NAME,
+        "created_at": datetime.now().isoformat(),
+    }
+
+
+def get_watchlist_ids_for_symbol(db_conn: sqlite3.Connection, symbol: str) -> List[int]:
+    """Ids of every watchlist that holds `symbol`."""
+    # Joined to `watchlists` so items orphaned by an older delete (see
+    # `delete_watchlist`) never read as membership in a list that is gone.
+    sql = (
+        "SELECT DISTINCT i.watchlist_id FROM watchlist_items i "
+        "JOIN watchlists w ON w.id = i.watchlist_id WHERE i.symbol = ?"
+    )
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute(sql, (symbol.strip().upper(),))
+        return sorted(int(r[0]) for r in cursor.fetchall())
+    except sqlite3.Error as e:
+        logging.error(f"Error fetching watchlist membership for {symbol}: {e}")
+        return []
+
+
 def get_all_watchlists(
     db_conn: sqlite3.Connection, user_id: Optional[int] = None
 ) -> List[Dict[str, Any]]:
@@ -1315,8 +1364,15 @@ def delete_watchlist(
         cursor = db_conn.cursor()
         sql = "DELETE FROM watchlists WHERE id = ?"
         cursor.execute(sql, (watchlist_id,))
+        deleted = cursor.rowcount > 0
+        # Explicit, not left to the schema's ON DELETE CASCADE: SQLite only
+        # honours that with `PRAGMA foreign_keys = ON`, which these connections
+        # do not set, so the items used to outlive their list.
+        cursor.execute(
+            "DELETE FROM watchlist_items WHERE watchlist_id = ?", (watchlist_id,)
+        )
         db_conn.commit()
-        return cursor.rowcount > 0
+        return deleted
     except sqlite3.Error as e:
         logging.error(f"Error deleting watchlist {watchlist_id}: {e}")
         return False

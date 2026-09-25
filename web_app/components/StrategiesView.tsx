@@ -12,6 +12,8 @@ import { useStockModal } from '@/context/StockModalContext';
 import StockIcon from '@/components/StockIcon';
 import { cn, formatCurrency, CURRENCY_SYMBOLS } from '@/lib/utils';
 import { formatCalendarDate } from '@/lib/market_time';
+import AiReviewWeightPicker from '@/components/AiReviewWeightPicker';
+import { formatAiReviewWeight, useAiReviewWeight } from '@/lib/ai_review_weight';
 import {
     fetchStrategies,
     fetchStrategyAllocation,
@@ -151,6 +153,12 @@ function SleeveTable({ sleeve, currency }: { sleeve: StrategySleeve; currency: s
                             {sleeve.price_source === 'snapshot' ? 'Price (stored)' : 'Price'}
                         </th>
                         <th className="text-right font-semibold py-2 px-2 whitespace-nowrap">Shares</th>
+                        <th
+                            className="text-right font-semibold py-2 px-2 whitespace-nowrap"
+                            title="AI review: mean of moat, financial strength, predictability and growth, out of 10"
+                        >
+                            AI
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -190,6 +198,12 @@ function SleeveTable({ sleeve, currency }: { sleeve: StrategySleeve; currency: s
                             <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">
                                 {position.shares != null ? position.shares.toLocaleString() : '—'}
                             </td>
+                            <td
+                                className="py-2 px-2 text-right tabular-nums text-muted-foreground whitespace-nowrap"
+                                title={position.ai_rating != null ? undefined : 'Not reviewed yet — picked on quality and value alone'}
+                            >
+                                {position.ai_rating != null ? position.ai_rating.toFixed(1) : '—'}
+                            </td>
                         </tr>
                     ))}
                 </tbody>
@@ -212,6 +226,7 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
     const [appliedCapital, setAppliedCapital] = useState<number>(
         defaultCapital && defaultCapital > 0 ? Math.round(defaultCapital) : 100000
     );
+    const [aiWeight] = useAiReviewWeight();
     // An unknown code falls back to the code itself, which needs the wider gutter.
     const symbol = CURRENCY_SYMBOLS[currency.toUpperCase()] ?? currency;
 
@@ -238,8 +253,8 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
     });
 
     const { data: allocation, isLoading: allocationLoading, isError: allocationError } = useQuery({
-        queryKey: ['strategyAllocation', activeId, appliedCapital, rankRun?.run_id ?? null],
-        queryFn: ({ signal }) => fetchStrategyAllocation(activeId!, appliedCapital, signal),
+        queryKey: ['strategyAllocation', activeId, appliedCapital, rankRun?.run_id ?? null, aiWeight],
+        queryFn: ({ signal }) => fetchStrategyAllocation(activeId!, appliedCapital, aiWeight, signal),
         enabled: !!activeId && appliedCapital > 0,
         staleTime: 15 * 60 * 1000,
     });
@@ -308,7 +323,8 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
                                 Weights are the rule; share counts are indicative and move with price.
                             </p>
                         </div>
-                        <div className="flex items-end gap-2">
+                        <div className="flex flex-wrap items-end gap-2">
+                            <AiReviewWeightPicker />
                             <label className="flex flex-col gap-1 flex-1 sm:flex-none">
                                 <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80 font-semibold whitespace-nowrap">
                                     Amount to allocate
@@ -358,6 +374,18 @@ export default function StrategiesView({ currency = 'USD', defaultCapital }: Str
                                             {active.ranking.min_market_cap != null && active.ranking.min_market_cap > 0 && (
                                                 <>, min ${(active.ranking.min_market_cap / 1e9).toFixed(0)}B market cap</>
                                             )}. {active.ranking.rebalance}.
+                                        </span>
+                                    </li>
+                                )}
+                                {aiWeight > 0 && (
+                                    <li className="flex gap-2">
+                                        <Info className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                        <span>
+                                            AI review of moat, strength, predictability and growth
+                                            takes {formatAiReviewWeight(aiWeight)} of the score.{' '}
+                                            {active.ranking.ai_note && (
+                                                <span className="text-muted-foreground">{active.ranking.ai_note}</span>
+                                            )}
                                         </span>
                                     </li>
                                 )}

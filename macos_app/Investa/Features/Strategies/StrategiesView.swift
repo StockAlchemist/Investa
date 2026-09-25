@@ -15,6 +15,10 @@ final class StrategiesViewModel: ObservableObject {
     /// number they have to mentally rescale.
     @Published var capital: Double = 100_000
 
+    /// Share of the score given to the AI review, fed from the stored
+    /// preference the Rankings screen shares.
+    var aiWeight = AIReviewWeight.defaultValue
+
     private let api: APIClient
 
     init(api: APIClient = .shared) { self.api = api }
@@ -59,12 +63,24 @@ final class StrategiesViewModel: ObservableObject {
         do {
             allocation = try await api.get(
                 "/strategies/\(strategy.id)/allocation",
-                query: [URLQueryItem(name: "capital", value: String(format: "%.2f", capital))]
+                query: [
+                    URLQueryItem(name: "capital", value: String(format: "%.2f", capital)),
+                    AIReviewWeight.queryItem(aiWeight),
+                ]
             )
         } catch {
             allocation = nil
             errorMessage = "Could not build the allocation."
         }
+    }
+
+    /// Rebuilds the book under a new AI-review weight.
+    func setAIWeight(_ weight: Double) async {
+        let weight = AIReviewWeight.normalised(weight)
+        guard weight != aiWeight else { return }
+        aiWeight = weight
+        guard allocation != nil else { return }
+        await buildAllocation()
     }
 
     func select(_ strategy: StrategyDefinition) async {
@@ -87,6 +103,7 @@ struct StrategiesView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var model = StrategiesViewModel()
     @State private var capitalText = ""
+    @AppStorage(AIReviewWeight.storageKey) private var aiWeight = AIReviewWeight.defaultValue
 
     var body: some View {
         ScrollView {
@@ -107,10 +124,14 @@ struct StrategiesView: View {
             .padding(Theme.gutter)
         }
         .task {
+            model.aiWeight = AIReviewWeight.normalised(aiWeight)
             await model.loadCatalogue()
             await model.adoptPortfolioValue(currency: appState.displayCurrency)
             capitalText = Fmt.regroup(String(format: "%.0f", model.capital))
             await model.buildAllocation()
+        }
+        .onChange(of: aiWeight) { _, weight in
+            Task { await model.setAIWeight(weight) }
         }
     }
 
@@ -153,6 +174,10 @@ struct StrategiesView: View {
     private func detail(_ strategy: StrategyDefinition) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             header(strategy)
+
+            // Shared with the Rankings screen: one stored choice, so the list
+            // and the book are always built from the same blend.
+            AIReviewWeightPicker()
 
             rulesAndRisks(strategy)
 
@@ -282,6 +307,22 @@ struct StrategiesView: View {
                     .appFont(.caption).fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(.secondary)
+            }
+
+            let weight = AIReviewWeight.normalised(aiWeight)
+            if weight > 0 {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AI review of moat, strength, predictability and growth takes "
+                             + "\(AIReviewWeight.label(weight)) of the score.")
+                        if let note = ranking.aiNote {
+                            Text(note).foregroundStyle(.secondary)
+                        }
+                    }
+                    .appFont(.caption).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "sparkles").foregroundStyle(.secondary)
+                }
             }
 
             Label {
@@ -463,6 +504,9 @@ private struct SleeveSection: View {
                  : "PRICE")
                 .frame(width: cols.price, alignment: .trailing)
             Text("SHARES").frame(width: cols.shares, alignment: .trailing)
+            if SleeveColumns.showsAI {
+                Text("AI").frame(width: cols.ai, alignment: .trailing)
+            }
         }
         .appFont(.caption2.weight(.semibold))
         .foregroundStyle(.secondary)
@@ -496,6 +540,7 @@ private struct SleeveWidths {
     var amount: CGFloat { SleeveColumns.amount * scale }
     var price: CGFloat { SleeveColumns.price * scale }
     var shares: CGFloat { SleeveColumns.shares * scale }
+    var ai: CGFloat { SleeveColumns.ai * scale }
 }
 
 private enum SleeveColumns {
@@ -511,6 +556,11 @@ private enum SleeveColumns {
     /// symbol. On a phone the industry still appears, as the row's subtitle.
     static let industry: CGFloat = 120
     static var showsIndustry: Bool { !isPhoneLayout }
+
+    /// The AI review's 1–10 rating. A column on Mac; on a phone it rides under
+    /// the name with the industry, for the same reason the industry does.
+    static let ai: CGFloat = 34
+    static var showsAI: Bool { !isPhoneLayout }
 }
 
 private struct PositionRow: View {
@@ -529,7 +579,14 @@ private struct PositionRow: View {
     /// three-per-industry cap is about, so it rides under the name rather than
     /// being dropped from the narrow layout entirely.
     private var inlineIndustry: String? {
-        SleeveColumns.showsIndustry ? nil : position.industry
+        guard !SleeveColumns.showsIndustry else { return nil }
+        let rating = position.aiRating.map { "AI \(String(format: "%.1f", $0))" }
+        let parts = [position.industry, rating].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var aiText: String {
+        position.aiRating.map { String(format: "%.1f", $0) } ?? "—"
     }
 
     var body: some View {
@@ -567,6 +624,14 @@ private struct PositionRow: View {
             Text(position.shares.map { "\($0)" } ?? "—")
                 .appFont(.caption).monospacedDigit().foregroundStyle(.secondary)
                 .numericCell(width: cols.shares)
+            if SleeveColumns.showsAI {
+                Text(aiText)
+                    .appFont(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    .numericCell(width: cols.ai)
+                    .help(position.aiRating == nil
+                          ? "Not reviewed yet — picked on quality and value alone"
+                          : "AI review: mean of moat, financial strength, predictability and growth, out of 10")
+            }
         }
         .padding(.vertical, 3)
     }
