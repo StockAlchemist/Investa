@@ -77,11 +77,7 @@ struct BuffettRankRowCard: View {
 
     private var identity: some View {
         HStack(spacing: 10) {
-            Text(row.rank.map(String.init) ?? "—")
-                .appFont(.callout.monospacedDigit().weight(.semibold))
-                .foregroundStyle((row.rank ?? .max) <= 3 ? Color.brand : Color.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            BuffettRankNumber(row: row)
                 .frame(width: 30, alignment: .trailing)
 
             // The logo is what makes a hundred-row list scannable: a company is
@@ -143,7 +139,8 @@ struct BuffettRankRowCard: View {
             BuffettScoreBadge(
                 composite: row.compositeScore,
                 quality: row.qualityScore,
-                value: row.valueScore
+                value: row.valueScore,
+                ai: row.aiScore
             )
             .layoutPriority(1)
         }
@@ -160,11 +157,7 @@ struct BuffettRankRowCard: View {
     /// the next row.
     private var phoneIdentity: some View {
         HStack(spacing: 8) {
-            Text(row.rank.map(String.init) ?? "—")
-                .appFont(.callout.monospacedDigit().weight(.semibold))
-                .foregroundStyle((row.rank ?? .max) <= 3 ? Color.brand : Color.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            BuffettRankNumber(row: row)
                 .frame(width: 24, alignment: .trailing)
 
             StockIcon(symbol: row.symbol, size: 28, scalesWithText: true)
@@ -210,6 +203,7 @@ struct BuffettRankRowCard: View {
         HStack(spacing: 5) {
             BuffettHalfPill(prefix: "Q", score: row.qualityScore)
             BuffettHalfPill(prefix: "V", score: row.valueScore)
+            BuffettHalfPill(prefix: "AI", score: row.aiScore)
             Spacer(minLength: 6)
             yieldText("E/P", row.earningsYield, isScored: true)
             yieldText("FCF/P", row.fcfYield, isScored: row.scoresFcfYield)
@@ -276,13 +270,39 @@ struct BuffettRankRowCard: View {
     }
 }
 
+// MARK: - Rank
+
+/// The rank, with how far the AI review moved it underneath — only when it
+/// moved, so a list with the review off reads exactly as before.
+struct BuffettRankNumber: View {
+    let row: BuffettRankRow
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(row.rank.map(String.init) ?? "—")
+                .appFont(.callout.monospacedDigit().weight(.semibold))
+                .foregroundStyle((row.rank ?? .max) <= 3 ? Color.brand : Color.secondary)
+            if let shift = row.rankShift {
+                Text("\(shift > 0 ? "▲" : "▼")\(abs(shift))")
+                    .appFont(.system(size: 9, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(shift > 0 ? Color.up : Color.down)
+                    .help("Quality/value rank \(row.baseRank ?? 0)")
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+    }
+}
+
 // MARK: - Score badge
 
-/// The composite, with the two halves it was blended from underneath.
+/// The composite, with the parts it was blended from underneath: quality,
+/// value and the AI review's percentile ("AI —" when not yet reviewed).
 struct BuffettScoreBadge: View {
     let composite: Double?
     let quality: Double?
     let value: Double?
+    let ai: Double?
 
     private var tone: Color { BuffettScore.tint(composite) }
 
@@ -292,6 +312,7 @@ struct BuffettScoreBadge: View {
             HStack(spacing: 4) {
                 BuffettHalfPill(prefix: "Q", score: quality)
                 BuffettHalfPill(prefix: "V", score: value)
+                BuffettHalfPill(prefix: "AI", score: ai)
             }
         }
         .lineLimit(1)

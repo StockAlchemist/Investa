@@ -20,6 +20,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "s
 import strategies as st
 
 
+@pytest.fixture(autouse=True)
+def _no_live_ai_reviews(monkeypatch):
+    """Keep every test off the live screener cache; `_store` can supply reviews."""
+    monkeypatch.setattr(
+        "ai_review_scores.load_ai_reviews", lambda symbols=None: _reviews({})
+    )
+
+
 def _daily_series(values_by_month, days_per_month=20, tz=None):
     """Build a daily close series where each month ends on the given value."""
     stamps, values = [], []
@@ -231,7 +239,7 @@ def test_allocation_is_a_single_stock_sleeve(monkeypatch):
     monkeypatch.setattr(
         st,
         "_ranking_positions",
-        lambda sleeve, capital, today=None: {
+        lambda sleeve, capital, today=None, ai_weight=None: {
             "positions": [
                 {
                     "symbol": "AAA",
@@ -366,7 +374,9 @@ def _snapshot_frame(count: int = 2):
     )
 
 
-def _store(monkeypatch, finished_at="2026-07-28T08:00:00", count: int = 2):
+def _store(
+    monkeypatch, finished_at="2026-07-28T08:00:00", count: int = 2, reviews=None
+):
     frame = _snapshot_frame(count)
 
     class FakeStore:
@@ -378,6 +388,22 @@ def _store(monkeypatch, finished_at="2026-07-28T08:00:00", count: int = 2):
 
     monkeypatch.setattr("buffett_store.get_store", lambda: FakeStore())
     monkeypatch.setattr("edgar_sic.get_sic_map", lambda: {})
+    # Hermetic: the AI reviews otherwise come from the live screener cache.
+    monkeypatch.setattr(
+        "ai_review_scores.load_ai_reviews",
+        lambda symbols=None: _reviews(reviews or {}),
+    )
+
+
+def _reviews(ratings):
+    """A review frame giving each symbol the same score on all four dimensions."""
+    columns = ["ai_moat", "ai_financial_strength", "ai_predictability", "ai_growth"]
+    frame = pd.DataFrame(
+        {c: [float(r) for r in ratings.values()] for c in columns},
+        index=pd.Index(list(ratings.keys()), name="symbol"),
+    )
+    frame["ai_reviewed_at"] = "2026-09-01T00:00:00"
+    return frame
 
 
 def test_share_counts_use_the_live_quote_not_the_stored_close(monkeypatch):
@@ -654,7 +680,7 @@ def test_allocation_amounts_sum_to_the_capital_given(monkeypatch):
     monkeypatch.setattr(
         st,
         "_ranking_positions",
-        lambda sleeve, capital, today=None: {
+        lambda sleeve, capital, today=None, ai_weight=None: {
             "positions": [],
             "run": None,
             "error": None,
@@ -733,3 +759,58 @@ def test_min_market_cap_filters_positions(monkeypatch):
     res = st._ranking_positions(sleeve, 10_000.0)
     assert len(res["positions"]) == 1
     assert res["positions"][0]["symbol"] == "LARGE"
+
+
+# --- the AI review in the blend ---------------------------------------------
+
+
+def test_the_ai_review_can_promote_a_company_into_the_book(monkeypatch):
+    """
+    BBB trails AAA by one point on quality and value; a top review against a
+    poor one is worth more than that once the review carries any real weight.
+    """
+    _store(monkeypatch, reviews={"AAA": 2.0, "BBB": 9.0})
+    monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {})
+    sleeve = st.RankingSleeve(quality_weight=0.8, top_n=1, max_per_sector=None)
+
+    without = st._ranking_positions(sleeve, 1000.0, ai_weight=0.0)
+    with_ai = st._ranking_positions(sleeve, 1000.0, ai_weight=0.3)
+
+    assert [p["symbol"] for p in without["positions"]] == ["AAA"]
+    assert [p["symbol"] for p in with_ai["positions"]] == ["BBB"]
+    assert with_ai["positions"][0]["ai_rating"] == pytest.approx(9.0)
+    assert with_ai["ai_weight"] == pytest.approx(0.3)
+
+
+def test_an_unreviewed_company_is_not_penalised(monkeypatch):
+    """No review means the quality/value score stands, not a blend with zero."""
+    _store(monkeypatch, reviews={"BBB": 5.0})
+    monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {})
+    sleeve = st.RankingSleeve(quality_weight=0.8, top_n=2, max_per_sector=None)
+
+    built = st._ranking_positions(sleeve, 1000.0, ai_weight=0.5)
+    by_symbol = {p["symbol"]: p for p in built["positions"]}
+
+    assert by_symbol["AAA"]["ai_rating"] is None
+    assert by_symbol["AAA"]["score"] == pytest.approx(90.0)
+
+
+def test_the_sleeve_weight_applies_unless_the_request_overrides_it(monkeypatch):
+    _store(monkeypatch, count=20)
+    monkeypatch.setattr(st, "latest_closes", lambda symbols, today=None: {})
+    strategy = st.get_strategy("quality_20")
+
+    default = st.build_allocation(strategy, 100_000.0)
+    override = st.build_allocation(strategy, 100_000.0, ai_weight=0.0)
+
+    assert default["ai_weight"] == pytest.approx(strategy.ranking.ai_weight)
+    assert "AI review" in default["sleeves"][0]["label"]
+    assert override["ai_weight"] == 0.0
+    assert "AI review" not in override["sleeves"][0]["label"]
+
+
+def test_the_catalogue_says_the_ai_weight_is_not_backtested():
+    for strategy in st.list_strategies():
+        payload = st.strategy_payload(strategy)
+        assert payload["ranking"]["ai_weight"] == strategy.ranking.ai_weight
+        assert payload["ranking"]["ai_note"] == st.AI_BACKTEST_CAVEAT, strategy.id

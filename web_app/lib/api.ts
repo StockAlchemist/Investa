@@ -1083,6 +1083,8 @@ export interface WatchlistMeta {
     id: number;
     name: string;
     created_at: string;
+    /** The built-in Favorites list. The server lists it first. */
+    is_favorites?: boolean;
 }
 
 export async function getWatchlists(signal?: AbortSignal): Promise<WatchlistMeta[]> {
@@ -1091,11 +1093,22 @@ export async function getWatchlists(signal?: AbortSignal): Promise<WatchlistMeta
     return asList<WatchlistMeta>(data, 'Failed to fetch watchlists');
 }
 
+/** The Favorites watchlist, created on the server if the user has none yet. */
+export async function ensureFavoritesWatchlist(): Promise<WatchlistMeta> {
+    const { data, error } = await apiClient.POST("/api/watchlists/favorites", {});
+    if (error) throw new Error('Failed to open Favorites');
+    return data as unknown as WatchlistMeta;
+}
+
 export async function createWatchlist(name: string): Promise<WatchlistMeta> {
     const { data, error } = await apiClient.POST("/api/watchlists", {
         body: { name } as never
     });
-    if (error) throw new Error('Failed to create watchlist');
+    if (error) {
+        // The server says why — the Favorites name is reserved, for one.
+        const detail = (error as { detail?: unknown }).detail;
+        throw new Error(typeof detail === 'string' ? detail : 'Failed to create watchlist');
+    }
     return data as unknown as WatchlistMeta;
 }
 
@@ -1650,7 +1663,27 @@ export interface BuffettRankRow {
     fcf_yield: number | null;
     period_count: number | null;
     latest_period: string | null;
+    /** The stored quality/value rank; `rank` is the position once the AI review is weighted in. */
+    base_rank?: number | null;
+    /** The AI review's four 1–10 judgements; null when the company has not been reviewed. */
+    ai_moat?: number | null;
+    ai_financial_strength?: number | null;
+    ai_predictability?: number | null;
+    ai_growth?: number | null;
+    /** Mean of the four, on the review's own 1–10 scale. */
+    ai_rating?: number | null;
+    /** `ai_rating` as a 0–100 percentile across reviewed companies — the part the blend uses. */
+    ai_score?: number | null;
+    ai_reviewed_at?: string | null;
 }
+
+/**
+ * Share of the final ranking score given to the AI review (moat, financial
+ * strength, predictability, growth). Mirrors `DEFAULT_AI_WEIGHT` in
+ * `src/buffett_rank.py`; the presets are what the pickers offer.
+ */
+export const DEFAULT_AI_REVIEW_WEIGHT = 0.2;
+export const AI_REVIEW_WEIGHT_PRESETS = [0, 0.1, 0.2, 0.3, 0.5] as const;
 
 /** A company kept out of the ranking, with the reasons it failed. */
 export interface BuffettExclusion {
@@ -1685,6 +1718,9 @@ export async function fetchBuffettRankRun(signal?: AbortSignal): Promise<Buffett
 export interface BuffettRankPage {
     total: number;
     rows: BuffettRankRow[];
+    /** The AI weight the server applied, and how many ranked companies have a review. */
+    ai_weight?: number;
+    ai_reviewed?: number;
 }
 
 export async function fetchBuffettRankings(
@@ -1692,6 +1728,7 @@ export async function fetchBuffettRankings(
     offset: number = 0,
     model?: BuffettModel,
     search?: string,
+    aiWeight: number = DEFAULT_AI_REVIEW_WEIGHT,
     signal?: AbortSignal
 ): Promise<BuffettRankPage> {
     // `search` is applied server-side across the whole run. Filtering the
@@ -1704,6 +1741,7 @@ export async function fetchBuffettRankings(
                 offset,
                 model: model || undefined,
                 search: search?.trim() ? search.trim() : undefined,
+                ai_weight: aiWeight,
             }
         },
         signal
@@ -1971,6 +2009,10 @@ export interface StrategyDefinition {
         max_per_sector: number | null;
         sector_digits: number;
         min_market_cap?: number | null;
+        /** The strategy's own AI-review weight; an allocation request may override it. */
+        ai_weight?: number;
+        /** Why the backtest figures exclude the AI review; show it while the weight is above 0. */
+        ai_note?: string;
         rebalance: string;
     };
 }
@@ -1988,6 +2030,8 @@ export interface StrategyPosition {
     score?: number | null;
     industry?: string | null;
     note?: string | null;
+    /** The AI review's mean 1–10 rating; null when the company has not been reviewed. */
+    ai_rating?: number | null;
 }
 
 export interface StrategySleeve {
@@ -2031,6 +2075,8 @@ export interface StrategyAllocation {
      * `warnings` entry says how short and by how much.
      */
     is_short?: boolean;
+    /** The AI-review weight this allocation was built with. */
+    ai_weight?: number;
     sleeves: StrategySleeve[];
     warnings: string[];
 }
@@ -2097,10 +2143,14 @@ export async function fetchTrendSignal(
 export async function fetchStrategyAllocation(
     strategyId: string,
     capital: number,
+    aiWeight?: number,
     signal?: AbortSignal
 ): Promise<StrategyAllocation> {
     const { data, error } = await apiClient.GET("/api/strategies/{strategy_id}/allocation", {
-        params: { path: { strategy_id: strategyId }, query: { capital } },
+        params: {
+            path: { strategy_id: strategyId },
+            query: { capital, ai_weight: aiWeight },
+        },
         signal
     });
     if (error) throw new Error('Failed to build the strategy allocation');

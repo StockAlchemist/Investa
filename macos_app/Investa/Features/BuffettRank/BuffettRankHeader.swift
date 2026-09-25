@@ -10,6 +10,7 @@ import SwiftUI
 struct BuffettRankHero: View {
     let run: BuffettRankRun?
     @State private var showingMethod = false
+    @AppStorage(AIReviewWeight.storageKey) private var aiWeight = AIReviewWeight.defaultValue
 
     private var ranked: Double { Double(run?.rankedCount ?? 0) }
     private var excluded: Double { Double(run?.excludedCount ?? 0) }
@@ -22,7 +23,7 @@ struct BuffettRankHero: View {
             // is a tenth of the screen every time the tab is opened. There
             // it moves inside "How it's scored", one tap away.
             if !isPhoneLayout {
-                Text(Self.intro)
+                Text(Self.intro(aiWeight: aiWeight))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -33,19 +34,38 @@ struct BuffettRankHero: View {
                 legend
             }
 
-            methodToggle
-            if showingMethod { BuffettMethodNote(includesIntro: isPhoneLayout) }
+            // The weight picker shares the toggle's line when both fit, and
+            // takes its own line on a phone rather than squeezing either.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    methodToggle
+                    Spacer(minLength: 12)
+                    AIReviewWeightPicker()
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    AIReviewWeightPicker()
+                    methodToggle
+                }
+            }
+            if showingMethod {
+                BuffettMethodNote(includesIntro: isPhoneLayout, aiWeight: AIReviewWeight.normalised(aiWeight))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(isPhoneLayout ? 12 : 16)
         .card(.hero)
     }
 
-    static let intro = """
-        Every US-listed common stock, scored 60% on business quality and 40% on value. \
-        Quality gates run first — a company that fails one is excluded rather than ranked \
-        low, because cheapness never rescues a broken business.
-        """
+    static func intro(aiWeight: Double) -> String {
+        let weight = AIReviewWeight.normalised(aiWeight)
+        let review = weight > 0
+            ? ", with the AI review of moat, strength, predictability and growth taking " +
+              "\(AIReviewWeight.label(weight)) of the final score"
+            : ""
+        return "Every US-listed common stock, scored 60% on business quality and 40% on value\(review). " +
+            "Quality gates run first — a company that fails one is excluded rather than ranked " +
+            "low, because cheapness never rescues a broken business."
+    }
 
     // MARK: - Split
 
@@ -122,23 +142,39 @@ struct BuffettRankHero: View {
 struct BuffettMethodNote: View {
     /// Set where the hero could not afford the paragraph on its own.
     var includesIntro = false
+    /// The AI-review share the list is currently ranked at.
+    var aiWeight: Double = AIReviewWeight.defaultValue
 
     private let quality = [
         ("Returns on capital", "30"), ("Financial strength", "20"), ("Predictability", "20"),
         ("Growth", "15"), ("Capital allocation", "15"),
     ]
     private let value = [("Earnings yield", "60"), ("Free-cash-flow yield", "40")]
+    private let review = [
+        ("Moat", "25"), ("Financial strength", "25"), ("Predictability", "25"), ("Growth", "25"),
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if includesIntro {
-                Text(BuffettRankHero.intro)
+                Text(BuffettRankHero.intro(aiWeight: aiWeight))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             group("Quality — 60% of the composite", quality, tint: .brand)
             group("Value — 40%", value, tint: .brandIndigo)
+            group("AI review — \(AIReviewWeight.label(aiWeight)) of the final score", review, tint: .plum)
+            Text("""
+                 The AI review scores each business 1–10 on moat, financial strength, \
+                 predictability and growth. Their average is ranked against every reviewed company \
+                 and blended over the quality/value score at the weight you pick. A company not yet \
+                 reviewed keeps its quality/value score. The review is written today, so unlike the \
+                 rest of the ranking it has no backtest behind it.
+                 """)
+                .appFont(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("""
                  Every figure is a percentile against the companies scored under the same model, so \
                  a bank's leverage is judged against other banks and never against an industrial. \

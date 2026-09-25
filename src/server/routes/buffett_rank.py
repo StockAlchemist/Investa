@@ -11,14 +11,19 @@ deliberate exclusion from a data failure.
 """
 
 # ruff: noqa: E402
+import json
 import logging
 import re
 from typing import Optional
+
+import pandas as pd
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+import buffett_rank
+from ai_review_scores import attach_ai_scores
 from buffett_store import get_store
 from server.auth import User
 from server.dependencies import get_current_user
@@ -135,6 +140,67 @@ async def get_latest_run(current_user: User = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Could not load ranking run")
 
 
+def _run_quality_weight(run: Optional[dict]) -> float:
+    """The quality/value split the run was scored at, from its parameters."""
+    try:
+        params = json.loads((run or {}).get("parameters") or "{}")
+        weight = float(params.get("quality_weight", buffett_rank.QUALITY_WEIGHT))
+    except (TypeError, ValueError):
+        return buffett_rank.QUALITY_WEIGHT
+    return weight if 0.0 <= weight <= 1.0 else buffett_rank.QUALITY_WEIGHT
+
+
+def _blended_page(
+    run_id: Optional[int],
+    ai_weight: float,
+    limit: int,
+    offset: int,
+    model: Optional[str],
+    search: Optional[str],
+) -> dict:
+    """
+    One page of a run re-ranked with the AI review weighted in.
+
+    The whole run is re-blended before any filter, for the same reason
+    `get_ranked` searches the whole run: a filtered row keeps the rank it holds
+    in the full list, not its position among the matches. ~1,200 rows, so this
+    is milliseconds of pandas.
+    """
+    store = get_store()
+    run = store.get_run(run_id)
+    frame = store.get_scores_frame(run["run_id"]) if run else pd.DataFrame()
+    if frame.empty:
+        return {"total": 0, "rows": [], "ai_weight": ai_weight, "ai_reviewed": 0}
+
+    frame = attach_ai_scores(frame)
+    ranked = buffett_rank.rerank(frame, _run_quality_weight(run), ai_weight)
+
+    matches = ranked
+    if model:
+        matches = matches[matches["model"] == model]
+    if search and search.strip():
+        term = search.strip()
+        names = matches["name"].fillna("").astype(str)
+        symbols = matches["symbol"].fillna("").astype(str)
+        matches = matches[
+            symbols.str.contains(term, case=False, regex=False)
+            | names.str.contains(term, case=False, regex=False)
+        ]
+
+    page = matches.iloc[offset : offset + limit]
+    rows = page.astype(object).where(page.notna(), None).to_dict("records")
+    for row in rows:
+        for key in ("rank", "base_rank", "period_count"):
+            if row.get(key) is not None:
+                row[key] = int(row[key])
+    return {
+        "total": int(len(matches)),
+        "rows": rows,
+        "ai_weight": ai_weight,
+        "ai_reviewed": int(ranked["ai_score"].notna().sum()),
+    }
+
+
 @router.get("/buffett-rank")
 async def get_rankings(
     limit: int = Query(100, ge=1, le=500),
@@ -142,15 +208,28 @@ async def get_rankings(
     model: Optional[str] = Query(None, description="generic, bank, insurer or reit"),
     search: Optional[str] = Query(None, description="Match symbol or company name"),
     run_id: Optional[int] = Query(None, description="Defaults to the latest run"),
+    ai_weight: float = Query(
+        buffett_rank.DEFAULT_AI_WEIGHT,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Share of the final score given to the AI review (moat, financial "
+            "strength, predictability, growth), 0-1. 0 serves the stored ranking."
+        ),
+    ),
     current_user: User = Depends(get_current_user),
 ):
     """
     The ranked list, best first.
 
-    Each row carries its pillar breakdown and confidence so a client can explain
-    a position without a second request. `search` is applied across the whole
-    run rather than the returned page, so a client never has to load the full
-    list to find one company.
+    Each row carries its pillar breakdown, confidence and AI review scores so a
+    client can explain a position without a second request. `search` is applied
+    across the whole run rather than the returned page, so a client never has
+    to load the full list to find one company.
+
+    `rank` is the position under the requested AI weight; `base_rank` is the
+    stored quality/value rank the run produced. Companies without an AI review
+    keep their quality/value score rather than being penalised.
     """
     if model and model not in _VALID_MODELS:
         raise HTTPException(
@@ -158,14 +237,13 @@ async def get_rankings(
             detail=f"Unknown model '{model}'. Expected one of {sorted(_VALID_MODELS)}",
         )
     try:
-        store = get_store()
-        rows = await run_in_threadpool(
-            store.get_ranked, run_id, limit, offset, model, search
-        )
-        total = await run_in_threadpool(store.count_ranked, run_id, model, search)
         # Wrapped rather than a bare array: the client needs the match count to
         # distinguish "last page" from "no results", and to size the pager.
-        return clean_nans({"total": total, "rows": _decorate_rows(rows)})
+        page = await run_in_threadpool(
+            _blended_page, run_id, ai_weight, limit, offset, model, search
+        )
+        page["rows"] = _decorate_rows(page["rows"])
+        return clean_nans(page)
     except Exception as exc:
         logging.error(f"Buffett rank: failed to load rankings: {exc}")
         raise HTTPException(status_code=500, detail="Could not load rankings")

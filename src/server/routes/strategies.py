@@ -12,6 +12,7 @@ Nothing here places an order or mutates portfolio state. These endpoints answer
 
 # ruff: noqa: E402
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.concurrency import run_in_threadpool
@@ -99,6 +100,15 @@ async def get_trend_signal(
 async def get_allocation(
     strategy_id: str,
     capital: float = Query(..., gt=0, description="Amount to allocate, in USD"),
+    ai_weight: Optional[float] = Query(
+        None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Share of the final score given to the AI review (0-1). "
+            "Omit to use the strategy's own weight."
+        ),
+    ),
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -113,6 +123,10 @@ async def get_allocation(
     weights into share counts are live quotes, falling back to the snapshot's
     stored close when a quote is unavailable (`price_source` says which). The
     weights are the part of the answer that is actually fixed.
+
+    `ai_weight` re-blends the AI review (moat, financial strength,
+    predictability, growth) into the score before the top N is taken. It is
+    not part of the backtested rule; the catalogue's risks say so.
     """
     strategy = strategy_lib.get_strategy(strategy_id)
     if strategy is None:
@@ -120,7 +134,7 @@ async def get_allocation(
 
     try:
         allocation = await run_in_threadpool(
-            strategy_lib.build_allocation, strategy, capital
+            strategy_lib.build_allocation, strategy, capital, None, ai_weight
         )
     except Exception as exc:
         logging.error(f"Strategies: allocation failed for {strategy_id}: {exc}")

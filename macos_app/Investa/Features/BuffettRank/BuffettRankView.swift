@@ -23,6 +23,9 @@ final class BuffettRankViewModel: ObservableObject {
     /// ranked below that would appear not to exist.
     @Published var search = ""
     @Published private(set) var totalMatches = 0
+    /// Share of the final score given to the AI review; the view feeds it from
+    /// the stored preference and reloads when it changes.
+    private(set) var aiWeight = AIReviewWeight.defaultValue
 
     static let pageSize = 100
 
@@ -102,6 +105,7 @@ final class BuffettRankViewModel: ObservableObject {
                 totalMatches = result.total
             } else {
                 if let model { query.append(URLQueryItem(name: "model", value: model.rawValue)) }
+                query.append(AIReviewWeight.queryItem(aiWeight))
                 let result: BuffettRankPage = try await api.get("/buffett-rank", query: query)
                 guard token == generation else { return }
                 rows = replacing ? result.rows : rows + result.rows
@@ -125,6 +129,17 @@ final class BuffettRankViewModel: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             await self.reload()
         }
+    }
+
+    /// Re-ranks under a new AI-review weight. Before `start` it only records
+    /// the value, so the first load already uses it.
+    func setAIWeight(_ weight: Double) async {
+        let weight = AIReviewWeight.normalised(weight)
+        guard weight != aiWeight else { return }
+        aiWeight = weight
+        guard hasStarted, !showingExclusions else { return }
+        rows = []
+        await reload()
     }
 
     func select(model newModel: BuffettModel?) async {
@@ -151,6 +166,7 @@ final class BuffettRankViewModel: ObservableObject {
 struct BuffettRankView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var viewModel = BuffettRankViewModel()
+    @AppStorage(AIReviewWeight.storageKey) private var aiWeight = AIReviewWeight.defaultValue
 
     var body: some View {
         ScrollView {
@@ -169,7 +185,13 @@ struct BuffettRankView: View {
             }
             .padding(Theme.gutter)
         }
-        .task { await viewModel.start() }
+        .task {
+            await viewModel.setAIWeight(aiWeight)
+            await viewModel.start()
+        }
+        .onChange(of: aiWeight) { _, weight in
+            Task { await viewModel.setAIWeight(weight) }
+        }
     }
 
     // MARK: - Body states

@@ -114,6 +114,10 @@ struct RankingSleeveSpec: Decodable, Sendable {
     let sectorDigits: Int
     let minMarketCap: Double?
     let rebalance: String
+    /// The strategy's own AI-review weight; an allocation request may override it.
+    let aiWeight: Double?
+    /// Why the backtest excludes the AI review; shown while its weight is above 0.
+    let aiNote: String?
 
     private enum CodingKeys: String, CodingKey {
         case qualityWeight = "quality_weight"
@@ -122,6 +126,8 @@ struct RankingSleeveSpec: Decodable, Sendable {
         case sectorDigits = "sector_digits"
         case minMarketCap = "min_market_cap"
         case rebalance
+        case aiWeight = "ai_weight"
+        case aiNote = "ai_note"
     }
 }
 
@@ -176,6 +182,8 @@ struct StrategyPosition: Decodable, Sendable, Identifiable {
     let score: Double?
     let industry: String?
     let note: String?
+    /// The AI review's mean 1–10 rating; nil when the company is not reviewed.
+    let aiRating: Double?
 
     var id: String { symbol }
 
@@ -192,6 +200,7 @@ struct StrategyPosition: Decodable, Sendable, Identifiable {
         score = raw["score"]?.doubleValue
         industry = raw["industry"]?.stringValue
         note = raw["note"]?.stringValue
+        aiRating = raw["ai_rating"]?.doubleValue
     }
 }
 
@@ -247,11 +256,14 @@ struct StrategyAllocation: Decodable, Sendable {
     /// being silently widened away from the backtested rule. A matching
     /// `warnings` entry says how short and by how much.
     let isShort: Bool?
+    /// The AI-review weight the allocation was built with.
+    let aiWeight: Double?
     let sleeves: [StrategySleeve]
     let warnings: [String]
 
     private enum CodingKeys: String, CodingKey {
         case name, capital, sleeves, warnings
+        case aiWeight = "ai_weight"
         case strategyID = "strategy_id"
         case asOf = "as_of"
         case rankingAgeDays = "ranking_age_days"

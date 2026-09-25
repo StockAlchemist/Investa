@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { formatPercent, cn } from "@/lib/utils";
 import { formatCalendarDate } from '@/lib/market_time';
 import { useStockModal } from '@/context/StockModalContext';
+import AiReviewWeightPicker from './AiReviewWeightPicker';
+import { formatAiReviewWeight, useAiReviewWeight } from '@/lib/ai_review_weight';
 import {
     fetchBuffettRankings,
     fetchBuffettExclusions,
@@ -51,7 +53,31 @@ const VALUE_WEIGHTS: Array<[string, string]> = [
     ['Free-cash-flow yield', '40'],
 ];
 
+const AI_WEIGHTS: Array<[string, string]> = [
+    ['Moat', '25'],
+    ['Financial strength', '25'],
+    ['Predictability', '25'],
+    ['Growth', '25'],
+];
+
 const PAGE_SIZE = 100;
+
+const fmtRating = (value: number | null | undefined): string =>
+    value === null || value === undefined ? '—' : value.toFixed(1);
+
+/** The review behind the AI column, for its tooltip. */
+const aiTooltip = (row: BuffettRankRow): string => {
+    if (row.ai_rating === null || row.ai_rating === undefined) {
+        return 'Not reviewed yet — ranked on quality and value alone';
+    }
+    const parts = [
+        `moat ${fmtRating(row.ai_moat)}`,
+        `strength ${fmtRating(row.ai_financial_strength)}`,
+        `predictability ${fmtRating(row.ai_predictability)}`,
+        `growth ${fmtRating(row.ai_growth)}`,
+    ];
+    return `AI review ${fmtRating(row.ai_rating)}/10 (${parts.join(', ')}). Column shows its percentile.`;
+};
 
 /** Percentile scores share one scale, so one colour ramp serves all of them. */
 const scoreClass = (value: number | null | undefined): string => {
@@ -124,7 +150,7 @@ const WeightGroup: React.FC<{
  * In place rather than in a doc nobody opens, and collapsed by default so the
  * ranking itself stays the first thing on the screen.
  */
-const MethodNote: React.FC = () => (
+const MethodNote: React.FC<{ aiWeight: number }> = ({ aiWeight }) => (
     <div className="mt-3 space-y-3 rounded-lg bg-secondary/60 p-4">
         <WeightGroup
             title="Quality — 60% of the composite"
@@ -138,6 +164,19 @@ const MethodNote: React.FC = () => (
             chipClass="bg-indigo-500/10"
             numberClass="text-indigo-600 dark:text-indigo-400"
         />
+        <WeightGroup
+            title={`AI review — ${formatAiReviewWeight(aiWeight)} of the final score`}
+            items={AI_WEIGHTS}
+            chipClass="bg-violet-500/10"
+            numberClass="text-violet-700 dark:text-violet-400"
+        />
+        <p className="text-xs text-muted-foreground">
+            The AI review scores each business 1–10 on moat, financial strength, predictability
+            and growth. Their average is ranked against every reviewed company and blended over
+            the quality/value score at the weight you pick. A company not yet reviewed keeps its
+            quality/value score. The review is written today, so unlike the rest of the
+            ranking it has no backtest behind it.
+        </p>
         <p className="text-xs text-muted-foreground">
             Every figure is a percentile against the companies scored under the same model, so a
             bank&apos;s leverage is judged against other banks and never against an industrial.
@@ -161,6 +200,7 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
     const [showExcluded, setShowExcluded] = useState(false);
     const [showMethod, setShowMethod] = useState(false);
     const { openStockDetail } = useStockModal();
+    const [aiWeight] = useAiReviewWeight();
 
     // Debounced so typing does not fire a query per keystroke against a
     // 1,100-row table. Any change resets to the first page — staying on page 4
@@ -180,13 +220,14 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
     });
 
     const { data: rankPage, isFetching, isError } = useQuery({
-        queryKey: ['buffett-rank', model, page, debouncedSearch],
+        queryKey: ['buffett-rank', model, page, debouncedSearch, aiWeight],
         queryFn: ({ signal }) =>
             fetchBuffettRankings(
                 PAGE_SIZE,
                 page * PAGE_SIZE,
                 model === 'all' ? undefined : model,
                 debouncedSearch || undefined,
+                aiWeight,
                 signal
             ),
         staleTime: 5 * 60 * 1000,
@@ -246,7 +287,10 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
                 <h1 className="md:hidden mb-1 text-xl font-semibold">Rankings</h1>
                 <p className="max-w-4xl text-sm text-muted-foreground">
                     Every US-listed common stock, scored 60% on business quality and 40% on
-                    value. Quality gates run first — a company that fails one is excluded
+                    value{aiWeight > 0 && (
+                        <>, with the AI review of moat, strength, predictability and growth
+                        taking {formatAiReviewWeight(aiWeight)} of the final score</>
+                    )}. Quality gates run first — a company that fails one is excluded
                     rather than ranked low, because cheapness never rescues a broken business.
                 </p>
 
@@ -277,7 +321,7 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
                     {showMethod ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                     How it&apos;s scored
                 </button>
-                {showMethod && <MethodNote />}
+                {showMethod && <MethodNote aiWeight={aiWeight} />}
             </header>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -298,6 +342,8 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
 
                 {!showExcluded && (
                     <>
+                        <div className="mx-2 h-6 w-px bg-border" />
+                        <AiReviewWeightPicker />
                         <div className="mx-2 h-6 w-px bg-border" />
                         {(['all', 'generic', 'bank', 'insurer', 'reit'] as const).map((option) => (
                             <Button
@@ -374,6 +420,24 @@ const BuffettRankView: React.FC<BuffettRankViewProps> = ({ currency = 'USD' }) =
     );
 };
 
+/**
+ * How far the AI review moved a company from its quality/value rank. Shown only
+ * when it moved, so a list at weight "Off" reads exactly as it always did.
+ */
+const RankShift: React.FC<{ rank: number | null; baseRank?: number | null }> = ({ rank, baseRank }) => {
+    if (rank === null || baseRank === null || baseRank === undefined || rank === baseRank) return null;
+    const up = rank < baseRank;
+    return (
+        <span
+            className={cn('ml-1 text-[10px] font-medium', up ? 'text-up' : 'text-down')}
+            title={`Quality/value rank ${baseRank}`}
+        >
+            {up ? '▲' : '▼'}
+            {Math.abs(baseRank - rank)}
+        </span>
+    );
+};
+
 const RankTable: React.FC<{
     rows: BuffettRankRow[];
     loading: boolean;
@@ -423,6 +487,12 @@ const RankTable: React.FC<{
                         <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Score</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Quality</th>
                         <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Value</th>
+                        <th
+                            className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground"
+                            title="AI review of moat, financial strength, predictability and growth, as a percentile of reviewed companies"
+                        >
+                            AI
+                        </th>
                         {PILLARS.map((pillar) => (
                             <th
                                 key={String(pillar.key)}
@@ -444,7 +514,10 @@ const RankTable: React.FC<{
                 <tbody className="divide-y divide-border">
                     {rows.map((row) => (
                         <tr key={row.symbol} className="transition-colors hover:bg-secondary/20">
-                            <td className="px-4 py-3 text-sm tabular-nums text-muted-foreground">{row.rank ?? '—'}</td>
+                            <td className="px-4 py-3 text-sm tabular-nums text-muted-foreground whitespace-nowrap">
+                                {row.rank ?? '—'}
+                                <RankShift rank={row.rank} baseRank={row.base_rank} />
+                            </td>
                             <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
                                     {/* Carries the logo itself — the star is a badge
@@ -502,6 +575,12 @@ const RankTable: React.FC<{
                             </td>
                             <td className={cn('px-4 py-3 text-right text-sm tabular-nums', scoreClass(row.value_score))}>
                                 {fmtScore(row.value_score)}
+                            </td>
+                            <td
+                                className={cn('px-4 py-3 text-right text-sm tabular-nums', scoreClass(row.ai_score))}
+                                title={aiTooltip(row)}
+                            >
+                                {fmtScore(row.ai_score)}
                             </td>
                             {PILLARS.map((pillar) => (
                                 <td
