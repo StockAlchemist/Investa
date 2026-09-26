@@ -264,6 +264,10 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(AIReviewWeight.label(0), "Off")
         XCTAssertEqual(AIReviewWeight.label(0.2), "20%")
         XCTAssertEqual(AIReviewWeight.queryItem(0.5).value, "0.5")
+        // The full range is offered: the review alone can decide the order.
+        XCTAssertEqual(AIReviewWeight.presets.last, 1.0)
+        XCTAssertEqual(AIReviewWeight.label(1), "100%")
+        XCTAssertEqual(AIReviewWeight.queryItem(1).value, "1.0")
     }
 
     /// Favorites is marked by the server, never inferred from the name, and an
