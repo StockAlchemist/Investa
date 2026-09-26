@@ -129,139 +129,107 @@ export default function TxKpiStrip({ transactions, preferredCurrency }: TxKpiStr
     const cashEventCount = counts.deposit + counts.withdrawal;
 
     return (
-        <div className="metric-card p-4 space-y-4">
-            {/* Activity counts — spread across the card width */}
-            <div className="flex flex-wrap justify-between items-baseline gap-x-4 gap-y-1.5">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
-                    Activity
-                </span>
-                <span className="inline-flex items-baseline gap-1.5">
-                    <span className="text-base font-bold tabular-nums text-foreground">
-                        {counts.total.toLocaleString()}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">transactions</span>
-                </span>
+        <div className="metric-card p-4">
+            {/* Activity counts — one line of inline stats, wrapping on a phone */}
+            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+                <span className="section-label">Activity</span>
+                <Count value={counts.total} label="transactions" />
                 {tradeCount > 0 && (
                     <span className="inline-flex items-baseline gap-1.5">
-                        <span className="text-sm font-bold tabular-nums text-foreground">
-                            {counts.buy.toLocaleString()}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">buys</span>
+                        <Count value={counts.buy} label="buys" />
                         <span className="text-muted-foreground/40">/</span>
-                        <span className="text-sm font-bold tabular-nums text-foreground">
-                            {counts.sell.toLocaleString()}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">sells</span>
+                        <Count value={counts.sell} label="sells" />
                     </span>
                 )}
                 {incomeCount > 0 && (
                     <span className="inline-flex items-baseline gap-1.5">
-                        <span className="text-sm font-bold tabular-nums text-up">
-                            {counts.dividend.toLocaleString()}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">div</span>
+                        <Count value={counts.dividend} label="div" tone="text-up" />
                         {counts.interest > 0 && (
                             <>
                                 <span className="text-muted-foreground/40">·</span>
-                                <span className="text-sm font-bold tabular-nums text-up">
-                                    {counts.interest.toLocaleString()}
-                                </span>
-                                <span className="text-[11px] text-muted-foreground">int</span>
+                                <Count value={counts.interest} label="int" tone="text-up" />
                             </>
                         )}
                     </span>
                 )}
-                {cashEventCount > 0 && (
-                    <span className="inline-flex items-baseline gap-1.5">
-                        <span className="text-sm font-bold tabular-nums text-foreground">
-                            {cashEventCount.toLocaleString()}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">cash flows</span>
-                    </span>
-                )}
+                {cashEventCount > 0 && <Count value={cashEventCount} label="cash flows" />}
             </div>
 
-            {/* Per-currency cards — auto-fit grid so cards stretch to fill the
-                full row width regardless of how many currencies are present. */}
+            {/* Per-currency ledger — one row per currency, columns shared so the
+                figures line up. Each row is its own grid with the same track
+                template, so the header and every row agree. Below `sm` a row
+                stacks: currency + net on one line, the four figures under it. */}
             {rows.length > 0 && (
-                <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(260px,1fr))]">
-                    {rows.map(row => {
-                        const positive = row.netFlow >= 0;
-                        const netTone = positive
-                            ? 'text-up'
-                            : 'text-down';
-                        const NetArrow = positive ? ArrowDownRight : ArrowUpRight;
-                        return (
-                            <div
-                                key={row.currency}
-                                className="relative rounded-lg border border-border/60 bg-card/40 p-4"
-                            >
-                                {/* Currency tag */}
-                                <span className="absolute top-3 right-3 text-[10px] uppercase tracking-widest font-bold bg-muted/70 text-foreground px-2 py-0.5 rounded">
-                                    {row.currency}
-                                </span>
-
-                                {/* Hero: net cash flow */}
-                                <div className="pr-14">
-                                    <div className={cn('inline-flex items-center gap-1.5 text-2xl font-bold tabular-nums leading-none', netTone)}>
-                                        <NetArrow className="w-5 h-5 opacity-80 shrink-0" />
-                                        <span>
+                <div className="mt-3 border-t border-border">
+                    <div className={cn(ROW_GRID, 'hidden sm:grid pt-3 pb-1.5 text-[11px] text-muted-foreground')}>
+                        <span>Currency</span>
+                        <span className="text-right">Net cash flow</span>
+                        <span className="text-right">In</span>
+                        <span className="text-right">Out</span>
+                        <span className="text-right">Fees</span>
+                        <span className="text-right">Tax</span>
+                    </div>
+                    <div className="divide-y divide-border">
+                        {rows.map(row => {
+                            const positive = row.netFlow >= 0;
+                            const NetArrow = positive ? ArrowDownRight : ArrowUpRight;
+                            return (
+                                <div
+                                    key={row.currency}
+                                    className={cn(ROW_GRID, 'grid-cols-4 gap-y-2 py-3 sm:py-2.5 sm:items-center')}
+                                >
+                                    <div className="col-span-4 flex items-center justify-between gap-3 sm:contents">
+                                        <span className="justify-self-start text-[10px] uppercase tracking-widest font-semibold bg-muted text-foreground px-1.5 py-0.5 rounded">
+                                            {row.currency}
+                                        </span>
+                                        <span className={cn(
+                                            'inline-flex items-center justify-end gap-1 whitespace-nowrap text-lg font-semibold tabular-nums leading-none',
+                                            positive ? 'text-up' : 'text-down',
+                                        )}>
+                                            <NetArrow className="w-4 h-4 opacity-80 shrink-0" />
                                             {positive ? '+' : '−'}{formatAmount(Math.abs(row.netFlow))}
                                         </span>
                                     </div>
-                                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mt-1">
-                                        net cash flow
-                                    </div>
+                                    <Figure label="In" value={row.inflow} />
+                                    <Figure label="Out" value={row.outflow} />
+                                    <Figure label="Fees" value={row.fees} tone="text-warn-ink" />
+                                    <Figure label="Tax" value={row.tax} tone="text-warn-ink" />
                                 </div>
-
-                                {/* In / Out */}
-                                <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-border/40">
-                                    <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mb-0.5">In</div>
-                                        <div className={cn(
-                                            'text-sm font-bold tabular-nums',
-                                            row.inflow > 0 ? 'text-foreground' : 'text-muted-foreground/40',
-                                        )}>
-                                            {row.inflow > 0 ? formatAmount(row.inflow) : '—'}
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mb-0.5">Out</div>
-                                        <div className={cn(
-                                            'text-sm font-bold tabular-nums',
-                                            row.outflow > 0 ? 'text-foreground' : 'text-muted-foreground/40',
-                                        )}>
-                                            {row.outflow > 0 ? formatAmount(row.outflow) : '—'}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Fees / Tax */}
-                                <div className="grid grid-cols-2 gap-3 mt-3 pt-2 border-t border-border/40">
-                                    <div className="flex items-baseline gap-1.5">
-                                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Fees</span>
-                                        <span className={cn(
-                                            'text-xs font-bold tabular-nums',
-                                            row.fees > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/40',
-                                        )}>
-                                            {row.fees > 0 ? formatAmount(row.fees) : '—'}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-baseline justify-end gap-1.5">
-                                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60 font-semibold">Tax</span>
-                                        <span className={cn(
-                                            'text-xs font-bold tabular-nums',
-                                            row.tax > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/40',
-                                        )}>
-                                            {row.tax > 0 ? formatAmount(row.tax) : '—'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                            );
+                        })}
+                    </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// Currency tag, net figure, then In / Out / Fees / Tax. Net gets the widest
+// track because it carries the arrow and the larger type.
+const ROW_GRID = 'grid gap-x-4 sm:grid-cols-[4rem_minmax(0,1.4fr)_repeat(4,minmax(0,1fr))]';
+
+function Count({ value, label, tone = 'text-foreground' }: { value: number; label: string; tone?: string }) {
+    return (
+        <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className={cn('text-sm font-semibold tabular-nums', tone)}>{value.toLocaleString()}</span>
+            <span className="text-[11px] text-muted-foreground">{label}</span>
+        </span>
+    );
+}
+
+// One figure cell. The label only shows on the stacked (phone) layout — on the
+// wide layout the header row names the column.
+function Figure({ label, value, tone = 'text-foreground' }: { label: string; value: number; tone?: string }) {
+    const has = value > 0.001;
+    return (
+        <div className="min-w-0 sm:text-right">
+            <div className="section-label sm:hidden">{label}</div>
+            <div className={cn(
+                'text-sm font-medium tabular-nums whitespace-nowrap',
+                has ? tone : 'text-muted-foreground/40',
+            )}>
+                {has ? formatAmount(value) : '—'}
+            </div>
         </div>
     );
 }
