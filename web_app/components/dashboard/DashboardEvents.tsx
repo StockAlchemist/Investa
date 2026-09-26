@@ -196,7 +196,19 @@ function ReportedValue({ event }: { event: EarningsEvent }) {
     );
 }
 
-export default function DashboardEvents({ events, earnings = [], currency, windowDays = 14 }: DashboardEventsProps) {
+/**
+ * How far ahead the list looks, and how many rows it shows.
+ *
+ * The card shares a row with the trend and insights panels and takes their
+ * height, so a two-week window left most of it blank for most of the month —
+ * three rows in a ~450px card. Looking two months out and showing the soonest
+ * eight fills that height with the events that are next anyway (a real book
+ * had 3 events within 14 days and 14 within 45 as earnings season opened).
+ */
+const DEFAULT_WINDOW_DAYS = 60;
+const MAX_ROWS = 8;
+
+export default function DashboardEvents({ events, earnings = [], currency, windowDays = DEFAULT_WINDOW_DAYS }: DashboardEventsProps) {
     const { openStockDetail } = useStockModal();
     const [showAll, setShowAll] = useState(false);
 
@@ -235,7 +247,7 @@ export default function DashboardEvents({ events, earnings = [], currency, windo
                 const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
                 return diff !== 0 ? diff : a.symbol.localeCompare(b.symbol);
             })
-            .slice(0, 8);
+            .slice(0, MAX_ROWS);
     }, [events, earnings, windowDays]);
 
     const confirmedCount = useMemo(
