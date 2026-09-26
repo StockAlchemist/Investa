@@ -518,7 +518,11 @@ struct UpcomingEventsCard: View {
     let dividends: [DividendEvent]
     var earnings: [EarningsEvent] = []
     let currency: String
-    var windowDays = 14
+    /// Two months ahead, soonest `maxRows` shown — the web card's
+    /// `DEFAULT_WINDOW_DAYS` / `MAX_ROWS`. A two-week window left the card
+    /// mostly blank outside earnings season.
+    var windowDays = 60
+    static let maxRows = 8
     var onSelectSymbol: (String) -> Void = { _ in }
     @State private var showConfirmed = false
     #if os(iOS)
@@ -565,7 +569,7 @@ struct UpcomingEventsCard: View {
             return days >= 0 && days <= windowDays
         }
         .sorted { $0.date == $1.date ? $0.symbol < $1.symbol : $0.date < $1.date }
-        .prefix(8).map { $0 }
+        .prefix(Self.maxRows).map { $0 }
     }
 
     private var confirmedButton: some View {

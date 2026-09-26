@@ -1683,7 +1683,7 @@ export interface BuffettRankRow {
  * `src/buffett_rank.py`; the presets are what the pickers offer.
  */
 export const DEFAULT_AI_REVIEW_WEIGHT = 0.2;
-export const AI_REVIEW_WEIGHT_PRESETS = [0, 0.1, 0.2, 0.3, 0.5] as const;
+export const AI_REVIEW_WEIGHT_PRESETS = [0, 0.1, 0.2, 0.3, 0.5, 0.75, 1] as const;
 
 /** A company kept out of the ranking, with the reasons it failed. */
 export interface BuffettExclusion {

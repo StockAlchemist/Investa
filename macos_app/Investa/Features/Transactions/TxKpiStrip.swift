@@ -6,6 +6,9 @@ struct TxKpiStrip: View {
     let transactions: [Transaction]
     let preferredCurrency: String
 
+    /// Width offered to the ledger; 0 until measured, which keeps it stacked.
+    @State private var ledgerWidth: CGFloat = 0
+
     private struct Bucket { var count = 0; var inflow = 0.0; var outflow = 0.0; var fees = 0.0; var tax = 0.0; var traded = 0.0 }
     private struct Row: Identifiable { let currency: String; let b: Bucket; var netFlow: Double { b.inflow - b.outflow }; var id: String { currency } }
     private struct Counts { var total = 0; var buy = 0; var sell = 0; var dividend = 0; var interest = 0; var deposit = 0; var withdrawal = 0; var tax = 0; var fees = 0 }
@@ -67,51 +70,26 @@ struct TxKpiStrip: View {
 
     var body: some View {
         let c = computed
-        return VStack(alignment: .leading, spacing: 14) {
-            // Activity counts
-            #if os(iOS)
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Activity").appFont(.caption.weight(.bold)).foregroundStyle(.secondary).textCase(.uppercase)
-                
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], spacing: 16) {
-                    kpiStat("Transactions", "\(c.counts.total)")
-                    if c.counts.buy + c.counts.sell > 0 {
-                        kpiStat("Buys / Sells", "\(c.counts.buy) / \(c.counts.sell)")
-                    }
-                    if c.counts.dividend > 0 {
-                        kpiStat("Dividends", "\(c.counts.dividend)", valueColor: .up)
-                    }
-                    if c.counts.interest > 0 {
-                        kpiStat("Interest", "\(c.counts.interest)", valueColor: .up)
-                    }
-                    if c.counts.deposit + c.counts.withdrawal > 0 {
-                        kpiStat("Cash Flows", "\(c.counts.deposit + c.counts.withdrawal)")
-                    }
-                }
-            }
-            #else
-            HStack(spacing: 16) {
-                Text("Activity").appFont(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                Spacer()
+        return VStack(alignment: .leading, spacing: 12) {
+            // Activity counts — one wrapping line on every platform.
+            WrappingRow(spacing: 16, lineSpacing: 6) {
+                SectionLabel(title: "Activity")
                 activity("\(c.counts.total)", "transactions")
                 if c.counts.buy + c.counts.sell > 0 {
-                    HStack(spacing: 4) { activity("\(c.counts.buy)", "buys"); Text("/").foregroundStyle(.secondary); activity("\(c.counts.sell)", "sells") }
+                    HStack(spacing: 4) { activity("\(c.counts.buy)", "buys"); Text("/").foregroundStyle(.tertiary); activity("\(c.counts.sell)", "sells") }
                 }
                 if c.counts.dividend + c.counts.interest > 0 {
-                    activity("\(c.counts.dividend)", "div", tint: .up)
-                    if c.counts.interest > 0 { activity("\(c.counts.interest)", "int", tint: .up) }
+                    HStack(spacing: 4) {
+                        activity("\(c.counts.dividend)", "div", tint: .up)
+                        if c.counts.interest > 0 { Text("·").foregroundStyle(.tertiary); activity("\(c.counts.interest)", "int", tint: .up) }
+                    }
                 }
                 if c.counts.deposit + c.counts.withdrawal > 0 { activity("\(c.counts.deposit + c.counts.withdrawal)", "cash flows") }
             }
-            #endif
             if !c.rows.isEmpty {
-                // 260pt and no column floor, which is `minmax(260px, 1fr)` in
-                // an auto-fit grid — the web card's own rule. One card per row
-                // on a phone, two from an iPad in portrait, more on a Mac.
-                // Measured, not `#if os(iOS)`: an iPad is iOS and has the room.
-                KpiRow(count: c.rows.count, minTileWidth: 260, floorColumns: 1) {
-                    ForEach(c.rows) { row in currencyCard(row) }
-                }
+                Rectangle().fill(Color.line).frame(height: 1)
+                ledger(c.rows)
+                    .readingContainerWidth { ledgerWidth = $0 }
             }
         }
         .padding(16)
@@ -119,71 +97,106 @@ struct TxKpiStrip: View {
         .card(.standard)
     }
 
+    /// One row per currency with shared columns (mirrors the web ledger). Below
+    /// `needs` each currency stacks: tag + net on one line, the four figures under it.
+    @ViewBuilder
+    private func ledger(_ rows: [Row]) -> some View {
+        if prefersStackedLayout(measuredWidth: ledgerWidth, needs: 560) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                    if i > 0 { Rectangle().fill(Color.line).frame(height: 1) }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            currencyTag(row.currency)
+                            Spacer(minLength: 8)
+                            netFigure(row)
+                        }
+                        HStack(alignment: .top, spacing: 12) {
+                            figure(row.b.inflow, label: "In")
+                            figure(row.b.outflow, label: "Out")
+                            figure(row.b.fees, label: "Fees", tone: .warn)
+                            figure(row.b.tax, label: "Tax", tone: .warn)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                }
+            }
+        } else {
+            Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 10) {
+                GridRow {
+                    header("Currency", alignment: .leading).gridColumnAlignment(.leading)
+                    header("Net cash flow")
+                    header("In")
+                    header("Out")
+                    header("Fees")
+                    header("Tax")
+                }
+                ForEach(rows) { row in
+                    Rectangle().fill(Color.line).frame(height: 1).gridCellUnsizedAxes(.horizontal)
+                    GridRow {
+                        currencyTag(row.currency)
+                        netFigure(row)
+                        figure(row.b.inflow)
+                        figure(row.b.outflow)
+                        figure(row.b.fees, tone: .warn)
+                        figure(row.b.tax, tone: .warn)
+                    }
+                }
+            }
+        }
+    }
+
     private func activity(_ value: String, _ label: String, tint: Color = .primary) -> some View {
         HStack(spacing: 4) {
-            Text(value).appFont(.callout.bold()).foregroundStyle(tint).monospacedDigit()
+            Text(value).appFont(.callout.weight(.semibold)).foregroundStyle(tint).monospacedDigit()
             Text(label).appFont(.caption2).foregroundStyle(.secondary)
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private func kpiStat(_ label: String, _ value: String, valueColor: Color = .primary) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            SectionLabel(title: label)
-                .minimumScaleFactor(0.7)
-            Text(value).appFont(.headline).foregroundStyle(valueColor).monospacedDigit()
-        }
+    private func header(_ title: String, alignment: Alignment = .trailing) -> some View {
+        Text(title).appFont(.caption2).foregroundStyle(Color.ink3)
+            .lineLimit(1).minimumScaleFactor(0.7)
+            .frame(maxWidth: alignment == .leading ? nil : .infinity, alignment: alignment)
     }
 
-    private func currencyCard(_ row: Row) -> some View {
+    private func currencyTag(_ code: String) -> some View {
+        // An unbreakable word with no line limit *demands* its width rather
+        // than preferring it.
+        Text(code).appFont(.caption2.weight(.semibold)).tracking(0.8).lineLimit(1)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Color.inset, in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func netFigure(_ row: Row) -> some View {
         let positive = row.netFlow >= 0
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                HStack(spacing: 4) {
-                    Image(systemName: positive ? "arrow.down.right" : "arrow.up.right")
-                    Text("\(positive ? "+" : "−")\(compact(abs(row.netFlow)))").appFont(.title2.bold()).monospacedDigit()
-                }
-                .foregroundStyle(positive ? .up : .down)
-                // On the stack, so a figure added beside it can't opt out. Both
-                // parts: `lineLimit(1)` alone converts the wrap into an ellipsis,
-                // and half a net figure is a different number.
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                Spacer(minLength: 8)
-                // An unbreakable word with no line limit *demands* its width
-                // rather than preferring it.
-                Text(row.currency).appFont(.caption2.weight(.bold)).lineLimit(1)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
-            }
-            Text("net cash flow").appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            HStack {
-                kv("In", row.b.inflow > 0 ? compact(row.b.inflow) : "—", .primary)
-                Spacer()
-                kv("Out", row.b.outflow > 0 ? compact(row.b.outflow) : "—", .primary, trailing: true)
-            }
-            HStack {
-                kv("Fees", row.b.fees > 0 ? compact(row.b.fees) : "—", row.b.fees > 0 ? .warn : .secondary)
-                Spacer()
-                kv("Tax", row.b.tax > 0 ? compact(row.b.tax) : "—", row.b.tax > 0 ? .warn : .secondary, trailing: true)
-            }
+        return HStack(spacing: 4) {
+            Image(systemName: positive ? "arrow.down.right" : "arrow.up.right").imageScale(.small)
+            Text("\(positive ? "+" : "−")\(compact(abs(row.netFlow)))").appFont(.title3.weight(.semibold)).monospacedDigit()
         }
-        // Top-leading, not `.leading`: where one card in a row runs taller,
-        // centring leaves the shorter card's figures floating at a different
-        // height than its neighbour's.
-        .gridTile()
-        .padding(12)
-        .background(.background.tertiary, in: RoundedRectangle(cornerRadius: 10))
+        .foregroundStyle(positive ? Color.up : Color.down)
+        // On the stack, so a figure added beside it can't opt out. Both parts:
+        // `lineLimit(1)` alone converts the wrap into an ellipsis, and half a
+        // net figure is a different number.
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
-    private func kv(_ k: String, _ v: String, _ tone: Color, trailing: Bool = false) -> some View {
-        VStack(alignment: trailing ? .trailing : .leading, spacing: 1) {
-            Text(k).appFont(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(v).appFont(.caption.bold()).foregroundStyle(tone).monospacedDigit()
+    /// One figure cell. The label is only drawn in the stacked layout — in the
+    /// grid the header row names the column.
+    private func figure(_ value: Double, label: String? = nil, tone: Color = .primary) -> some View {
+        let has = value > 0.001
+        return VStack(alignment: label == nil ? .trailing : .leading, spacing: 2) {
+            if let label { SectionLabel(title: label) }
+            Text(has ? compact(value) : "—")
+                .appFont(.callout.weight(.medium)).monospacedDigit()
+                .foregroundStyle(has ? tone : Color.secondary.opacity(0.4))
         }
-        // Two of these share a line, so at an accessibility size the pair has
-        // to shrink rather than wrap into each other.
+        // Four of these share a line, so at an accessibility size they have to
+        // shrink rather than wrap into each other.
         .lineLimit(1)
         .minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, alignment: label == nil ? .trailing : .leading)
     }
 }
