@@ -130,8 +130,28 @@ export default function TxKpiStrip({ transactions, preferredCurrency }: TxKpiStr
 
     return (
         <div className="metric-card p-4">
-            {/* Activity counts — one line of inline stats, wrapping on a phone */}
-            <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+            {/* Phone: the total beside the label, then four columns on the same
+                tracks as the In / Out / Fees / Tax figures below, so the card
+                reads as one grid rather than a line of counts wrapping
+                wherever it runs out. */}
+            <div className="sm:hidden">
+                <div className="flex items-baseline justify-between gap-3">
+                    <span className="section-label">Activity</span>
+                    <Count value={counts.total} label="transactions" />
+                </div>
+                <div className="grid grid-cols-4 gap-x-4 mt-2">
+                    {['Buys', 'Sells', 'Div · int', 'Cash flows'].map(label => (
+                        <span key={label} className="section-label whitespace-nowrap">{label}</span>
+                    ))}
+                    <CountCell>{counts.buy.toLocaleString()}</CountCell>
+                    <CountCell>{counts.sell.toLocaleString()}</CountCell>
+                    <CountCell tone="text-up">{counts.dividend.toLocaleString()} · {counts.interest.toLocaleString()}</CountCell>
+                    <CountCell>{cashEventCount.toLocaleString()}</CountCell>
+                </div>
+            </div>
+
+            {/* Wider: one line of inline stats */}
+            <div className="hidden sm:flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
                 <span className="section-label">Activity</span>
                 <Count value={counts.total} label="transactions" />
                 {tradeCount > 0 && (
@@ -178,10 +198,13 @@ export default function TxKpiStrip({ transactions, preferredCurrency }: TxKpiStr
                                     key={row.currency}
                                     className={cn(ROW_GRID, 'grid-cols-4 gap-y-2 py-3 sm:py-2.5 sm:items-center')}
                                 >
-                                    <div className="col-span-4 flex items-center justify-between gap-3 sm:contents">
+                                    <div className="col-span-4 flex items-center gap-2 sm:contents">
                                         <span className="justify-self-start text-[10px] uppercase tracking-widest font-semibold bg-muted text-foreground px-1.5 py-0.5 rounded">
                                             {row.currency}
                                         </span>
+                                        {/* The arrow alone doesn't say what the figure
+                                            is; the wide layout has a column header. */}
+                                        <span className="section-label ml-auto sm:hidden">Net</span>
                                         <span className={cn(
                                             'inline-flex items-center justify-end gap-1 whitespace-nowrap text-lg font-semibold tabular-nums leading-none',
                                             positive ? 'text-up' : 'text-down',
@@ -215,6 +238,10 @@ function Count({ value, label, tone = 'text-foreground' }: { value: number; labe
             <span className="text-[11px] text-muted-foreground">{label}</span>
         </span>
     );
+}
+
+function CountCell({ children, tone = 'text-foreground' }: { children: React.ReactNode; tone?: string }) {
+    return <span className={cn('text-sm font-medium tabular-nums whitespace-nowrap', tone)}>{children}</span>;
 }
 
 // One figure cell. The label only shows on the stacked (phone) layout — on the

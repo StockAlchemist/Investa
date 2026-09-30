@@ -6,8 +6,8 @@ struct TxKpiStrip: View {
     let transactions: [Transaction]
     let preferredCurrency: String
 
-    /// Width offered to the ledger; 0 until measured, which keeps it stacked.
-    @State private var ledgerWidth: CGFloat = 0
+    /// Width offered to the card's content; 0 until measured, which keeps it stacked.
+    @State private var contentWidth: CGFloat = 0
 
     private struct Bucket { var count = 0; var inflow = 0.0; var outflow = 0.0; var fees = 0.0; var tax = 0.0; var traded = 0.0 }
     private struct Row: Identifiable { let currency: String; let b: Bucket; var netFlow: Double { b.inflow - b.outflow }; var id: String { currency } }
@@ -64,52 +64,99 @@ struct TxKpiStrip: View {
         let a = abs(v)
         if a >= 1_000_000 { return String(format: "%.2fM", v / 1_000_000) }
         if a >= 10_000 { return String(format: "%.1fK", v / 1_000) }
-        if a >= 100 { return String(format: "%.0f", v) }
+        if a >= 100 { return Int(v.rounded()).formatted() }
         return String(format: "%.2f", v)
     }
 
     var body: some View {
         let c = computed
+        // One decision for the whole card, so the activity columns and the
+        // currency figures under them change shape together.
+        let stacked = prefersStackedLayout(measuredWidth: contentWidth, needs: 560)
         return VStack(alignment: .leading, spacing: 12) {
-            // Activity counts — one wrapping line on every platform.
-            WrappingRow(spacing: 16, lineSpacing: 6) {
-                SectionLabel(title: "Activity")
-                activity("\(c.counts.total)", "transactions")
-                if c.counts.buy + c.counts.sell > 0 {
-                    HStack(spacing: 4) { activity("\(c.counts.buy)", "buys"); Text("/").foregroundStyle(.tertiary); activity("\(c.counts.sell)", "sells") }
-                }
-                if c.counts.dividend + c.counts.interest > 0 {
-                    HStack(spacing: 4) {
-                        activity("\(c.counts.dividend)", "div", tint: .up)
-                        if c.counts.interest > 0 { Text("·").foregroundStyle(.tertiary); activity("\(c.counts.interest)", "int", tint: .up) }
-                    }
-                }
-                if c.counts.deposit + c.counts.withdrawal > 0 { activity("\(c.counts.deposit + c.counts.withdrawal)", "cash flows") }
-            }
+            if stacked { activityGrid(c.counts) } else { activityLine(c.counts) }
             if !c.rows.isEmpty {
                 Rectangle().fill(Color.line).frame(height: 1)
-                ledger(c.rows)
-                    .readingContainerWidth { ledgerWidth = $0 }
+                ledger(c.rows, stacked: stacked)
             }
         }
+        .readingContainerWidth { contentWidth = $0 }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(.standard)
     }
 
+    /// Wide: the counts on one wrapping line.
+    private func activityLine(_ counts: Counts) -> some View {
+        WrappingRow(spacing: 16, lineSpacing: 6) {
+            SectionLabel(title: "Activity")
+            activity(counts.total.formatted(), "transactions")
+            if counts.buy + counts.sell > 0 {
+                HStack(spacing: 4) { activity(counts.buy.formatted(), "buys"); Text("/").foregroundStyle(.tertiary); activity(counts.sell.formatted(), "sells") }
+            }
+            if counts.dividend + counts.interest > 0 {
+                HStack(spacing: 4) {
+                    activity(counts.dividend.formatted(), "div", tint: .up)
+                    if counts.interest > 0 { Text("·").foregroundStyle(.tertiary); activity(counts.interest.formatted(), "int", tint: .up) }
+                }
+            }
+            if counts.deposit + counts.withdrawal > 0 { activity((counts.deposit + counts.withdrawal).formatted(), "cash flows") }
+        }
+    }
+
+    /// Narrow: the total beside the label, then four columns on the same
+    /// tracks as the In / Out / Fees / Tax figures below, so the card reads as
+    /// one grid instead of a line of counts wrapping wherever it runs out.
+    private func activityGrid(_ counts: Counts) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                SectionLabel(title: "Activity")
+                Spacer(minLength: 8)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(counts.total.formatted()).appFont(.headline).monospacedDigit()
+                    Text("transactions").appFont(.caption).foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            }
+            // Labels and figures as two rows rather than four label-over-figure
+            // cells: a label that has to shrink ("CASH FLOWS" on a small phone)
+            // then can't lift its figure out of line with the others.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    ForEach(["Buys", "Sells", "Div · int", "Cash flows"], id: \.self) { label in
+                        SectionLabel(title: label)
+                            .allowsTightening(true)
+                            .minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    count(counts.buy.formatted())
+                    count(counts.sell.formatted())
+                    count("\(counts.dividend.formatted()) · \(counts.interest.formatted())", tone: .up)
+                    count((counts.deposit + counts.withdrawal).formatted())
+                }
+            }
+        }
+    }
+
     /// One row per currency with shared columns (mirrors the web ledger). Below
     /// `needs` each currency stacks: tag + net on one line, the four figures under it.
     @ViewBuilder
-    private func ledger(_ rows: [Row]) -> some View {
-        if prefersStackedLayout(measuredWidth: ledgerWidth, needs: 560) {
+    private func ledger(_ rows: [Row], stacked: Bool) -> some View {
+        if stacked {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
                     if i > 0 { Rectangle().fill(Color.line).frame(height: 1) }
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             currencyTag(row.currency)
                             Spacer(minLength: 8)
-                            netFigure(row)
+                            // The arrow alone doesn't say what the figure is;
+                            // the wide grid has a column header for it.
+                            SectionLabel(title: "Net")
+                            netFigure(row, fillsColumn: false)
                         }
                         HStack(alignment: .top, spacing: 12) {
                             figure(row.b.inflow, label: "In")
@@ -124,7 +171,9 @@ struct TxKpiStrip: View {
         } else {
             Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 10) {
                 GridRow {
-                    header("Currency", alignment: .leading).gridColumnAlignment(.leading)
+                    // The tag column is only as wide as "USD"; the one-word header
+                    // sets its width instead of being squeezed into it.
+                    header("Currency", alignment: .leading).fixedSize().gridColumnAlignment(.leading)
                     header("Net cash flow")
                     header("In")
                     header("Out")
@@ -168,7 +217,9 @@ struct TxKpiStrip: View {
             .background(Color.inset, in: RoundedRectangle(cornerRadius: 4))
     }
 
-    private func netFigure(_ row: Row) -> some View {
+    /// `fillsColumn` right-aligns it in a grid column; beside its label in the
+    /// stacked header it keeps its own width, so the label stays next to it.
+    private func netFigure(_ row: Row, fillsColumn: Bool = true) -> some View {
         let positive = row.netFlow >= 0
         return HStack(spacing: 4) {
             Image(systemName: positive ? "arrow.down.right" : "arrow.up.right").imageScale(.small)
@@ -180,7 +231,16 @@ struct TxKpiStrip: View {
         // net figure is a different number.
         .lineLimit(1)
         .minimumScaleFactor(0.6)
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(maxWidth: fillsColumn ? .infinity : nil, alignment: .trailing)
+    }
+
+    /// A figure in the narrow activity grid — the same width and type as a
+    /// stacked `figure`, so the columns line up with the currency rows.
+    private func count(_ value: String, tone: Color = .primary) -> some View {
+        Text(value).appFont(.callout.weight(.medium)).monospacedDigit().foregroundStyle(tone)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One figure cell. The label is only drawn in the stacked layout — in the
