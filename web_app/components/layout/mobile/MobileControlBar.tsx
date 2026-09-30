@@ -21,10 +21,11 @@
 
 import { useState } from 'react';
 import {
-  Building2, SlidersHorizontal, Eye, EyeOff, RefreshCw, Loader2, Settings as SettingsIcon, ChevronsUpDown,
+  Building2, SlidersHorizontal, Eye, EyeOff, RefreshCw, Loader2, Settings as SettingsIcon, ChevronsUpDown, Server,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StockSearchBar } from '@/components/StockSearchBar';
+import { defaultServerName, switchToServer, useServerChoices } from '@/lib/servers';
 import { MobileMenu, MenuToggleRow, MenuSectionHeader } from './MobileMenu';
 
 interface LayoutItem { id: string; title: string; group?: string }
@@ -118,6 +119,7 @@ export function MobileControlBar({
   }
 
   const currencies = availableCurrencies?.length ? availableCurrencies : DEFAULT_CURRENCIES;
+  const serverChoices = useServerChoices();
 
   return (
     <div role="toolbar" aria-label="Portfolio controls" className="ios-bar sticky top-0 z-30 shrink-0 border-b border-border/60 md:hidden">
@@ -211,6 +213,30 @@ export function MobileControlBar({
                   ? <Eye className="h-[18px] w-[18px]" />
                   : <EyeOff className="h-[18px] w-[18px]" />}
               </button>
+
+              {/* Saved-server switch (the native bar's server.rack menu);
+                  absent with a single server. */}
+              {serverChoices && (
+                <MobileMenu
+                  ariaLabel={`Server: ${serverChoices.currentName}`}
+                  minWidth={220}
+                  align="left"
+                  className={CONTROL}
+                  label={<Server className="h-[18px] w-[18px]" />}
+                >
+                  <MenuSectionHeader>Server</MenuSectionHeader>
+                  {serverChoices.rows.map(server => (
+                    <MenuToggleRow
+                      key={server.id}
+                      title={server.name}
+                      trailing={defaultServerName(server.url)}
+                      isOn={server.url === serverChoices.here}
+                      dismissOnTap
+                      onSelect={() => { if (server.url !== serverChoices.here) switchToServer(server.url); }}
+                    />
+                  ))}
+                </MobileMenu>
+              )}
             </div>
 
             {/* Market status: a coloured dot carries open/closed without the

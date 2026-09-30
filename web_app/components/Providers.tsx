@@ -9,6 +9,7 @@ import { ThemeProvider } from 'next-themes';
 import { StockModalProvider } from '@/context/StockModalContext';
 import { WatchlistProvider } from '@/context/WatchlistContext';
 import { QUERY_CACHE_STORAGE_KEY } from '@/lib/user_storage';
+import { useImportServersFromHash } from '@/lib/servers';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
     const [queryClient] = useState(() => new QueryClient({
@@ -21,6 +22,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
             },
         },
     }));
+
+    // A server switch carries the saved list in the URL fragment; take it in
+    // here, at the root, before a signed-out redirect to /login drops it.
+    useImportServersFromHash();
 
     const [persister] = useState(() => {
         if (typeof window !== 'undefined') {

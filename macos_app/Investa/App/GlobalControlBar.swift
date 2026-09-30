@@ -5,6 +5,7 @@ import SwiftUI
 /// per-tab Layout configurator menu.
 struct GlobalControlBar<Trailing: View>: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var servers = ServerStore.shared
     let section: AppSection
     let trailing: Trailing
 
@@ -53,6 +54,7 @@ struct GlobalControlBar<Trailing: View>: View {
             currencyMenu
             showClosedToggle
             accountMenu
+            serverMenu
             refreshControl
             trailing
         }
@@ -233,6 +235,9 @@ struct GlobalControlBar<Trailing: View>: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(appState.showClosed ? .primary : .secondary)
+                        serverMenu
+                            .labelStyle(.iconOnly)
+                            .appFont(.body)
                     }
                 }
                 
@@ -319,6 +324,30 @@ struct GlobalControlBar<Trailing: View>: View {
     private func toggle(_ account: String) {
         if appState.selectedAccounts.contains(account) { appState.selectedAccounts.remove(account) }
         else { appState.selectedAccounts.insert(account) }
+    }
+
+    // MARK: - Server
+
+    /// Quick switch between saved backends (Settings › System & Server keeps
+    /// the list). Only drawn once there are two to choose between, so a
+    /// single-server setup keeps the bar it had.
+    @ViewBuilder private var serverMenu: some View {
+        if servers.servers.count > 1 {
+            PopoverMenu(minWidth: 220) {
+                MenuSectionHeader("Server")
+                ForEach(servers.servers) { server in
+                    MenuToggleRow(title: server.name, isOn: servers.isActive(server), dismissOnTap: true) {
+                        guard !servers.isActive(server) else { return }
+                        servers.switchTo(server.url)
+                        ToastManager.shared.show(message: "Switched to \(server.name)", style: .success)
+                    }
+                }
+            } label: {
+                Label(servers.activeServer?.name ?? "Server", systemImage: "server.rack")
+            }
+            .interactiveGlass()
+            .accessibilityLabel("Server: \(servers.activeServer?.name ?? servers.activeURL)")
+        }
     }
 
     // MARK: - Currency / show-closed

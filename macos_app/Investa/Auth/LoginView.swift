@@ -7,8 +7,8 @@ struct LoginView: View {
     @State private var password = ""
     @State private var isRegistering = false
     @State private var showingServerSettings = false
+    @ObservedObject private var servers = ServerStore.shared
     @State private var serverURL = APIConfig.baseURL
-    @State private var activeServerURL = APIConfig.baseURL
 
     var body: some View {
         VStack(spacing: 24) {
@@ -65,7 +65,7 @@ struct LoginView: View {
                 serverURL = APIConfig.baseURL
                 showingServerSettings = true
             } label: {
-                Label("Server: \(activeServerURL)", systemImage: "network")
+                Label("Server: \(servers.activeServer?.name ?? servers.activeURL)", systemImage: "network")
                     .appFont(.caption)
             }
             .buttonStyle(.plain)
@@ -99,6 +99,30 @@ struct LoginView: View {
             Text("The address of the Investa FastAPI backend.")
                 .appFont(.callout)
                 .foregroundStyle(.secondary)
+            if !servers.servers.isEmpty {
+                // Picking one fills the field; Save connects, as for a typed URL.
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(servers.servers) { server in
+                        let picked = APIConfig.normalized(serverURL) == APIConfig.normalized(server.url)
+                        Button { serverURL = server.url } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: picked ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(picked ? Color.brand : Color.ink3)
+                                Text(server.name).appFont(.callout.weight(.medium))
+                                Spacer(minLength: 8)
+                                Text(ServerStore.defaultName(for: server.url))
+                                    .appFont(.caption).monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
             TextField("http://localhost:8000/api", text: $serverURL)
                 .textFieldStyle(.roundedBorder)
                 #if os(macOS)
@@ -111,8 +135,7 @@ struct LoginView: View {
                 Spacer()
                 Button("Cancel") { showingServerSettings = false }
                 Button("Save") {
-                    APIConfig.baseURL = serverURL
-                    activeServerURL = serverURL
+                    servers.switchTo(serverURL)
                     showingServerSettings = false
                 }
                 .buttonStyle(.borderedProminent)

@@ -15,6 +15,7 @@ import {
     inputClassName,
     primaryButtonClassName
 } from '../constants';
+import { ServersCard } from '../ServersCard';
 
 interface AdvancedTabProps {
     settings: SettingsType | null;
@@ -455,6 +456,8 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                     )}
                 </div>
             </div>
+
+            <ServersCard />
 
             {/* Cache Management Section */}
             <div className={cardClassName}>

@@ -8,16 +8,22 @@ enum APIConfig {
 
     static var baseURL: String {
         get {
-            let stored = UserDefaults.standard.string(forKey: defaultsKey)
-            var value = (stored?.isEmpty == false ? stored! : fallbackBaseURL)
-            if value.contains("localhost") {
-                value = value.replacingOccurrences(of: "localhost", with: "127.0.0.1")
-            }
-            // Strip a trailing slash so path joining is predictable.
-            return value.hasSuffix("/") ? String(value.dropLast()) : value
+            let stored = UserDefaults.standard.string(forKey: defaultsKey).map(normalized)
+            return stored?.isEmpty == false ? stored! : normalized(fallbackBaseURL)
         }
         set {
             UserDefaults.standard.set(newValue, forKey: defaultsKey)
         }
+    }
+
+    /// The form every URL is stored and compared in: trimmed, `localhost` as
+    /// `127.0.0.1`, no trailing slash (so path joining is predictable).
+    static func normalized(_ url: String) -> String {
+        var value = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.contains("localhost") {
+            value = value.replacingOccurrences(of: "localhost", with: "127.0.0.1")
+        }
+        while value.hasSuffix("/") { value.removeLast() }
+        return value
     }
 }

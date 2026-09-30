@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import Link from "next/link";
+import ServerSelector from "@/components/ServerSelector";
 import { API_BASE_URL } from "@/lib/api";
 
 export default function LoginPage() {
@@ -116,13 +117,15 @@ export default function LoginPage() {
                         </Button>
                     </form>
                 </CardContent>
-                <CardFooter className="flex justify-center">
+                <CardFooter className="flex flex-col items-center gap-3">
                     <p className="text-sm text-muted-foreground">
                         Don&apos;t have an account?{" "}
                         <Link href="/register" className="text-primary hover:underline">
                             Register
                         </Link>
                     </p>
+                    {/* Signed in somewhere else? Saved servers are one tap away. */}
+                    <ServerSelector align="left" placement="top" />
                 </CardFooter>
             </Card>
         </div>

@@ -5,6 +5,7 @@ import { cn, formatCompactNumber } from '@/lib/utils';
 import { ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
 import AccountSelector from '@/components/AccountSelector';
 import CurrencySelector from '@/components/CurrencySelector';
+import ServerSelector from '@/components/ServerSelector';
 import { StockSearchBar } from '@/components/StockSearchBar';
 import { navLabel } from '@/lib/navigation';
 
@@ -210,6 +211,9 @@ export function PageHeader({
           closedAccounts={closedAccounts}
           align="right"
         />
+
+        {/* Saved-server switch; renders nothing with a single server */}
+        <ServerSelector align="right" />
       </div>
     </header>
   );
