@@ -53,7 +53,7 @@ struct GlobalControlBar<Trailing: View>: View {
             if TabLayout.hasLayout(section) { layoutMenu }
             currencyMenu
             showClosedToggle
-            accountMenu
+            accountMenu()
             serverMenu
             refreshControl
             trailing
@@ -221,7 +221,10 @@ struct GlobalControlBar<Trailing: View>: View {
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        accountMenu
+                        // The server list rides in the accounts menu here: a
+                        // fourth icon in this scroller doesn't fit an iPhone
+                        // beside the status, search, currency and settings.
+                        accountMenu(withServers: true)
                             .labelStyle(.iconOnly)
                             .appFont(.body)
                             .padding(.leading, 12)
@@ -235,14 +238,23 @@ struct GlobalControlBar<Trailing: View>: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(appState.showClosed ? .primary : .secondary)
-                        serverMenu
-                            .labelStyle(.iconOnly)
-                            .appFont(.body)
                     }
                 }
-                
-                Spacer(minLength: 8)
-                
+                // No `Spacer` beside the scroller: two flexible siblings split
+                // the slack between them, which clipped the last icon while
+                // half the free width sat empty next to it. The scroller takes
+                // all of it and keeps its content leading, which is the
+                // spacer's job anyway. Where the icons still overflow (a small
+                // phone), the trailing fade says "swipe for more" — the web
+                // bar's `mask-image` — instead of an icon cut off mid-glyph.
+                .mask {
+                    HStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 20)
+                    }
+                }
+
                 marketStatusCompact
 
                 refreshControl
@@ -284,7 +296,9 @@ struct GlobalControlBar<Trailing: View>: View {
         return order.compactMap { name in g[name].map { (name, $0) } }
     }
 
-    private var accountMenu: some View {
+    /// `withServers` appends the saved-server switch (the compact bar, which
+    /// has no room for a server menu of its own).
+    private func accountMenu(withServers: Bool = false) -> some View {
         PopoverMenu(minWidth: 220, maxHeight: 440) {
             // Open accounts first, then closed, each alphabetical (matches the web selector).
             let individuals = appState.allAccounts
@@ -315,6 +329,10 @@ struct GlobalControlBar<Trailing: View>: View {
                     toggle(account)
                 }
             }
+            if withServers && servers.servers.count > 1 {
+                MenuDivider()
+                serverRows
+            }
         } label: {
             Label(accountSummary, systemImage: "building.columns")
         }
@@ -329,24 +347,27 @@ struct GlobalControlBar<Trailing: View>: View {
     // MARK: - Server
 
     /// Quick switch between saved backends (Settings › System & Server keeps
-    /// the list). Only drawn once there are two to choose between, so a
-    /// single-server setup keeps the bar it had.
+    /// the list), in the regular bar. Only drawn once there are two to choose
+    /// between, so a single-server setup keeps the bar it had. The compact bar
+    /// shows the same rows inside its accounts menu instead.
     @ViewBuilder private var serverMenu: some View {
         if servers.servers.count > 1 {
-            PopoverMenu(minWidth: 220) {
-                MenuSectionHeader("Server")
-                ForEach(servers.servers) { server in
-                    MenuToggleRow(title: server.name, isOn: servers.isActive(server), dismissOnTap: true) {
-                        guard !servers.isActive(server) else { return }
-                        servers.switchTo(server.url)
-                        ToastManager.shared.show(message: "Switched to \(server.name)", style: .success)
-                    }
-                }
-            } label: {
+            PopoverMenu(minWidth: 220) { serverRows } label: {
                 Label(servers.activeServer?.name ?? "Server", systemImage: "server.rack")
             }
             .interactiveGlass()
             .accessibilityLabel("Server: \(servers.activeServer?.name ?? servers.activeURL)")
+        }
+    }
+
+    @ViewBuilder private var serverRows: some View {
+        MenuSectionHeader("Server")
+        ForEach(servers.servers) { server in
+            MenuToggleRow(title: server.name, isOn: servers.isActive(server), dismissOnTap: true) {
+                guard !servers.isActive(server) else { return }
+                servers.switchTo(server.url)
+                ToastManager.shared.show(message: "Switched to \(server.name)", style: .success)
+            }
         }
     }
 

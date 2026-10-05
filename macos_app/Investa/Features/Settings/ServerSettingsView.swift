@@ -37,7 +37,7 @@ struct ServerSettingsView: View {
                         Spacer(minLength: 0)
                     }
 
-                    Text("The address of your FastAPI backend. Save the ones you use — home LAN, Tailscale — and switch between them here or from the server menu in the top bar.")
+                    Text("The address of your FastAPI backend. Save the ones you use — home LAN, Tailscale — and switch between them here or from the top bar (inside the accounts menu on iPhone).")
                         .appFont(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

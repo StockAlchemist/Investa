@@ -79,7 +79,7 @@ export function ServersCard() {
             </div>
             <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
                 Other machines running Investa — home LAN, Tailscale. Switching opens that machine&apos;s Investa in this tab,
-                with its own sign-in, and brings this list along. Switch from here or from the server menu in the header.
+                with its own sign-in, and brings this list along. Switch from here or from the header (inside the accounts menu on a phone).
             </p>
 
             {servers.length > 0 && (

@@ -21,12 +21,12 @@
 
 import { useState } from 'react';
 import {
-  Building2, SlidersHorizontal, Eye, EyeOff, RefreshCw, Loader2, Settings as SettingsIcon, ChevronsUpDown, Server,
+  Building2, SlidersHorizontal, Eye, EyeOff, RefreshCw, Loader2, Settings as SettingsIcon, ChevronsUpDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StockSearchBar } from '@/components/StockSearchBar';
 import { defaultServerName, switchToServer, useServerChoices } from '@/lib/servers';
-import { MobileMenu, MenuToggleRow, MenuSectionHeader } from './MobileMenu';
+import { MobileMenu, MenuToggleRow, MenuSectionHeader, MenuDivider } from './MobileMenu';
 
 interface LayoutItem { id: string; title: string; group?: string }
 
@@ -123,7 +123,7 @@ export function MobileControlBar({
 
   return (
     <div role="toolbar" aria-label="Portfolio controls" className="ios-bar sticky top-0 z-30 shrink-0 border-b border-border/60 md:hidden">
-      <div className="flex items-center gap-2 py-1 pr-3">
+      <div className="flex items-center gap-1.5 py-1 pr-2">
         {!searchActive && (
           <>
             {/* Scroller: account · layout · show-closed.
@@ -135,7 +135,7 @@ export function MobileControlBar({
                 a plain `HStack`. The trailing fade says so: a control cut off
                 at the edge with no fade reads as broken, the same control under
                 a fade reads as "swipe for more", which is what it is. */}
-            <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto pl-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pl-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_calc(100%-20px),transparent)]">
               <MobileMenu
                 ariaLabel="Accounts"
                 minWidth={220}
@@ -174,6 +174,25 @@ export function MobileControlBar({
                     onSelect={() => toggleAccount(account)}
                   />
                 ))}
+                {/* The saved-server switch rides in here, as on the native
+                    iPhone bar: a fourth icon in this scroller doesn't fit a
+                    phone beside the status, search, currency and settings. */}
+                {serverChoices && (
+                  <>
+                    <MenuDivider />
+                    <MenuSectionHeader>Server</MenuSectionHeader>
+                    {serverChoices.rows.map(server => (
+                      <MenuToggleRow
+                        key={server.id}
+                        title={server.name}
+                        trailing={defaultServerName(server.url)}
+                        isOn={server.url === serverChoices.here}
+                        dismissOnTap
+                        onSelect={() => { if (server.url !== serverChoices.here) switchToServer(server.url); }}
+                      />
+                    ))}
+                  </>
+                )}
               </MobileMenu>
 
               {layoutItems && layoutItems.length > 0 && (
@@ -213,30 +232,6 @@ export function MobileControlBar({
                   ? <Eye className="h-[18px] w-[18px]" />
                   : <EyeOff className="h-[18px] w-[18px]" />}
               </button>
-
-              {/* Saved-server switch (the native bar's server.rack menu);
-                  absent with a single server. */}
-              {serverChoices && (
-                <MobileMenu
-                  ariaLabel={`Server: ${serverChoices.currentName}`}
-                  minWidth={220}
-                  align="left"
-                  className={CONTROL}
-                  label={<Server className="h-[18px] w-[18px]" />}
-                >
-                  <MenuSectionHeader>Server</MenuSectionHeader>
-                  {serverChoices.rows.map(server => (
-                    <MenuToggleRow
-                      key={server.id}
-                      title={server.name}
-                      trailing={defaultServerName(server.url)}
-                      isOn={server.url === serverChoices.here}
-                      dismissOnTap
-                      onSelect={() => { if (server.url !== serverChoices.here) switchToServer(server.url); }}
-                    />
-                  ))}
-                </MobileMenu>
-              )}
             </div>
 
             {/* Market status: a coloured dot carries open/closed without the
