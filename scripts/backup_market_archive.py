@@ -43,6 +43,7 @@ older one, so a corrupt copy can never rotate out a good one.
     python scripts/backup_market_archive.py                      # core, weekly
     python scripts/backup_market_archive.py --mode full          # monthly
     python scripts/backup_market_archive.py --dest /cloud/folder
+    python scripts/backup_market_archive.py --copy-to /cloud/folder  # local + off-site
 
 The live database must stay on local disk. `db_utils.is_path_on_cloud_drive`
 degrades a synced path to journal_mode=DELETE, and two processes writing a
@@ -213,6 +214,25 @@ def rotate(dest: str, mode: str, retain: int, dry_run: bool) -> list[str]:
     return doomed
 
 
+def copy_to(archive: str, dest: str, mode: str, retain: int) -> tuple[str, list[str]]:
+    """Copy a verified archive into a second directory, then rotate it there.
+
+    The copy lands under a dot-prefixed temporary name and is renamed only once
+    its checksum matches, so a sync client never uploads a half-written file and
+    rotate() never counts one as a snapshot.
+    """
+    os.makedirs(dest, exist_ok=True)
+    name = os.path.basename(archive)
+    final = os.path.join(dest, name)
+    partial = os.path.join(dest, f".{name}.partial")
+    shutil.copy2(archive, partial)
+    if sha256_of(partial) != sha256_of(archive):
+        os.remove(partial)
+        raise RuntimeError(f"copy to {dest} does not match the original")
+    os.replace(partial, final)
+    return final, rotate(dest, mode, retain, dry_run=False)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -228,6 +248,11 @@ def main() -> int:
     )
     parser.add_argument("--dest", default=None, help="output directory (env INVESTA_BACKUP_DIR)")
     parser.add_argument("--retain", type=int, default=None, help="snapshots to keep for this mode")
+    parser.add_argument(
+        "--copy-to",
+        default=None,
+        help="also copy the verified archive here (e.g. a synced Drive folder), rotated to the same retention",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -266,6 +291,17 @@ def main() -> int:
     dropped = rotate(dest, args.mode, retain, args.dry_run)
     if dropped:
         print(f"\nrotated out {len(dropped)}: {', '.join(dropped)}")
+
+    if args.copy_to:
+        try:
+            copied, dropped = copy_to(out_path, args.copy_to, args.mode, retain)
+        except Exception as exc:
+            print(f"\nFAILED to copy to {args.copy_to}: {type(exc).__name__}: {exc}")
+            print("      the local snapshot above is intact")
+            return 1
+        print(f"\ncopied {copied}")
+        if dropped:
+            print(f"rotated out there {len(dropped)}: {', '.join(dropped)}")
     return 0
 
 

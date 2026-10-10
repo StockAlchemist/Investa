@@ -16,7 +16,8 @@ Steps, each skipped when it is not due:
                       day — the ECB, and the Bank of Thailand behind it when a
                       token is configured
   4. incremental snap when the newest one is older than SNAPSHOT_MAX_AGE_HOURS
-  5. core snapshot    when the newest one is older than CORE_MAX_AGE_DAYS
+  5. core snapshot    when the newest one is older than CORE_MAX_AGE_DAYS, kept
+                      locally and copied off-site when one is configured
 
 The delta window widens with the gap: away for a fortnight, it asks for a
 fortnight plus an overlap rather than the usual five days. That overlap is what
@@ -79,12 +80,14 @@ def backup_dir() -> str:
 def offsite_dir() -> Optional[str]:
     """Where the off-machine copy goes, if one is configured.
 
-    Only the incremental snapshot is sent there, and that is the whole point of
-    having three tiers. Incremental carries every small table whole — the
-    corporate actions, fund NAVs and share counts that cannot be re-downloaded —
-    plus a fortnight of bars, in about 7 MB. Core and full are 575 MB and ~700 MB
-    and exist for a fast local restore; pushing them too would cost 4.6 GB of
-    someone's Drive quota to duplicate history that Yahoo will still serve.
+    The daily incremental is written there directly: it carries every small
+    table whole — the corporate actions, fund NAVs and share counts that cannot
+    be re-downloaded — plus a fortnight of bars, in about 7 MB.
+
+    The weekly core is written locally and copied there too (~770 MB each, 4
+    kept, ~3 GB). Incremental alone cannot rebuild the archive, and the bar
+    history it lacks is no longer all re-downloadable: Yahoo serves BANPU.BK
+    only from 2016 while the archive holds it from 2000. Full stays local.
     """
     return os.environ.get("INVESTA_OFFSITE_DIR") or None
 
@@ -259,13 +262,20 @@ def plan(force: bool) -> Tuple[List[Tuple[str, List[str]]], List[str]]:
     else:
         skipped.append(f"incremental snapshot is {inc_age:.0f}h old")
 
-    core_age = newest_snapshot_age("core")
+    # Core is kept locally for a fast restore and copied off-site, because it is
+    # the only tier that carries the bar history no provider serves any more.
+    # The older of the two copies decides whether it is due.
+    core_ages = [newest_snapshot_age("core")]
+    if offsite:
+        core_ages.append(newest_snapshot_age("core", offsite))
+    core_age = None if None in core_ages else max(core_ages)
     if force or core_age is None or core_age > CORE_MAX_AGE_DAYS * 24:
         age = "none yet" if core_age is None else f"{core_age / 24:.1f}d old"
-        jobs.append(
-            (f"core snapshot ({age})",
-             [python, "scripts/backup_market_archive.py", "--mode", "core"])
-        )
+        where = f" + {offsite}" if offsite else ""
+        argv = [python, "scripts/backup_market_archive.py", "--mode", "core"]
+        if offsite:
+            argv += ["--copy-to", offsite]
+        jobs.append((f"core snapshot ({age}){where}", argv))
     else:
         skipped.append(f"core snapshot is {core_age / 24:.1f}d old")
 

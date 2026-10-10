@@ -196,6 +196,43 @@ def test_rotation_ignores_the_other_mode(source_db, tmp_path):
     assert sum("_core_" in f for f in remaining) == 1
 
 
+# --- off-site copy ---------------------------------------------------------
+
+
+def test_copy_to_lands_an_identical_archive_and_no_partial(source_db, tmp_path):
+    local, offsite = str(tmp_path / "backups"), str(tmp_path / "drive")
+    archive, _ = backup.build_archive(source_db, local, "core", "20260825_000000")
+
+    copied, dropped = backup.copy_to(archive, offsite, "core", retain=4)
+
+    assert os.listdir(offsite) == [os.path.basename(archive)]
+    assert backup.sha256_of(copied) == backup.sha256_of(archive)
+    assert os.path.exists(archive), "the local snapshot must stay"
+    assert dropped == []
+
+
+def test_copy_to_rotates_the_destination_to_the_same_retention(source_db, tmp_path):
+    local, offsite = str(tmp_path / "backups"), str(tmp_path / "drive")
+    for day in range(1, 6):
+        archive, _ = backup.build_archive(source_db, local, "core", f"2026082{day}_000000")
+        backup.copy_to(archive, offsite, "core", retain=2)
+
+    remaining = sorted(os.listdir(offsite))
+    assert len(remaining) == 2
+    assert remaining[-1].endswith("20260825_000000.tar.gz")
+
+
+def test_a_bad_copy_is_removed_and_never_counted(source_db, tmp_path, monkeypatch):
+    local, offsite = str(tmp_path / "backups"), str(tmp_path / "drive")
+    archive, _ = backup.build_archive(source_db, local, "core", "20260825_000000")
+    real = backup.sha256_of
+    monkeypatch.setattr(backup, "sha256_of", lambda p: "bad" if p.endswith(".partial") else real(p))
+
+    with pytest.raises(RuntimeError):
+        backup.copy_to(archive, offsite, "core", retain=4)
+    assert os.listdir(offsite) == []
+
+
 # --- incremental -----------------------------------------------------------
 
 
