@@ -489,3 +489,37 @@ def test_the_integrity_check_still_catches_a_real_disagreement(db):
     consistent, _ = db.check_integrity("ZZZ", incoming)
 
     assert not consistent, "a 4x disagreement on a yahoo bar is still a finding"
+
+
+def test_the_integrity_check_compares_only_the_days_it_was_given(db):
+    """The check reads a date *range*, so it sees stored days the incoming frame
+    does not carry. Those must not be compared: a weekly re-fetch says nothing
+    about the daily bars in between."""
+    db.upsert_ohlcv(
+        "GAP", _frame(["2024-01-02", "2024-01-03", "2024-01-04"], [10.0, 99.0, 10.0])
+    )
+
+    incoming = _frame(["2024-01-02", "2024-01-04"], [10.0, 10.0])
+    consistent, reason = db.check_integrity("GAP", incoming)
+
+    assert consistent, f"2024-01-03 was never offered for comparison: {reason}"
+
+
+def test_iso_days_matches_strftime():
+    """`_iso_days` replaces `strftime("%Y-%m-%d")` on the sync path, so it must
+    agree on the awkward cases too: a tz-aware index formats its local wall
+    date, a pre-1970 instant floors to its own day, and NaT stays NaN."""
+    from market_db import _iso_days
+
+    cases = [
+        pd.date_range("2024-03-08 20:00", periods=40, freq="7h", tz="America/New_York"),
+        pd.DatetimeIndex(["1965-03-04 13:00", "1969-12-31 23:59:59", "1970-01-01"]),
+        pd.DatetimeIndex(["2024-01-02", pd.NaT], tz="Asia/Bangkok"),
+        pd.DatetimeIndex([]),
+    ]
+    for idx in cases:
+        expected = idx.strftime("%Y-%m-%d").tolist()
+        got = _iso_days(idx)
+        assert len(got) == len(expected)
+        for g, e in zip(got, expected):
+            assert g == e or (pd.isna(g) and pd.isna(e)), (idx, got, expected)
