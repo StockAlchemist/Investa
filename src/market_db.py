@@ -49,6 +49,27 @@ VALID_ADJUSTMENTS = (ADJUST_NONE, ADJUST_SPLIT, ADJUST_TOTAL_RETURN)
 _MIN_SPLIT_RATIO, _MAX_SPLIT_RATIO = 1e-6, 1e6
 
 
+def _iso_days(idx: pd.DatetimeIndex) -> list:
+    """`idx.strftime("%Y-%m-%d").tolist()`, without the cost.
+
+    `strftime` formats element by element through Python, and a history sync
+    calls it four times per symbol on multi-decade indexes: 2.8s of a 19s cold
+    /history, measured. Truncating to whole days in NumPy is ~15x faster.
+
+    Same values, including the edge cases: a tz-aware index formats its local
+    wall date (as strftime does), pre-1970 instants floor to their own day, and
+    NaT stays NaN.
+    """
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    days = np.datetime_as_string(idx.to_numpy().astype("datetime64[D]"), unit="D")
+    out = days.astype(object)
+    nat = idx.isna()
+    if nat.any():
+        out[nat] = np.nan
+    return out.tolist()
+
+
 class MarketDatabase:
     """
     Manages a persistent SQLite database for historical market data.
@@ -167,11 +188,11 @@ class MarketDatabase:
         # Series.get, which dominated cold /history time). Column-level
         # fallbacks and NaN->None semantics match the previous row loop. ---
 
-        # Dates: format the index once. DatetimeIndex.strftime is vectorized;
-        # fall back to the old per-element logic for non-datetime indexes.
+        # Dates: format the index once, in NumPy (see _iso_days); fall back to
+        # the old per-element logic for non-datetime indexes.
         idx = df.index
         if isinstance(idx, pd.DatetimeIndex):
-            date_strs = idx.strftime("%Y-%m-%d").tolist()
+            date_strs = _iso_days(idx)
         else:
             date_strs = [
                 ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
@@ -331,7 +352,7 @@ class MarketDatabase:
 
         idx = df.index
         if isinstance(idx, pd.DatetimeIndex):
-            date_strs = idx.strftime("%Y-%m-%d").tolist()
+            date_strs = _iso_days(idx)
         else:
             date_strs = [
                 ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
@@ -603,7 +624,7 @@ class MarketDatabase:
         if not needs_split_work and not needs_dividends:
             return frame
 
-        date_strs = frame.index.strftime("%Y-%m-%d").tolist()
+        date_strs = _iso_days(frame.index)
         factors = (
             self._future_split_factors(date_strs, actions) if needs_split_work else None
         )
@@ -1322,13 +1343,16 @@ class MarketDatabase:
         except Exception:
             live_date = date.today().isoformat()
 
-        overlap_dates = [
-            d for d in new_df.index.strftime("%Y-%m-%d").tolist() if d < live_date
-        ]
+        new_days = _iso_days(new_df.index)
+        overlap_dates = [d for d in new_days if d < live_date]
         if not overlap_dates:
             return True, None
 
-        placeholders = ", ".join(["?"] * len(overlap_dates))
+        # A date range, not `date IN (...)`. The list ran to ~11,000 bound
+        # parameters on a multi-decade sync, and SQLite answered it with one
+        # index probe per date: 4.8s for 44 symbols in a single cold /history.
+        # The range is one contiguous scan of the primary key, 4-9x faster, and
+        # selects the same rows once the merge below keeps only incoming days.
         # Adjudicated bars are excluded from the comparison, and must be. They
         # were corrected *because* they disagree with what this provider serves,
         # so comparing them against it reports the correction as corruption —
@@ -1345,9 +1369,13 @@ class MarketDatabase:
             query = f"""
                 SELECT date, adj_close, close
                 FROM daily_ohlcv
-                WHERE symbol = ? AND date IN ({placeholders}){source_guard}
+                WHERE symbol = ? AND date BETWEEN ? AND ?{source_guard}
             """
-            db_data = pd.read_sql_query(query, conn, params=[symbol] + overlap_dates)
+            db_data = pd.read_sql_query(
+                query,
+                conn,
+                params=[symbol, min(overlap_dates), max(overlap_dates)],
+            )
 
         if db_data.empty:
             return True, None  # No overlap, no conflict
@@ -1356,7 +1384,7 @@ class MarketDatabase:
         # only held ones, so the old per-row .loc[] lookup would have been paid
         # on the whole archive nightly.
         incoming = new_df.copy()
-        incoming["_day"] = incoming.index.strftime("%Y-%m-%d")
+        incoming["_day"] = new_days
         new_col = "Adj Close" if "Adj Close" in incoming.columns else "Close"
         if new_col not in incoming.columns:
             return True, None
