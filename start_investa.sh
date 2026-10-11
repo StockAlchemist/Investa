@@ -37,23 +37,32 @@ trap cleanup SIGINT SIGTERM EXIT
 # --- KILL EXISTING PROCESSES ---
 echo "Checking for existing Investa processes..."
 
-# Kill process on port 8000 (Backend)
-if lsof -ti:8000 >/dev/null; then
-    echo "Killing existing backend on port 8000..."
-    kill -9 $(lsof -ti:8000)
-fi
+# PIDs listening on TCP port $1.
+#
+# Not lsof: it walks every mounted filesystem before answering, so a single
+# dead network mount stalls it in the kernel — an sshfs share whose host had
+# dropped off the network cost ~100 s per call (-b and -nP do not help), and
+# the three checks below held startup for five minutes before it printed a
+# line. netstat reads the socket table and never touches a filesystem.
+# The process column is "name:pid" and the name may contain spaces, hence the
+# scan for the first field ending in ":<digits>" rather than a fixed column.
+pids_on_port() {
+    netstat -anv -p tcp 2>/dev/null | awk -v port="$1" '
+        $6 == "LISTEN" && $4 ~ ("\\." port "$") {
+            for (i = 7; i <= NF; i++)
+                if ($i ~ /:[0-9]+$/) { sub(/.*:/, "", $i); print $i; break }
+        }' | sort -u
+}
 
-# Kill process on port 3000 (Frontend)
-if lsof -ti:3000 >/dev/null; then
-    echo "Killing existing frontend on port 3000..."
-    kill -9 $(lsof -ti:3000)
-fi
-
-# Kill process on port 3001 (Frontend alternative) just in case
-if lsof -ti:3001 >/dev/null; then
-    echo "Killing existing frontend on port 3001..."
-    kill -9 $(lsof -ti:3001)
-fi
+# Backend (8000), frontend (3000) and its fallback port (3001).
+for port_role in 8000:backend 3000:frontend 3001:frontend; do
+    port=${port_role%%:*}
+    pids=$(pids_on_port "$port")
+    if [ -n "$pids" ]; then
+        echo "Killing existing ${port_role#*:} on port $port..."
+        kill -9 $pids
+    fi
+done
 
 # The ranking worker listens on nothing, so it cannot be found by port. Left
 # alone it accumulated one orphan per start — each a daily loop writing a full
