@@ -33,6 +33,7 @@ from server.auth import User
 from server.dependencies import get_config_manager, reload_data, resolve_user_db_path
 from server.route_utils import (
     SWRCache,
+    ComputationPending,
     _lru_get,
     _lru_put,
     _lru_invalidate,
@@ -52,6 +53,10 @@ _CACHE_REVISIONS: dict[Optional[str], int] = {}
 # tracked per entry, so their keys no longer embed a time bucket.
 _RAW_CALC_CACHE = SWRCache()
 _PORTFOLIO_HISTORY_CACHE = SWRCache()
+# Return available figures before the frontend's proxy deadline. The shared
+# computation keeps running, so subsequent polls reuse its eventual result.
+_RAW_SUMMARY_WAIT_SECONDS = 20.0
+_SUMMARY_HISTORY_WAIT_SECONDS = 1.0
 
 
 def configuration_key(*values) -> str:
@@ -441,6 +446,7 @@ async def _get_historical_performance_cached(
     account_cash_mode_map: Dict[str, str],  # NEW
     db_mtime: float,
     force: bool = False,
+    wait_timeout: float | None = None,
 ) -> Tuple[pd.DataFrame, Dict, Dict, str]:
     """
     Wrapper for calculate_historical_performance that uses a shared in-memory
@@ -523,7 +529,7 @@ async def _get_historical_performance_cached(
         return await compute()
 
     return await _PORTFOLIO_HISTORY_CACHE.get_or_compute(
-        cache_key, ttl_seconds, compute
+        cache_key, ttl_seconds, compute, wait_timeout=wait_timeout
     )
 
 
@@ -702,8 +708,16 @@ async def _compute_raw_summary(
             account_level_metrics,
         )
 
-    result = await _RAW_CALC_CACHE.get_or_compute(raw_key, cache_ttl_seconds, compute)
-    return result
+    try:
+        return await _RAW_CALC_CACHE.get_or_compute(
+            raw_key, cache_ttl_seconds, compute, wait_timeout=_RAW_SUMMARY_WAIT_SECONDS
+        )
+    except ComputationPending:
+        raise HTTPException(
+            status_code=503,
+            detail="Portfolio calculation is still running. Please retry shortly.",
+            headers={"Retry-After": "2"},
+        ) from None
 
 
 async def _calculate_portfolio_summary_internal(
@@ -784,7 +798,7 @@ async def _calculate_portfolio_summary_internal(
     )
 
     cached = _lru_get(_PORTFOLIO_SUMMARY_CACHE, cache_key)
-    if cached is not None:
+    if cached is not None and not cached.get("_history_pending", False):
         logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...")
         raw_key = (
             currency,
@@ -851,6 +865,7 @@ async def _calculate_portfolio_summary_internal(
     # graph and is already cached in-memory, so it's fast after first load.
     annualized_twr = None
     cumulative_twr = None
+    history_pending = False
     if not df.empty and not all_selected_closed:
         try:
             df_for_twr = df
@@ -879,6 +894,7 @@ async def _calculate_portfolio_summary_internal(
                     include_accounts=include_accounts,
                     account_cash_mode_map=account_cash_mode_map,
                     db_mtime=db_mtime,
+                    wait_timeout=_SUMMARY_HISTORY_WAIT_SECONDS,
                 )
                 final_twr_factor = None
                 if "|||TWR_FACTOR:" in hist_status:
@@ -897,6 +913,8 @@ async def _calculate_portfolio_summary_internal(
                     logging.info(
                         f"Summary Metrics: Live TWR computed for {len(include_accounts) if include_accounts else 'ALL'} accounts: factor={final_twr_factor:.4f}"
                     )
+        except ComputationPending:
+            history_pending = True
         except Exception as e_live_twr:
             logging.warning(f"Live-TWR computation failed: {e_live_twr}")
 
@@ -981,8 +999,11 @@ async def _calculate_portfolio_summary_internal(
             _CACHE_REVISIONS.setdefault(db_path, 0),
         ),
     )
+    freshness = _RAW_CALC_CACHE.freshness(raw_key)
+    freshness["refreshing"] = freshness["refreshing"] or history_pending
     result = {
-        "freshness": _RAW_CALC_CACHE.freshness(raw_key),
+        "_history_pending": history_pending,
+        "freshness": freshness,
         "metrics": overall_summary_metrics,
         "summary_df": summary_df,
         "holdings_dict": holdings_dict,

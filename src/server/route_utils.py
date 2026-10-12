@@ -39,6 +39,10 @@ def _lru_invalidate(cache: OrderedDict, predicate=lambda _: True):
                 del cache[key]
 
 
+class ComputationPending(Exception):
+    """A shared calculation is still running after the caller's wait budget."""
+
+
 class SWRCache:
     """Stale-while-revalidate cache for expensive async computations.
 
@@ -103,10 +107,14 @@ class SWRCache:
                     self._store.pop(k, None)
                     self._inflight.pop(k, None)
 
-    async def get_or_compute(self, key, ttl: float, compute):
+    async def get_or_compute(
+        self, key, ttl: float, compute, wait_timeout: float | None = None
+    ):
         """Return the cached value for ``key``, refreshing per stale-while-revalidate.
 
         ``compute`` is a zero-arg coroutine function that produces the value.
+        A wait budget bounds cold callers; the shared task continues after a
+        ``ComputationPending`` response and publishes for subsequent readers.
         """
         with self._lock:
             entry = self._store.get(key)
@@ -119,7 +127,15 @@ class SWRCache:
                 return value
             task = self._ensure_task(key, compute, background=False)
         # Cancelling one HTTP caller must not cancel work shared by other callers.
-        return await asyncio.shield(task)
+        if wait_timeout is None:
+            return await asyncio.shield(task)
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=wait_timeout)
+        except TimeoutError:
+            # A timeout raised *by* the calculation remains an actual failure.
+            if task.done():
+                return task.result()
+            raise ComputationPending from None
 
     def _ensure_task(self, key, compute, background: bool):
         task = self._inflight.get(key)

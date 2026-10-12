@@ -31,6 +31,7 @@ from server.portfolio_service import (
     _calculate_historical_performance_internal,
     _calculate_portfolio_summary_internal,
     _compute_raw_summary,
+    _filter_closed_positions,
     _RAW_CALC_CACHE,
     configuration_key,
     _CACHE_REVISIONS,
@@ -599,16 +600,23 @@ async def get_holdings(
         return []
 
     try:
-        # Use helper but with show_closed_positions=False (though internal helper uses True,
-        # but calculate_portfolio_summary in logic handles it in summary_df_final)
-        # Wait, the internal helper currently uses True. Let's fix that or pass it.
-
-        summary_data = await _calculate_portfolio_summary_internal(
+        # Holdings require current positions and lots, not the portfolio's
+        # full historical TWR. Share the headline's raw calculation directly.
+        manager = get_config_manager(current_user)
+        manager.load_manual_overrides()
+        _, summary_df, holdings_dict, _ = await _compute_raw_summary(
             currency=currency,
             include_accounts=accounts,
-            show_closed_positions=show_closed,  # Pass the parameter
             data=data,
-            current_user=current_user,
+            account_interest_rates=manager.manual_overrides.get(
+                "account_interest_rates", {}
+            ),
+            interest_free_thresholds=manager.manual_overrides.get(
+                "interest_free_thresholds", {}
+            ),
+        )
+        summary_data = _filter_closed_positions(
+            {"summary_df": summary_df, "holdings_dict": holdings_dict}, show_closed
         )
 
         summary_df = summary_data.get("summary_df")
@@ -616,13 +624,6 @@ async def get_holdings(
 
         if summary_df is None or summary_df.empty:
             return []
-
-        # Filter closed positions if needed (the logic in portfolio_logic already does it for summary_df_final
-        # if show_closed_positions is False, but here we might want to be explicit or match behavior)
-        # Actually calculate_portfolio_summary returns summary_df_final which is filtered.
-        # But my helper currently uses show_closed_positions=True.
-
-        # I'll update the helper to accept show_closed_positions.
 
         # Convert DataFrame to list of dicts
         # Handle NaNs
@@ -716,6 +717,8 @@ async def get_holdings(
 
         return clean_nans(records)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error getting holdings: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch holdings")

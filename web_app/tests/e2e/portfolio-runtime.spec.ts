@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAsMockUser } from './helpers/mock-api';
+import { MOCK_SUMMARY_USD } from './helpers/mock-data';
 
 test('default dashboard does not fetch hidden analytics or unrelated screens', async ({ page }) => {
     await loginAsMockUser(page);
@@ -76,4 +77,30 @@ test('phone dashboard keeps detailed analytics behind an explicit control', asyn
     await page.goto('/');
     await expect(page.getByRole('button', { name: 'Show detailed analytics', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await page.screenshot({ path: test.info().outputPath('dashboard-phone.png'), fullPage: true });
+});
+
+
+test('dashboard shows current figures while historical returns finish and polls for completion', async ({ page }) => {
+    await loginAsMockUser(page);
+    let summaryRequests = 0;
+    const pending = {
+        ...MOCK_SUMMARY_USD,
+        metrics: { ...MOCK_SUMMARY_USD.metrics, cumulative_twr: null, annualized_twr: null },
+        freshness: { calculated_at: 1791792000, refreshing: true },
+    };
+    await page.route(/\/api\/summary(\/headline)?(\?|$)/, route => {
+        if (new URL(route.request().url()).pathname.endsWith('/headline')) {
+            return route.fulfill({ json: { ...pending, freshness: { ...pending.freshness, refreshing: false } } });
+        }
+        summaryRequests += 1;
+        return route.fulfill({ json: summaryRequests < 3 ? pending : {
+            ...MOCK_SUMMARY_USD, freshness: { calculated_at: 1791792000, refreshing: false },
+        } });
+    });
+    await page.goto('/');
+    await expect(page.getByText('$125,450.00').first()).toBeVisible();
+    await expect(page.getByText('No portfolio data yet')).toHaveCount(0);
+    await expect(page.getByText('32.10%', { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    expect(summaryRequests).toBeGreaterThanOrEqual(3);
+    await expect(page.getByRole('alert').filter({ hasText: 'Could not load your portfolio.' })).toHaveCount(0);
 });

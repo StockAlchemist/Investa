@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
   distDir: process.env.INVESTA_NEXT_DIST_DIR || ".next",
   output: "standalone",
   compress: true,
+  // External rewrites otherwise abort after 30 seconds, including IBKR report
+  // generation and cold historical calculations that are still valid work.
+  experimental: { proxyTimeout: 300_000 },
   allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net", "muon", "*.ts.net"],
   devIndicators: false,
   turbopack: {}, // Required to prevent error when using next-pwa in Next 16
