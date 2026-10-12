@@ -4,8 +4,8 @@ addopts = "--cov=src --cov-report=term-missing"
 # tries to collect stray scripts that happen to be named test_*.py (e.g. one-off
 # helper scripts under macos_app/).
 testpaths = ["tests"]
-# Make `import config`, `import server.api` etc. work without per-file sys.path hacks.
-pythonpath = ["src"]
+# Resolve both application modules and repository scripts in local and CI tests.
+pythonpath = [".", "src"]
 
 [tool.mypy]
 # Gradual adoption: only the files listed here are checked, and they must stay

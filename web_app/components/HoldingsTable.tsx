@@ -19,7 +19,9 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
         visibleColumns,
         setVisibleColumns,
         expandedLots,
+        setExpandedLots,
         expandedCards,
+        setExpandedCards,
         sortConfig,
         handleSort,
         toggleColumn,
@@ -80,23 +82,17 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
 
     const toggleAllLots = () => {
         if (expandedLots.size > 0) {
-            expandedLots.clear();
+            setExpandedLots(new Set());
         } else {
-            aggregatedHoldings.forEach(h => {
-                if (h.lots && h.lots.length > 0) {
-                    expandedLots.add(getExpansionKey(h));
-                }
-            });
+            setExpandedLots(new Set(aggregatedHoldings.filter(h => h.lots?.length).map(getExpansionKey)));
         }
     };
 
     const toggleAllCards = () => {
         if (expandedCards.size > 0) {
-            expandedCards.clear();
+            setExpandedCards(new Set());
         } else {
-            aggregatedHoldings.forEach(h => {
-                expandedCards.add(getExpansionKey(h));
-            });
+            setExpandedCards(new Set(aggregatedHoldings.map(getExpansionKey)));
         }
     };
 
@@ -141,6 +137,12 @@ export default function HoldingsTable({ holdings, currency, isLoading = false }:
                     mobileViewMode={mobileViewMode}
                     visibleColumns={visibleColumns}
                     isLoading={isLoading}
+                    onMoveColumn={(header, delta) => setVisibleColumns(previous => {
+                        const next = [...previous]; const index = next.indexOf(header); const target = index + delta;
+                        if (index < 0 || target < 0 || target >= next.length) return previous;
+                        [next[index], next[target]] = [next[target], next[index]];
+                        return next;
+                    })}
                     draggedColumn={draggedColumn}
                     handleDragStart={handleDragStart}
                     handleDragOver={handleDragOver}

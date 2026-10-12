@@ -4,6 +4,12 @@ import Foundation
 /// `metrics` is null when there's nothing to show (e.g. all accounts closed).
 struct SummaryResponse: Codable, Sendable {
     let metrics: Metrics?
+    var freshness: DataFreshness? = nil
+    var accountMetrics: [String: Metrics]? = nil
+    enum CodingKeys: String, CodingKey {
+        case metrics, freshness
+        case accountMetrics = "account_metrics"
+    }
 }
 
 /// Portfolio-level metrics. The backend emits a wide, partly-dynamic dictionary
@@ -63,4 +69,11 @@ struct Metrics: Codable, Sendable {
         }
         return nil
     }
+}
+
+struct DataFreshness: Codable, Sendable {
+    let calculated_at: Double?
+    let quotes_as_of: Double?
+    let refreshing: Bool
+    var date: Date? { calculated_at.map { Date(timeIntervalSince1970: $0) } }
 }

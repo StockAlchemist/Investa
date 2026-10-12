@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useDialogFocus } from './hooks/useDialogFocus';
 import { X } from 'lucide-react';
 import { Transaction } from '../lib/api';
 import { marketToday } from '../lib/market_time';
@@ -33,6 +34,8 @@ const isCashSymbol = (symbol: string) => {
 };
 
 export default function TransactionModal({ isOpen, onClose, onSubmit, initialData, mode, accountCurrencyMap, existingAccounts = [], existingSymbols = [], accountCashModeMap = {} }: TransactionModalProps) {
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useDialogFocus(dialogRef, isOpen, onClose);
     const [formData, setFormData] = useState<TxForm>({
         Date: marketToday(),
         Type: 'Buy',
@@ -401,7 +404,7 @@ export default function TransactionModal({ isOpen, onClose, onSubmit, initialDat
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgb(22_23_27/0.36)]">
             <div className="flex min-h-full items-center justify-center p-4">
-                <div role="dialog" aria-modal="true" aria-labelledby="tx-modal-title" className="bg-card text-card-foreground p-6 rounded-hero w-full max-w-md shadow-[0_24px_64px_rgb(22_23_27/0.24)] ring-1 ring-black/5 dark:ring-white/10 relative">
+                <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="tx-modal-title" className="bg-card text-card-foreground p-6 rounded-hero w-full max-w-md shadow-[0_24px_64px_rgb(22_23_27/0.24)] ring-1 ring-black/5 dark:ring-white/10 relative">
                     <div className="flex justify-between items-center mb-4">
                         <h2 id="tx-modal-title" className="page-title text-[28px] leading-8 text-foreground">
                             {mode === 'edit' ? 'Edit Transaction' : 'Add Transaction'}

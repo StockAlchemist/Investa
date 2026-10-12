@@ -13,6 +13,7 @@ import WatchlistStar from '../WatchlistStar';
 interface HoldingsDesktopTableProps {
     mobileViewMode: 'card' | 'table';
     visibleColumns: string[];
+    onMoveColumn?: (header: string, delta: number) => void;
     isLoading: boolean;
     draggedColumn: string | null;
     handleDragStart: (e: React.DragEvent<HTMLTableHeaderCellElement>, header: string) => void;
@@ -43,6 +44,7 @@ interface HoldingsDesktopTableProps {
 export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
     mobileViewMode,
     visibleColumns,
+    onMoveColumn,
     isLoading,
     draggedColumn,
     handleDragStart,
@@ -83,19 +85,27 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                 <th
                                     key={header}
                                     scope="col"
+                                    aria-sort={sortConfig.key === header ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, header)}
                                     onDragOver={handleDragOver}
                                     onDrop={(e) => handleDrop(e, header)}
                                     className={`px-4 h-10 text-xs font-semibold text-muted-foreground transition-colors select-none whitespace-nowrap group hover:text-foreground cursor-pointer ${draggedColumn === header ? 'opacity-50' : ''} ${isLeftAligned ? 'text-left' : 'text-right'} ${isSticky ? 'sticky left-0 z-40 bg-slate-50 dark:bg-muted shadow-[1px_0_0_hsl(var(--border))]' : ''}`}
-                                    onClick={() => handleSort(header)}
                                 >
-                                    <div className={`flex items-center gap-1 ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
+                                    <button type="button" onClick={() => handleSort(header)}
+                                        aria-label={`Sort by ${header}`}
+                                        title="Sort; Alt + Left/Right moves this column"
+                                        onKeyDown={event => {
+                                            if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+                                                event.preventDefault(); onMoveColumn?.(header, event.key === 'ArrowLeft' ? -1 : 1);
+                                            }
+                                        }}
+                                        className={`flex w-full items-center gap-1 focus-visible:outline-2 focus-visible:outline-ring ${isLeftAligned ? 'justify-start' : 'justify-end'}`}>
                                         {header}
                                         {sortConfig.key === header && (
                                             <span className="text-foreground">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                                         )}
-                                    </div>
+                                    </button>
                                 </th>
                             );
                         })}
@@ -118,6 +128,12 @@ export const HoldingsDesktopTable: React.FC<HoldingsDesktopTableProps> = ({
                                 {/* Group Header Row */}
                                 <tr
                                     className="bg-muted/60 hover:bg-muted cursor-pointer transition-colors"
+                                    tabIndex={0}
+                                    aria-expanded={expandedGroups.has(group.key)}
+                                    aria-label={`${expandedGroups.has(group.key) ? 'Collapse' : 'Expand'} ${group.key}`}
+                                    onKeyDown={event => {
+                                        if (['Enter', ' '].includes(event.key)) { event.preventDefault(); toggleGroup(group.key); }
+                                    }}
                                     onClick={() => toggleGroup(group.key)}
                                 >
                                     <td colSpan={visibleColumns.length} className="px-4 py-3">

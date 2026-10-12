@@ -6,6 +6,8 @@ final class TransactionsViewModel: ObservableObject {
         didSet { dripBuyKeysCache = nil }
     }
     @Published var pendingIbkr: [Transaction] = []
+    @Published var pendingAccountSelections: [Int: String] = [:]
+    @Published var isProcessingPending = false
     /// True while a `/sync/ibkr` round-trip is in flight, so the toolbar button
     /// can spin and refuse a second tap (the web toolbar does the same).
     @Published var isSyncingIbkr = false
@@ -17,6 +19,7 @@ final class TransactionsViewModel: ObservableObject {
 
     private let api: APIClient
     private var loadTask: Task<Void, Never>?
+    private var loadedAccounts: [String]?
     private var dripBuyKeysCache: Set<String>?
 
     /// Date|symbol|qty|price key for DRIP matching. Rounding to 3dp stands in
@@ -46,6 +49,7 @@ final class TransactionsViewModel: ObservableObject {
     }
 
     func reload(accounts: [String]?) {
+        loadedAccounts = accounts
         loadTask?.cancel()
         loadTask = Task { [weak self] in
             await self?.load(accounts: accounts)
@@ -132,15 +136,50 @@ final class TransactionsViewModel: ObservableObject {
         }
     }
     func loadPending() async {
-        pendingIbkr = (try? await api.get("/sync/ibkr/pending")) ?? []
+        do {
+            pendingIbkr = try await api.get("/sync/ibkr/pending")
+            let ids = Set(pendingIbkr.compactMap { $0.id })
+            pendingAccountSelections = pendingAccountSelections.filter { ids.contains($0.key) }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
+
+    func pendingAccount(for transaction: Transaction) -> String {
+        transaction.id.flatMap { pendingAccountSelections[$0] } ?? transaction.account
+    }
+
     func approvePending(_ ids: [Int]) async {
-        let _: StatusResponse? = try? await api.send(method: "POST", path: "/sync/ibkr/approve", body: ids)
-        await loadPending(); reload(accounts: nil)
+        guard !ids.isEmpty, !isProcessingPending else { return }
+        isProcessingPending = true
+        errorMessage = nil
+        defer { isProcessingPending = false }
+        let accounts = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+            pendingAccountSelections[id].map { (String(id), $0) }
+        })
+        do {
+            let _: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr/approve",
+                                                       body: IbkrApprovalInput(ids: ids, accounts: accounts))
+            ids.forEach { pendingAccountSelections.removeValue(forKey: $0) }
+            await loadPending()
+            reload(accounts: loadedAccounts)
+            NotificationCenter.default.post(name: .refreshRequested, object: nil)
+        } catch {
+            // Keep the account choices available for a failed approval retry.
+            errorMessage = error.localizedDescription
+        }
     }
     func rejectPending(_ ids: [Int]) async {
-        let _: StatusResponse? = try? await api.send(method: "POST", path: "/sync/ibkr/reject", body: ids)
-        await loadPending()
+        guard !ids.isEmpty, !isProcessingPending else { return }
+        isProcessingPending = true
+        errorMessage = nil
+        defer { isProcessingPending = false }
+        do {
+            let _: StatusResponse = try await api.send(method: "POST", path: "/sync/ibkr/reject", body: ids)
+            await loadPending()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func load(accounts: [String]?) async {
@@ -206,4 +245,10 @@ struct StatusResponse: Codable, Sendable {
     let status: String?
     let message: String?
     let id: Int?
+}
+
+/// Mirrors the backend's per-row IBKR approval request.
+struct IbkrApprovalInput: Encodable, Sendable {
+    let ids: [Int]
+    let accounts: [String: String]
 }

@@ -1,0 +1,1709 @@
+{
+  "date": "2026-10-12",
+  "baseline_commit": "36b7551b33f46061678a88062a68844be8919e66",
+  "updated_revision": "Uncommitted Investa implementation in the current workspace",
+  "tracked_runtime_changes_sha256": "251af1e3ff2edc71fecf2f06cc08eb1b5701892ae8a9d1d422df27f72516242f",
+  "machine": {
+    "os": "macOS-27.0-arm64-arm-64bit",
+    "architecture": "arm64",
+    "backend_python": "3.12.9",
+    "node": "v22.17.0"
+  },
+  "method": {
+    "browser": "Two isolated Next.js production builds; identical fixture API responses delayed by 120 ms; 1440x1000 viewport; fresh storage; service workers blocked; alternating version order; 5 runs/version/scenario after unmeasured warmups; API GET requests and uncompressed response bodies counted for 10 seconds. Hero timing includes its animation and Playwright observation.",
+    "backend": "Actual analytics FastAPI routes through httpx ASGITransport; only history dependency replaced with identical seeded 5,040-point cached history ending 2026-10-09; actual risk/backtest math; no app lifespan or live databases; a lightweight probe scheduled 5 ms after analytics starts. Three alternating batches of 15 repetitions per version/endpoint, with an unmeasured warmup for each batch/endpoint.",
+    "limits": [
+      "Controlled fixture replay, not live market-data latency.",
+      "No cold portfolio valuation, real-user transaction import, memory, throughput, or native UI latency was measured.",
+      "Small browser timing samples with overlapping ranges; percentages are descriptive, not statistically established speedups.",
+      "Backend probe completion delay includes event-loop scheduling delay and in-process dispatch; it is not a network HTTP latency."
+    ]
+  },
+  "summary": {
+    "browser": {
+      "default_dashboard": {
+        "old": {
+          "hero_first_value_ms": {
+            "median": 1193,
+            "min": 829,
+            "max": 1360,
+            "samples": 5
+          },
+          "hero_settled_ms": {
+            "median": 2050,
+            "min": 1663,
+            "max": 2203,
+            "samples": 5
+          },
+          "get_requests": {
+            "median": 29,
+            "min": 29,
+            "max": 29,
+            "samples": 5
+          },
+          "history_requests": {
+            "median": 4,
+            "min": 4,
+            "max": 4,
+            "samples": 5
+          },
+          "response_body_bytes": {
+            "median": 102210,
+            "min": 102210,
+            "max": 102210,
+            "samples": 5
+          },
+          "runs_with_page_errors": 5
+        },
+        "new": {
+          "hero_first_value_ms": {
+            "median": 1080,
+            "min": 956,
+            "max": 1216,
+            "samples": 5
+          },
+          "hero_settled_ms": {
+            "median": 2050,
+            "min": 1967,
+            "max": 2191,
+            "samples": 5
+          },
+          "get_requests": {
+            "median": 13,
+            "min": 13,
+            "max": 13,
+            "samples": 5
+          },
+          "history_requests": {
+            "median": 3,
+            "min": 3,
+            "max": 3,
+            "samples": 5
+          },
+          "response_body_bytes": {
+            "median": 66339,
+            "min": 66339,
+            "max": 66339,
+            "samples": 5
+          },
+          "runs_with_page_errors": 0
+        }
+      },
+      "saved_compact_layout": {
+        "old": {
+          "hero_first_value_ms": {
+            "median": 1035,
+            "min": 612,
+            "max": 1102,
+            "samples": 5
+          },
+          "hero_settled_ms": {
+            "median": 1854,
+            "min": 1513,
+            "max": 2118,
+            "samples": 5
+          },
+          "get_requests": {
+            "median": 27,
+            "min": 27,
+            "max": 27,
+            "samples": 5
+          },
+          "history_requests": {
+            "median": 4,
+            "min": 4,
+            "max": 4,
+            "samples": 5
+          },
+          "response_body_bytes": {
+            "median": 101366,
+            "min": 101366,
+            "max": 101366,
+            "samples": 5
+          },
+          "runs_with_page_errors": 5
+        },
+        "new": {
+          "hero_first_value_ms": {
+            "median": 1103,
+            "min": 1025,
+            "max": 1150,
+            "samples": 5
+          },
+          "hero_settled_ms": {
+            "median": 1982,
+            "min": 1955,
+            "max": 2069,
+            "samples": 5
+          },
+          "get_requests": {
+            "median": 13,
+            "min": 13,
+            "max": 13,
+            "samples": 5
+          },
+          "history_requests": {
+            "median": 3,
+            "min": 3,
+            "max": 3,
+            "samples": 5
+          },
+          "response_body_bytes": {
+            "median": 66339,
+            "min": 66339,
+            "max": 66339,
+            "samples": 5
+          },
+          "runs_with_page_errors": 0
+        }
+      }
+    },
+    "backend": {
+      "projection/backtest": {
+        "outputs_identical": true,
+        "old": {
+          "analytics": {
+            "median": 156.453,
+            "min": 142.291,
+            "max": 380.21,
+            "samples": 45
+          },
+          "probe_completion_delay": {
+            "median": 152.597,
+            "min": 138.546,
+            "max": 376.449,
+            "samples": 45
+          },
+          "event_loop_timer_lag": {
+            "median": 152.358,
+            "min": 138.227,
+            "max": 376.126,
+            "samples": 45
+          }
+        },
+        "new": {
+          "analytics": {
+            "median": 161.382,
+            "min": 146.544,
+            "max": 190.904,
+            "samples": 45
+          },
+          "probe_completion_delay": {
+            "median": 1.881,
+            "min": 0.661,
+            "max": 4.832,
+            "samples": 45
+          },
+          "event_loop_timer_lag": {
+            "median": 1.459,
+            "min": 0.289,
+            "max": 4.474,
+            "samples": 45
+          }
+        }
+      },
+      "risk_metrics": {
+        "outputs_identical": true,
+        "old": {
+          "analytics": {
+            "median": 3.413,
+            "min": 3.085,
+            "max": 5.864,
+            "samples": 45
+          },
+          "probe_completion_delay": {
+            "median": 0.581,
+            "min": 0.446,
+            "max": 1.208,
+            "samples": 45
+          },
+          "event_loop_timer_lag": {
+            "median": 0.248,
+            "min": 0.143,
+            "max": 0.944,
+            "samples": 45
+          }
+        },
+        "new": {
+          "analytics": {
+            "median": 3.896,
+            "min": 3.371,
+            "max": 4.985,
+            "samples": 45
+          },
+          "probe_completion_delay": {
+            "median": 0.515,
+            "min": 0.338,
+            "max": 0.638,
+            "samples": 45
+          },
+          "event_loop_timer_lag": {
+            "median": 0.187,
+            "min": 0.053,
+            "max": 0.256,
+            "samples": 45
+          }
+        }
+      }
+    }
+  },
+  "raw": {
+    "browser": {
+      "api_delay_ms": 120,
+      "observation_ms": 10000,
+      "viewport": "1440x1000",
+      "pairs": 5,
+      "default_dashboard": {
+        "old": [
+          {
+            "hero_first_value_ms": 1360,
+            "hero_settled_ms": 2203,
+            "get_requests": 29,
+            "response_body_bytes": 102210,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "trend-signal": 2,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1256,
+            "hero_settled_ms": 2137,
+            "get_requests": 29,
+            "response_body_bytes": 102210,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "trend-signal": 2,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 829,
+            "hero_settled_ms": 1663,
+            "get_requests": 29,
+            "response_body_bytes": 102210,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "trend-signal": 2,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1193,
+            "hero_settled_ms": 2050,
+            "get_requests": 29,
+            "response_body_bytes": 102210,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "trend-signal": 2,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1026,
+            "hero_settled_ms": 1853,
+            "get_requests": 29,
+            "response_body_bytes": 102210,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "trend-signal": 2,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          }
+        ],
+        "new": [
+          {
+            "hero_first_value_ms": 1027,
+            "hero_settled_ms": 1967,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1080,
+            "hero_settled_ms": 2082,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1216,
+            "hero_settled_ms": 2191,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 956,
+            "hero_settled_ms": 2005,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1174,
+            "hero_settled_ms": 2050,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          }
+        ]
+      },
+      "saved_compact_layout": {
+        "old": [
+          {
+            "hero_first_value_ms": 1068,
+            "hero_settled_ms": 1908,
+            "get_requests": 27,
+            "response_body_bytes": 101366,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 744,
+            "hero_settled_ms": 1583,
+            "get_requests": 27,
+            "response_body_bytes": 101366,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 612,
+            "hero_settled_ms": 1513,
+            "get_requests": 27,
+            "response_body_bytes": 101366,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1035,
+            "hero_settled_ms": 1854,
+            "get_requests": 27,
+            "response_body_bytes": 101366,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1102,
+            "hero_settled_ms": 2118,
+            "get_requests": 27,
+            "response_body_bytes": 101366,
+            "history_requests": 4,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "projection": 1,
+              "risk_metrics": 1,
+              "attribution": 1,
+              "dividend_calendar": 1,
+              "earnings_calendar": 1,
+              "history": 4,
+              "portfolio_health": 1,
+              "watchlists": 2,
+              "watchlist": 3,
+              "asset_change": 1,
+              "transactions": 1,
+              "capital_gains": 1,
+              "dividends": 1,
+              "projected_income": 1
+            },
+            "page_errors": [
+              "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+            ],
+            "failed_responses": []
+          }
+        ],
+        "new": [
+          {
+            "hero_first_value_ms": 1032,
+            "hero_settled_ms": 1966,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1025,
+            "hero_settled_ms": 1999,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1150,
+            "hero_settled_ms": 2069,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1107,
+            "hero_settled_ms": 1982,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          },
+          {
+            "hero_first_value_ms": 1103,
+            "hero_settled_ms": 1955,
+            "get_requests": 13,
+            "response_body_bytes": 66339,
+            "history_requests": 3,
+            "unique_history_urls": 3,
+            "endpoint_counts": {
+              "auth/me": 1,
+              "settings": 1,
+              "market_status": 1,
+              "indices": 1,
+              "summary/headline": 1,
+              "summary": 1,
+              "holdings": 1,
+              "history": 3,
+              "watchlists": 1,
+              "watchlist": 2
+            },
+            "page_errors": [],
+            "failed_responses": []
+          }
+        ]
+      }
+    },
+    "backend_batches": {
+      "old": [
+        {
+          "history_points": 5040,
+          "samples": 15,
+          "python": "3.12.9",
+          "projection/backtest": {
+            "analytics": {
+              "median_ms": 156.453,
+              "min_ms": 142.798,
+              "max_ms": 380.21,
+              "samples": [
+                171.685,
+                148.981,
+                142.798,
+                152.758,
+                144.191,
+                144.96,
+                156.453,
+                160.959,
+                149.324,
+                171.723,
+                210.768,
+                234.149,
+                172.588,
+                151.046,
+                380.21
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 152.805,
+              "min_ms": 139.006,
+              "max_ms": 376.449,
+              "samples": [
+                168.043,
+                145.401,
+                139.006,
+                148.997,
+                140.453,
+                141.326,
+                152.805,
+                157.261,
+                145.688,
+                168.11,
+                207.269,
+                230.502,
+                169.05,
+                147.493,
+                376.449
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 152.444,
+              "min_ms": 138.705,
+              "max_ms": 376.126,
+              "samples": [
+                167.687,
+                145.008,
+                138.705,
+                148.719,
+                140.149,
+                141.001,
+                152.444,
+                156.962,
+                145.344,
+                167.703,
+                206.75,
+                230.161,
+                168.67,
+                147.084,
+                376.126
+              ]
+            },
+            "response_sha256": "197b603e8c42144ee202ed34dbb39b55db92d3f87505eac9766f055a25a7ce46"
+          },
+          "risk_metrics": {
+            "analytics": {
+              "median_ms": 3.715,
+              "min_ms": 3.258,
+              "max_ms": 5.864,
+              "samples": [
+                3.708,
+                3.715,
+                5.864,
+                4.361,
+                3.577,
+                3.329,
+                3.998,
+                3.434,
+                3.934,
+                3.73,
+                3.308,
+                3.78,
+                3.593,
+                3.258,
+                3.826
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 0.581,
+              "min_ms": 0.446,
+              "max_ms": 1.208,
+              "samples": [
+                0.581,
+                0.497,
+                1.208,
+                0.531,
+                0.544,
+                0.693,
+                0.446,
+                0.579,
+                0.473,
+                0.584,
+                0.641,
+                0.597,
+                0.548,
+                0.637,
+                0.615
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 0.231,
+              "min_ms": 0.143,
+              "max_ms": 0.944,
+              "samples": [
+                0.234,
+                0.203,
+                0.944,
+                0.143,
+                0.231,
+                0.278,
+                0.17,
+                0.245,
+                0.169,
+                0.22,
+                0.301,
+                0.226,
+                0.238,
+                0.308,
+                0.208
+              ]
+            },
+            "response_sha256": "6b003e182390e12f5f2a7de8c9e02e326b92153d83996187fa0a1c9fa22d0aa8"
+          }
+        },
+        {
+          "history_points": 5040,
+          "samples": 15,
+          "python": "3.12.9",
+          "projection/backtest": {
+            "analytics": {
+              "median_ms": 155.245,
+              "min_ms": 142.291,
+              "max_ms": 296.772,
+              "samples": [
+                207.489,
+                296.772,
+                225.918,
+                157.931,
+                186.701,
+                156.559,
+                152.665,
+                150.028,
+                142.291,
+                153.668,
+                155.245,
+                159.611,
+                148.829,
+                151.789,
+                148.031
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 151.561,
+              "min_ms": 138.546,
+              "max_ms": 293.142,
+              "samples": [
+                203.947,
+                293.142,
+                222.395,
+                154.325,
+                183.064,
+                152.943,
+                149.047,
+                146.305,
+                138.546,
+                150.059,
+                151.561,
+                156.049,
+                145.159,
+                147.928,
+                144.399
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 151.232,
+              "min_ms": 138.227,
+              "max_ms": 292.77,
+              "samples": [
+                203.518,
+                292.77,
+                221.979,
+                153.971,
+                182.708,
+                152.558,
+                148.668,
+                146.019,
+                138.227,
+                149.666,
+                151.232,
+                155.675,
+                144.818,
+                147.665,
+                144.032
+              ]
+            },
+            "response_sha256": "197b603e8c42144ee202ed34dbb39b55db92d3f87505eac9766f055a25a7ce46"
+          },
+          "risk_metrics": {
+            "analytics": {
+              "median_ms": 3.325,
+              "min_ms": 3.085,
+              "max_ms": 3.467,
+              "samples": [
+                3.368,
+                3.085,
+                3.363,
+                3.406,
+                3.413,
+                3.283,
+                3.1,
+                3.314,
+                3.325,
+                3.196,
+                3.345,
+                3.3,
+                3.449,
+                3.467,
+                3.261
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 0.581,
+              "min_ms": 0.521,
+              "max_ms": 0.637,
+              "samples": [
+                0.592,
+                0.586,
+                0.521,
+                0.637,
+                0.581,
+                0.599,
+                0.612,
+                0.553,
+                0.562,
+                0.603,
+                0.539,
+                0.537,
+                0.566,
+                0.615,
+                0.564
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 0.257,
+              "min_ms": 0.23,
+              "max_ms": 0.289,
+              "samples": [
+                0.289,
+                0.286,
+                0.242,
+                0.257,
+                0.253,
+                0.266,
+                0.289,
+                0.248,
+                0.253,
+                0.271,
+                0.247,
+                0.243,
+                0.23,
+                0.257,
+                0.257
+              ]
+            },
+            "response_sha256": "6b003e182390e12f5f2a7de8c9e02e326b92153d83996187fa0a1c9fa22d0aa8"
+          }
+        },
+        {
+          "history_points": 5040,
+          "samples": 15,
+          "python": "3.12.9",
+          "projection/backtest": {
+            "analytics": {
+              "median_ms": 156.495,
+              "min_ms": 146.474,
+              "max_ms": 187.455,
+              "samples": [
+                187.455,
+                150.912,
+                176.917,
+                169.559,
+                147.84,
+                147.976,
+                151.918,
+                146.474,
+                153.184,
+                185.809,
+                162.268,
+                155.39,
+                157.77,
+                162.146,
+                156.495
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 152.597,
+              "min_ms": 142.749,
+              "max_ms": 183.893,
+              "samples": [
+                183.893,
+                147.24,
+                173.583,
+                165.792,
+                144.132,
+                144.322,
+                148.183,
+                142.749,
+                149.604,
+                182.241,
+                158.424,
+                151.724,
+                154.105,
+                158.481,
+                152.597
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 152.358,
+              "min_ms": 142.444,
+              "max_ms": 183.478,
+              "samples": [
+                183.478,
+                146.896,
+                173.215,
+                165.52,
+                143.818,
+                143.964,
+                147.882,
+                142.444,
+                149.273,
+                181.758,
+                158.152,
+                151.336,
+                153.768,
+                158.121,
+                152.358
+              ]
+            },
+            "response_sha256": "197b603e8c42144ee202ed34dbb39b55db92d3f87505eac9766f055a25a7ce46"
+          },
+          "risk_metrics": {
+            "analytics": {
+              "median_ms": 3.489,
+              "min_ms": 3.23,
+              "max_ms": 3.945,
+              "samples": [
+                3.394,
+                3.523,
+                3.373,
+                3.332,
+                3.403,
+                3.945,
+                3.65,
+                3.822,
+                3.803,
+                3.503,
+                3.411,
+                3.23,
+                3.489,
+                3.615,
+                3.32
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 0.59,
+              "min_ms": 0.509,
+              "max_ms": 0.674,
+              "samples": [
+                0.532,
+                0.541,
+                0.579,
+                0.59,
+                0.672,
+                0.509,
+                0.542,
+                0.537,
+                0.532,
+                0.663,
+                0.611,
+                0.674,
+                0.637,
+                0.615,
+                0.663
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 0.25,
+              "min_ms": 0.178,
+              "max_ms": 0.307,
+              "samples": [
+                0.262,
+                0.236,
+                0.253,
+                0.263,
+                0.257,
+                0.178,
+                0.225,
+                0.204,
+                0.208,
+                0.237,
+                0.25,
+                0.288,
+                0.258,
+                0.243,
+                0.307
+              ]
+            },
+            "response_sha256": "6b003e182390e12f5f2a7de8c9e02e326b92153d83996187fa0a1c9fa22d0aa8"
+          }
+        }
+      ],
+      "new": [
+        {
+          "history_points": 5040,
+          "samples": 15,
+          "python": "3.12.9",
+          "projection/backtest": {
+            "analytics": {
+              "median_ms": 166.912,
+              "min_ms": 146.705,
+              "max_ms": 190.904,
+              "samples": [
+                170.888,
+                162.216,
+                154.971,
+                162.056,
+                166.912,
+                190.904,
+                169.964,
+                162.806,
+                183.526,
+                169.809,
+                171.704,
+                164.564,
+                170.56,
+                164.181,
+                146.705
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 1.586,
+              "min_ms": 1.121,
+              "max_ms": 4.832,
+              "samples": [
+                1.141,
+                1.121,
+                1.586,
+                1.173,
+                1.43,
+                2.012,
+                1.852,
+                1.223,
+                3.453,
+                1.405,
+                2.723,
+                3.681,
+                1.233,
+                4.832,
+                1.64
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 1.175,
+              "min_ms": 0.692,
+              "max_ms": 4.474,
+              "samples": [
+                0.692,
+                0.771,
+                1.175,
+                0.807,
+                1.022,
+                1.612,
+                1.437,
+                0.818,
+                3.04,
+                1.032,
+                2.338,
+                2.844,
+                0.813,
+                4.474,
+                1.241
+              ]
+            },
+            "response_sha256": "197b603e8c42144ee202ed34dbb39b55db92d3f87505eac9766f055a25a7ce46"
+          },
+          "risk_metrics": {
+            "analytics": {
+              "median_ms": 3.896,
+              "min_ms": 3.398,
+              "max_ms": 4.985,
+              "samples": [
+                4.199,
+                3.464,
+                3.986,
+                3.657,
+                3.398,
+                3.795,
+                3.462,
+                3.474,
+                4.218,
+                4.985,
+                3.896,
+                4.245,
+                3.994,
+                4.617,
+                3.83
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 0.52,
+              "min_ms": 0.38,
+              "max_ms": 0.638,
+              "samples": [
+                0.446,
+                0.638,
+                0.503,
+                0.602,
+                0.535,
+                0.527,
+                0.578,
+                0.515,
+                0.408,
+                0.38,
+                0.52,
+                0.504,
+                0.601,
+                0.429,
+                0.557
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 0.193,
+              "min_ms": 0.053,
+              "max_ms": 0.249,
+              "samples": [
+                0.14,
+                0.241,
+                0.202,
+                0.215,
+                0.248,
+                0.193,
+                0.249,
+                0.231,
+                0.053,
+                0.084,
+                0.182,
+                0.147,
+                0.173,
+                0.146,
+                0.209
+              ]
+            },
+            "response_sha256": "6b003e182390e12f5f2a7de8c9e02e326b92153d83996187fa0a1c9fa22d0aa8"
+          }
+        },
+        {
+          "history_points": 5040,
+          "samples": 15,
+          "python": "3.12.9",
+          "projection/backtest": {
+            "analytics": {
+              "median_ms": 157.101,
+              "min_ms": 150.433,
+              "max_ms": 189.645,
+              "samples": [
+                175.384,
+                189.645,
+                160.983,
+                151.608,
+                155.878,
+                150.433,
+                151.925,
+                154.418,
+                152.898,
+                157.101,
+                160.403,
+                157.005,
+                161.382,
+                167.858,
+                165.976
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 2.228,
+              "min_ms": 0.661,
+              "max_ms": 3.915,
+              "samples": [
+                2.228,
+                2.935,
+                1.335,
+                3.012,
+                3.915,
+                0.661,
+                2.826,
+                2.906,
+                1.417,
+                3.535,
+                1.947,
+                1.2,
+                2.579,
+                1.901,
+                1.34
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 1.782,
+              "min_ms": 0.289,
+              "max_ms": 3.533,
+              "samples": [
+                1.782,
+                2.548,
+                0.988,
+                2.611,
+                3.533,
+                0.289,
+                2.478,
+                2.509,
+                1.031,
+                3.208,
+                1.628,
+                0.807,
+                2.152,
+                1.476,
+                0.929
+              ]
+            },
+            "response_sha256": "197b603e8c42144ee202ed34dbb39b55db92d3f87505eac9766f055a25a7ce46"
+          },
+          "risk_metrics": {
+            "analytics": {
+              "median_ms": 3.908,
+              "min_ms": 3.371,
+              "max_ms": 4.626,
+              "samples": [
+                3.911,
+                3.371,
+                3.526,
+                4.626,
+                3.908,
+                3.651,
+                3.79,
+                4.543,
+                4.242,
+                3.751,
+                3.955,
+                4.009,
+                3.989,
+                3.818,
+                3.823
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 0.512,
+              "min_ms": 0.338,
+              "max_ms": 0.582,
+              "samples": [
+                0.518,
+                0.579,
+                0.518,
+                0.338,
+                0.509,
+                0.555,
+                0.542,
+                0.436,
+                0.472,
+                0.484,
+                0.512,
+                0.466,
+                0.485,
+                0.582,
+                0.557
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 0.191,
+              "min_ms": 0.077,
+              "max_ms": 0.256,
+              "samples": [
+                0.191,
+                0.256,
+                0.225,
+                0.077,
+                0.173,
+                0.221,
+                0.196,
+                0.087,
+                0.137,
+                0.196,
+                0.182,
+                0.16,
+                0.165,
+                0.212,
+                0.208
+              ]
+            },
+            "response_sha256": "6b003e182390e12f5f2a7de8c9e02e326b92153d83996187fa0a1c9fa22d0aa8"
+          }
+        },
+        {
+          "history_points": 5040,
+          "samples": 15,
+          "python": "3.12.9",
+          "projection/backtest": {
+            "analytics": {
+              "median_ms": 154.896,
+              "min_ms": 146.544,
+              "max_ms": 173.109,
+              "samples": [
+                159.908,
+                154.896,
+                154.062,
+                147.696,
+                152.143,
+                154.094,
+                146.544,
+                173.109,
+                154.604,
+                171.603,
+                164.877,
+                162.866,
+                164.432,
+                149.994,
+                155.344
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 1.881,
+              "min_ms": 0.987,
+              "max_ms": 3.094,
+              "samples": [
+                1.654,
+                3.094,
+                1.007,
+                1.881,
+                1.582,
+                1.999,
+                1.65,
+                2.483,
+                0.987,
+                2.664,
+                2.322,
+                1.122,
+                2.426,
+                1.241,
+                2.539
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 1.459,
+              "min_ms": 0.532,
+              "max_ms": 2.698,
+              "samples": [
+                1.196,
+                2.698,
+                0.657,
+                1.459,
+                1.19,
+                1.639,
+                1.258,
+                2.102,
+                0.532,
+                2.332,
+                2.002,
+                0.768,
+                2.033,
+                0.874,
+                2.137
+              ]
+            },
+            "response_sha256": "197b603e8c42144ee202ed34dbb39b55db92d3f87505eac9766f055a25a7ce46"
+          },
+          "risk_metrics": {
+            "analytics": {
+              "median_ms": 3.895,
+              "min_ms": 3.663,
+              "max_ms": 4.428,
+              "samples": [
+                4.204,
+                3.762,
+                3.774,
+                4.213,
+                3.741,
+                3.88,
+                3.868,
+                3.663,
+                4.039,
+                3.969,
+                3.895,
+                4.018,
+                4.112,
+                3.798,
+                4.428
+              ]
+            },
+            "probe_completion_delay": {
+              "median_ms": 0.512,
+              "min_ms": 0.427,
+              "max_ms": 0.632,
+              "samples": [
+                0.456,
+                0.632,
+                0.488,
+                0.427,
+                0.598,
+                0.479,
+                0.512,
+                0.557,
+                0.546,
+                0.493,
+                0.506,
+                0.525,
+                0.566,
+                0.629,
+                0.5
+              ]
+            },
+            "event_loop_timer_lag": {
+              "median_ms": 0.182,
+              "min_ms": 0.114,
+              "max_ms": 0.248,
+              "samples": [
+                0.154,
+                0.205,
+                0.198,
+                0.144,
+                0.222,
+                0.174,
+                0.182,
+                0.248,
+                0.187,
+                0.222,
+                0.172,
+                0.164,
+                0.166,
+                0.242,
+                0.114
+              ]
+            },
+            "response_sha256": "6b003e182390e12f5f2a7de8c9e02e326b92153d83996187fa0a1c9fa22d0aa8"
+          }
+        }
+      ]
+    }
+  }
+}

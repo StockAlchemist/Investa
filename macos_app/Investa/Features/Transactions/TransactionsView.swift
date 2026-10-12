@@ -616,6 +616,7 @@ struct TransactionsView: View {
                             Text("\(Fmt.number(tx.quantity))").appFont(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }
                     }
+                    pendingAccountPicker(tx)
                     HStack {
                         Text(tx.displayDate).appFont(.caption2).foregroundStyle(.secondary)
                         Spacer()
@@ -653,7 +654,7 @@ struct TransactionsView: View {
                     }
                     Text(Fmt.number(tx.quantity)).monospacedDigit().frame(width: 60, alignment: .trailing)
                     Text(Fmt.currency(tx.totalAmount, code: tx.localCurrency)).monospacedDigit().frame(width: 100, alignment: .trailing)
-                    Text(tx.account).appFont(.caption).foregroundStyle(.secondary)
+                    pendingAccountPicker(tx).frame(minWidth: 140, maxWidth: 220)
                     Spacer()
                     if let id = tx.id {
                         Button { Task { await viewModel.approvePending([id]) } } label: { Image(systemName: "checkmark.circle") }
@@ -667,9 +668,26 @@ struct TransactionsView: View {
             }
             #endif
         }
+        .disabled(viewModel.isProcessingPending)
         .padding(16)
         .background(.dataTeal.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.dataTeal.opacity(0.3), lineWidth: 1))
+    }
+
+    private func pendingAccountPicker(_ transaction: Transaction) -> some View {
+        let selected = viewModel.pendingAccount(for: transaction)
+        let options = Array(Set(appState.allAccounts + viewModel.pendingIbkr.map(\.account) + [selected]))
+            .filter { !$0.isEmpty }.sorted()
+        return Picker("Account", selection: Binding(
+            get: { viewModel.pendingAccount(for: transaction) },
+            set: { account in
+                if let id = transaction.id { viewModel.pendingAccountSelections[id] = account }
+            }
+        )) {
+            ForEach(options, id: \.self) { Text($0).tag($0) }
+        }
+        .pickerStyle(.menu)
+        .accessibilityLabel("Account for \(transaction.symbol) pending transaction \(transaction.id ?? 0)")
     }
 
     private var duplicateBanner: some View {

@@ -95,6 +95,7 @@ test.describe('Projection backtest', () => {
         await loginAsMockUser(page);
         await mockProjection(page);
         await page.goto('/');
+        await page.getByRole('button', { name: 'Show detailed analytics', exact: true }).click();
 
         const card = page.locator('div').filter({ hasText: /^Projected Value/ }).first();
         await expect(page.getByText('Assumed return')).toBeVisible();

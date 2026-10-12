@@ -6,6 +6,7 @@ import re
 import subprocess
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, Request
@@ -31,6 +32,17 @@ logging.basicConfig(
 )
 
 
+async def monitor_event_loop() -> None:
+    """Expose scheduling stalls in debug logs without collecting user data."""
+    logger = logging.getLogger("investa.runtime")
+    while True:
+        start = time.perf_counter()
+        await asyncio.sleep(1)
+        logger.debug(
+            "event_loop_lag_ms=%.2f", max(0, (time.perf_counter() - start - 1) * 1000)
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from db_utils import initialize_database, initialize_global_database
@@ -43,6 +55,7 @@ async def lifespan(app: FastAPI):
 
     initialize_database()
     initialize_global_database()
+    lag_task = asyncio.create_task(monitor_event_loop(), name="event-loop-monitor")
 
     # Kick off the periodic background workers.
     refresh_task = asyncio.create_task(refresh_loop(), name="metadata-refresh")
@@ -58,9 +71,9 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         # Graceful shutdown: cancel the background workers and drain the precalc pool.
-        for task in (refresh_task, index_task, warm_task, nav_task):
+        for task in (refresh_task, index_task, warm_task, nav_task, lag_task):
             task.cancel()
-        for task in (refresh_task, index_task, warm_task, nav_task):
+        for task in (refresh_task, index_task, warm_task, nav_task, lag_task):
             try:
                 await task
             except (asyncio.CancelledError, Exception):
@@ -80,6 +93,22 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Investa API", description="Backend for Investa PWA", lifespan=lifespan
 )
+
+
+@app.middleware("http")
+async def measure_request(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = (time.perf_counter() - start) * 1000
+    response.headers["Server-Timing"] = f"app;dur={elapsed:.2f}"
+    logging.getLogger("investa.requests").debug(
+        "%s %s status=%s duration_ms=%.2f",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed,
+    )
+    return response
 
 
 @app.exception_handler(Exception)

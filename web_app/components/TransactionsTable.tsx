@@ -253,7 +253,7 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
             )}
 
             {/* IBKR Pending sync banner */}
-            <PendingIbkrBanner />
+            <PendingIbkrBanner currency={currency} availableAccounts={[...uniqueAccounts, ...Object.keys(settings?.account_currency_map ?? {})]} />
 
             {/* Document parser AI review section */}
             <ImportReviewModal

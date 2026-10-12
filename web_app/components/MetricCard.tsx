@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { metricHelp } from '@/lib/metric_help';
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency } from '@/lib/utils';
 import { LucideIcon, Loader2 } from 'lucide-react';
@@ -49,6 +50,8 @@ export function MetricCard({
     variant = 'card',
     onClick,
 }: MetricCardProps) {
+    const [showHelp, setShowHelp] = useState(false);
+    const explanation = metricHelp(title);
     // Label → figure → delta, with the delta row reserved even when empty, so a
     // grid row of tiles shares one baseline and one height.
     const display = value !== null && value !== undefined
@@ -93,6 +96,9 @@ export function MetricCard({
             {/* Label */}
             <div className="flex items-start justify-between gap-2">
                 <p className="text-xs leading-4 text-muted-foreground min-w-0 line-clamp-2">{title}</p>
+                {explanation && <button type="button" aria-label={`Explain ${title}`} aria-expanded={showHelp}
+                    onClick={event => { event.stopPropagation(); setShowHelp(value => !value); }}
+                    className="rounded-full px-1 text-xs text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">?</button>}
                 {isRefreshing && (
                     <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-muted-foreground" />
                 )}
@@ -120,6 +126,7 @@ export function MetricCard({
             </div>
 
             {/* Sub-line — the row keeps its height so tiles in a row line up. */}
+            {showHelp && explanation && <p role="note" className="my-2 text-xs leading-relaxed text-muted-foreground">{explanation}</p>}
             <div className="mt-auto min-h-4 flex items-center text-xs leading-4 tabular-nums whitespace-nowrap">
                 {isLoading ? <Skeleton className="h-3.5 w-14 rounded" /> : subLine}
             </div>

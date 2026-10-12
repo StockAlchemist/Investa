@@ -36,8 +36,6 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<!-- The backend is served over plain HTTP on localhost / LAN / Tailscale.
-	     This is a local developer tool, so arbitrary loads are permitted. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -45,5 +43,16 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Investa needs access to your local network to connect to your local backend server.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.investa.navigation</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>investa</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

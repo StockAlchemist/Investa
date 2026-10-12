@@ -17,16 +17,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<User | null>(() => {
-        if (typeof window !== 'undefined') {
-            try {
-                const cachedUser = localStorage.getItem("investa_user");
-                if (cachedUser) return JSON.parse(cachedUser);
-            } catch {}
-        }
-        return null;
-    });
-    const [isLoading, setIsLoading] = useState(false);
+    // The server and first browser render must agree. Restore cached identity
+    // after mount so returning visitors do not trigger a hydration mismatch.
+    const [user, setUser] = useState<User | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
     const queryClient = useQueryClient();
 
@@ -75,8 +69,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const cached = typeof window !== 'undefined' ? localStorage.getItem("investa_user") : null;
         if (cached) {
+            try { setUser(JSON.parse(cached)); } catch {}
+            setIsLoading(false);
             fetchUser();
         } else {
+            setIsLoading(false);
             if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
                 const id = window.requestIdleCallback(() => fetchUser(), { timeout: 3000 });
                 return () => {
@@ -107,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(true);
         forgetCachedData();
         await fetchUser();
-        router.push("/");
+        router.push(typeof window !== "undefined" && window.location.pathname === "/" ? `/${window.location.search}` : "/");
     }, [fetchUser, forgetCachedData, router]);
 
     const refreshUser = useCallback(async () => {

@@ -9,14 +9,17 @@ from config import IBKR_TOKEN, IBKR_QUERY_ID
 from datetime import datetime
 
 # --- Constants ---
-FLEX_SEND_REQUEST_URL = "https://www.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest"
+FLEX_SEND_REQUEST_URL = (
+    "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest"
+)
 # Note: The actual URL to get the statement comes from the SendRequest response,
 # but it usually points to the FlexStatementService.GetStatement servlet.
 
 # Flex Web Service error codes that mean "ask again in a moment" — the query is
-# valid, IBKR just has not finished (or is rate-limiting) this statement. Every
-# other code is a configuration problem the user has to fix themselves.
+# valid, IBKR just has not finished (or is rate-limiting) this statement.
+# Other codes fail without a retry; only CONFIG_FLEX_CODES imply bad settings.
 TRANSIENT_FLEX_CODES = {
+    "1001",  # Statement could not be generated at this time.
     "1004",  # Statement is incomplete at this time.
     "1005",  # Settlement data is not ready at this time.
     "1006",  # FIFO P/L data is not ready at this time.
@@ -155,7 +158,14 @@ class IBKRConnector:
             if status == "Success":
                 ref_elem = root.find("ReferenceCode")
                 url_elem = root.find("Url")
-                if ref_elem is None or url_elem is None:
+                if url_elem is None:
+                    url_elem = root.find("url")
+                if (
+                    ref_elem is None
+                    or not ref_elem.text
+                    or url_elem is None
+                    or not url_elem.text
+                ):
                     raise IBKRError(
                         "IBKR accepted the request but returned no reference code."
                     )

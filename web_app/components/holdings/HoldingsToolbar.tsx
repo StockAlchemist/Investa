@@ -13,7 +13,7 @@ import {
     LayoutGrid
 } from 'lucide-react';
 import { GroupingOption } from './types';
-import { GROUPING_LABEL_MAP, COLUMN_GROUPS, DEFAULT_VISIBLE_COLUMNS } from './constants';
+import { GROUPING_LABEL_MAP, COLUMN_GROUPS, DEFAULT_VISIBLE_COLUMNS, HOLDINGS_PRESETS } from './constants';
 import { exportToCSV } from '../../lib/export';
 import { Holding } from '../../lib/api';
 
@@ -128,6 +128,13 @@ export const HoldingsToolbar: React.FC<HoldingsToolbarProps> = ({
 
             {/* Filters & Actions Group */}
             <div className="flex flex-wrap items-center gap-1.5">
+                <select aria-label="Holdings view preset" value="" onChange={event => {
+                    const columns = HOLDINGS_PRESETS[event.target.value];
+                    if (columns) setVisibleColumns([...columns]);
+                }} className="rounded-control border border-border bg-card px-2 py-1.5 text-sm">
+                    <option value="" disabled>View preset</option>
+                    {Object.keys(HOLDINGS_PRESETS).map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
                 {/* Group By Filter */}
                 <div className="relative" ref={groupByMenuRef}>
                     <button

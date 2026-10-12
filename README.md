@@ -140,6 +140,75 @@ Requires **Python 3.11+** (SciPy 1.16 needs 3.11, Numba 0.61 needs 3.10) and
     and everything else — holdings, performance, valuation, the screener and
     the ranking — works normally.
 
+## Updating an existing installation
+
+Stop the backend before adding the transaction receipt table. The migration
+creates a SQLite backup beside each portfolio database and can be run repeatedly.
+It preserves transactions and allows web/macOS/iOS submissions to be retried
+without adding duplicate trades or cash entries.
+
+```bash
+python scripts/migrate_transaction_receipts.py --dry-run
+python scripts/migrate_transaction_receipts.py
+```
+
+New portfolios include the receipt table automatically. Existing portfolios need
+this migration before transaction submissions from the updated clients work.
+
+Pending IBKR transactions offer an account selector on each row before approval.
+Individual, selected, and bulk approval use each row’s chosen account across web,
+macOS, and iOS; unchanged rows retain their imported account.
+
+The original dashboard uses portfolio and metric cards with a separate performance
+chart. The compact default keeps detailed analytics behind an explicit control.
+Saved redesign defaults return to the original layout; custom layouts are retained.
+Holdings offer Overview, Performance, Income and Valuation presets. The header's
+"Calculated" time comes from the backend calculation rather than browser arrival.
+Web URLs preserve the selected section, currency, accounts and stock; native apps
+can share and open equivalent `investa://open` links.
+
+For repeatable latency measurements, `scripts/benchmark_dashboard.py` reports
+first-request and warm median/p95 timings plus payload sizes, without printing
+portfolio contents. Set `INVESTA_BENCHMARK_TOKEN` in your environment and run it
+against your backend. A first request is cold only when server caches are cold;
+the script does not clear caches or write portfolio data. Responses also expose
+`Server-Timing`, and `INVESTA_LOG_LEVEL=DEBUG` logs request durations.
+
+To compare revisions without provider/network variance or touching user data,
+build and serve each web revision on a separate port, then run:
+
+```bash
+cd web_app
+node scripts/benchmark-comparison.cjs http://127.0.0.1:3112 http://127.0.0.1:3113 /tmp/browser-comparison.json 5
+```
+
+The runner alternates versions, uses fresh browser storage, blocks service workers,
+and intercepts every API call with identical fixtures and a 120 ms response delay.
+It measures the same portfolio hero in each version, counts GET requests and
+uncompressed API response bodies over ten seconds, and checks both default and
+saved compact layouts. These are controlled replay results, not live-market latency.
+
+For backend scheduling, run `scripts/benchmark_runtime_comparison.py --source
+/path/to/revision/src --output /tmp/backend-comparison.json --samples 15` with the
+project's Python environment. Only cached history is substituted (5,040 deterministic
+daily observations); actual risk and backtest calculations run through the routes.
+The scheduled probe reports completion delay relative to its intended arrival,
+including event-loop blocking. No server lifespan/background jobs or real databases
+are started. Compare output hashes as well as timings before drawing conclusions.
+
+The [12 Oct 2026 comparison results](docs/benchmarks/runtime_comparison_2026-10-12.json)
+include every measured sample and the baseline commit. The default dashboard made
+29 versus 13 GET requests (55% fewer) and received 102,210 versus 66,339 bytes of
+uncompressed API bodies (35% less). First hero value medians were 1.193 versus
+1.080 seconds; the fully settled animated figure was 2.050 seconds in both.
+With a saved compact layout, the updated first-value median was slightly slower
+(1.103 versus 1.035 seconds), so initial loading did not improve consistently.
+Browser timing ranges overlap and each scenario has only five runs per version.
+Across 45 backend repetitions per version, the backtest median was 156.453 versus
+161.382 ms; the scheduled probe delay fell from 152.597 to 1.881 ms. Analytics
+outputs matched exactly. This demonstrates lower request/payload volume and
+better scheduling responsiveness, not faster financial math or live provider calls.
+
 ## Quick Usage
 
 **Run the full stack (backend on :8000, frontend on :3000):**

@@ -2,7 +2,7 @@
 
 IBKR answers a SendRequest with either a reference code or a `<Status>Fail`
 envelope carrying an ErrorCode. "Statement could not be generated at this time"
-(1009) is a wait-and-retry condition, not a server fault, so it must retry and
+(1001/1009) is a wait-and-retry condition, not a server fault, so it must retry and
 then surface as `IBKRBusyError`; a bad token must fail immediately.
 """
 
@@ -54,18 +54,30 @@ def _connector(responses, monkeypatch):
     return IBKRConnector(token="tok", query_id="qid"), calls
 
 
-def test_busy_retries_then_raises_busy(monkeypatch):
-    conn, calls = _connector([_BUSY], monkeypatch)
+@pytest.mark.parametrize("code", [1001, 1009])
+def test_busy_retries_then_raises_busy(monkeypatch, code):
+    busy = _fail(
+        code, "Statement could not be generated at this time. Please try again shortly."
+    )
+    conn, calls = _connector([busy], monkeypatch)
     with pytest.raises(IBKRBusyError) as excinfo:
         conn.request_report()
-    assert excinfo.value.code == "1009"
+    assert excinfo.value.code == str(code)
     assert "try again shortly" in str(excinfo.value)
     assert len(calls) == 3  # initial attempt + two backoff retries
     assert not excinfo.value.is_config_error
 
 
-def test_busy_that_clears_returns_reference_code(monkeypatch):
-    conn, calls = _connector([_BUSY, _SUCCESS], monkeypatch)
+@pytest.mark.parametrize("code", [1001, 1009])
+@pytest.mark.parametrize("url_tag", ["Url", "url"])
+def test_busy_that_clears_returns_reference_code(monkeypatch, code, url_tag):
+    busy = _fail(
+        code, "Statement could not be generated at this time. Please try again shortly."
+    )
+    success = _SUCCESS.replace("<Url>", f"<{url_tag}>").replace(
+        "</Url>", f"</{url_tag}>"
+    )
+    conn, calls = _connector([busy, success], monkeypatch)
     ref, url = conn.request_report()
     assert ref == "1234567890"
     assert url.endswith("GetStatement")
@@ -117,5 +129,28 @@ def test_download_waits_out_generation_in_progress(monkeypatch):
     )
     report = '<FlexQueryResponse queryName="Activity"></FlexQueryResponse>'
     conn, calls = _connector([in_progress, report], monkeypatch)
+    assert conn.download_report("ref", "https://example.com/stmt") == report
+    assert len(calls) == 2
+
+
+def test_1001_uses_bounded_backoff(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("ibkr_connector.time.sleep", sleeps.append)
+    conn, calls = _connector([_fail(1001, "Please try again shortly.")], monkeypatch)
+    with pytest.raises(IBKRBusyError):
+        conn.request_report()
+    assert sleeps == [5, 15]
+    assert len(calls) == 3
+    assert (
+        calls[0]
+        == "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest"
+    )
+
+
+def test_download_retries_1001_before_parsing_statement(monkeypatch):
+    report = '<FlexQueryResponse queryName="Activity"></FlexQueryResponse>'
+    conn, calls = _connector(
+        [_fail(1001, "Please try again shortly."), report], monkeypatch
+    )
     assert conn.download_report("ref", "https://example.com/stmt") == report
     assert len(calls) == 2

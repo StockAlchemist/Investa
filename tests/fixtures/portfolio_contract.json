@@ -1,0 +1,20 @@
+{
+  "summary": {
+    "metrics": {
+      "market_value": 125450.0,
+      "day_change_display": 150.0,
+      "day_change_percent": 0.12,
+      "cash_balance": 5000.0,
+      "cumulative_twr": 12.5,
+      "annualized_twr": null,
+      "all_selected_closed": false,
+      "closed_accounts": []
+    },
+    "freshness": {"calculated_at": 1791792000.0, "quotes_as_of": null, "refreshing": true},
+    "account_metrics": {},
+    "summary_df": [],
+    "holdings_dict": {}
+  },
+  "holdings": [{"Symbol": "AAPL", "Quantity": 10.0, "Account": "Broker", "Market Value (USD)": 1000.0, "lots": []}],
+  "history": [{"date": "2026-10-12T00:00:00+00:00", "value": 125450.0, "twr": 12.5, "drawdown": -1.0, "is_baseline": false, "S&P 500": 10.0}]
+}

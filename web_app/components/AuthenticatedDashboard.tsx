@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchSummary,
   fetchHoldings,
@@ -28,11 +28,14 @@ import {
   fetchHeadline,
   PortfolioSummary
 } from '@/lib/api';
+import { readView, writeView } from '@/lib/view_navigation';
+import { portfolioKeys } from '@/lib/query_keys';
 import { marketToday } from '@/lib/market_time';
 import type { MarketIndex } from '@/components/MarketsTab';
 import { INITIAL_VISIBLE_ITEMS, ACCENT_THEME } from '@/lib/dashboard_constants';
 import { TAB_LAYOUT_ITEMS, TAB_INITIAL_VISIBLE, TAB_SECTION_LABELS } from '@/lib/layout_registry';
 import Dashboard from '@/components/Dashboard';
+import { originalDashboardLayout } from '@/lib/dashboard_layout';
 import HoldingsTable from '@/components/HoldingsTable';
 import { EmptyState } from '@/components/EmptyState';
 import AppShellSkeleton from '@/components/skeletons/AppShellSkeleton';
@@ -93,13 +96,12 @@ const TAB_NAMES: Record<string, string> = {
 
 export default function AuthenticatedDashboard() {
   const { user, logout } = useAuth();
-  const { selectedSymbol, modalCurrency, closeStockDetail, goBack, canGoBack } = useStockModal();
+  const { selectedSymbol, modalCurrency, openStockDetail, closeStockDetail, goBack, canGoBack } = useStockModal();
 
   const [selectedAccounts, setSelectedAccounts]     = useState<string[]>([]);
   const [currency, setCurrency]                     = useState('USD');
   const [activeTab, setActiveTab]                   = useState('performance');
   const [showClosed, setShowClosed]                 = useState(false);
-  const [backgroundFetchLevel, setBackgroundFetchLevel] = useState(0);
   const [mounted, setMounted]                       = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'overrides' | 'account' | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed]     = useState(false);
@@ -121,6 +123,8 @@ export default function AuthenticatedDashboard() {
   const [graphCustomToDate, setGraphCustomToDate]   = useState(() => marketToday());
   const [capitalGainsDates, setCapitalGainsDates]   = useState<{ from?: string; to?: string }>({});
   const [visibleItems, setVisibleItems]             = useState<string[]>(INITIAL_VISIBLE_ITEMS);
+  const restoredLayout = useRef(false);
+  const didHydrateSelection = useRef(false);
   const [tabLayouts, setTabLayouts]                 = useState<Record<string, string[]>>({});
 
   const handleUserIconClick = () => { closeStockDetail(); setSettingsInitialTab('account'); setActiveTab('settings'); setIsMoreOpen(false); };
@@ -134,6 +138,10 @@ export default function AuthenticatedDashboard() {
 
   // Hydrate all state from localStorage in one effect
   useEffect(() => {
+    // Strict Mode repeats effect setup; rereading our own freshly persisted
+    // defaults must not disguise a browser with no saved user layout.
+    if (didHydrateSelection.current) return;
+    didHydrateSelection.current = true;
     try {
       const savedAccounts      = localStorage.getItem('investa_selected_accounts');
       const savedCurrency      = localStorage.getItem('investa_currency');
@@ -153,15 +161,8 @@ export default function AuthenticatedDashboard() {
       if (savedVisibleItems) {
         const p = JSON.parse(savedVisibleItems);
         if (Array.isArray(p) && p.length > 0) {
-          if (!p.includes('performanceGraph')) {
-            const idx = p.indexOf('portfolioDonut');
-            if (idx >= 0) p.splice(idx + 1, 0, 'performanceGraph');
-            else p.push('performanceGraph');
-          }
-          const topSections = ['portfolioHero', 'todayStrip', 'dashboardEvents', 'dashboardInsights'];
-          const missingTop = topSections.filter(id => !p.includes(id));
-          if (missingTop.length > 0) p.unshift(...missingTop);
-          setVisibleItems(p);
+          setVisibleItems(originalDashboardLayout(p));
+          restoredLayout.current = true;
         }
       }
       // Hydrate per-tab layouts
@@ -199,23 +200,48 @@ export default function AuthenticatedDashboard() {
         setGraphView(savedGraphView as 'return' | 'value' | 'drawdown');
       }
       if (savedSidebarState !== null) setSidebarCollapsed(savedSidebarState === 'true');
+      const shared = readView(window.location.search);
+      if (shared.section) setActiveTab(shared.section);
+      if (shared.currency) setCurrency(shared.currency);
+      if (shared.accounts) setSelectedAccounts(shared.accounts);
+      if (shared.symbol) openStockDetail(shared.symbol, shared.currency);
+
     } catch (e) {
       console.error('Failed to hydrate state from localStorage', e);
     } finally {
       setMounted(true);
     }
-  }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-    const t1 = setTimeout(() => setBackgroundFetchLevel(1), 3000);
-    const t2 = setTimeout(() => setBackgroundFetchLevel(2), 8000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [mounted]);
+  }, [openStockDetail]);
 
   useEffect(() => {
     if (mounted) localStorage.setItem('investa_sidebar_collapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed, mounted]);
+
+  const navigationReady = useRef(false);
+  useEffect(() => {
+    if (!mounted) return;
+    const search = writeView({ section: activeTab, currency, accounts: selectedAccounts, symbol: selectedSymbol }, window.location.search);
+    if (window.location.search !== search) {
+      const url = `${window.location.pathname}${search}${window.location.hash}`;
+      if (navigationReady.current) window.history.pushState(null, '', url);
+      else window.history.replaceState(null, '', url);
+    }
+    navigationReady.current = true;
+  }, [mounted, activeTab, currency, selectedAccounts, selectedSymbol]);
+
+  useEffect(() => {
+    const restore = () => {
+      const shared = readView(window.location.search);
+      if (shared.section) setActiveTab(shared.section);
+      if (shared.currency) setCurrency(shared.currency);
+      setSelectedAccounts(shared.accounts ?? []);
+      closeStockDetail();
+      if (shared.symbol) openStockDetail(shared.symbol, shared.currency);
+      setIsMoreOpen(false);
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, [openStockDetail, closeStockDetail]);
 
   const queryClient = useQueryClient();
 
@@ -223,12 +249,14 @@ export default function AuthenticatedDashboard() {
     queryKey: ['settings', user?.username],
     queryFn: fetchSettings,
     staleTime: 5 * 60 * 1000,
-    enabled: !!user,
+    enabled: !!user && mounted,
   });
 
   const settingsMutation = useMutation({
     mutationFn: updateSettings,
+    retry: 2,
     onSuccess: (_, variables) => {
+      lastSyncedRef.current = { ...lastSyncedRef.current, ...variables };
       // Optimistically update React Query cache in-memory to prevent invalidation refetch loops
       queryClient.setQueryData(['settings', user?.username], (old: SettingsType | undefined) => {
         if (!old) return old;
@@ -249,6 +277,10 @@ export default function AuthenticatedDashboard() {
     if (!settingsQuery.data) return;
     isInitialSyncDone.current = true;
     const s = settingsQuery.data;
+    if (!restoredLayout.current) {
+      if (Array.isArray(s.visible_items) && s.visible_items.length > 0) setVisibleItems(originalDashboardLayout(s.visible_items));
+      restoredLayout.current = true;
+    }
     lastSyncedRef.current = {
       display_currency: s.display_currency,
       show_closed: s.show_closed,
@@ -299,10 +331,6 @@ export default function AuthenticatedDashboard() {
       if (last.benchmarks !== undefined && !arrayEqual(last.benchmarks, benchmarks) && benchmarks.length > 0) updates.benchmarks = benchmarks;
 
       if (Object.keys(updates).length > 0) {
-        lastSyncedRef.current = {
-          ...lastSyncedRef.current,
-          ...updates,
-        };
         mutateSettingsRef.current(updates);
       }
     }, 1500);
@@ -330,7 +358,7 @@ export default function AuthenticatedDashboard() {
     queryFn: fetchMarketStatus,
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
-    enabled: !!user,
+    enabled: !!user && mounted,
   });
   const isMarketOpen = marketStatusQuery.data?.is_open ?? false;
 
@@ -339,162 +367,110 @@ export default function AuthenticatedDashboard() {
     queryFn: ({ signal }) => fetchIndices(signal),
     staleTime: 60 * 1000,
     refetchInterval: isMarketOpen ? 2 * 60 * 1000 : false,
-    enabled: !!user,
+    enabled: !!user && mounted,
   });
-
-  const cachedInitialSummary = useMemo(() => {
-    if (typeof window !== 'undefined' && user?.username) {
-      try {
-        const saved = localStorage.getItem(`investa_cached_summary_${user.username}`);
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return undefined;
-  }, [user?.username]);
-
-  const cachedInitialHoldings = useMemo(() => {
-    if (typeof window !== 'undefined' && user?.username) {
-      try {
-        const saved = localStorage.getItem(`investa_cached_holdings_${user.username}`);
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return undefined;
-  }, [user?.username]);
 
   const headlineQuery = useQuery({
     queryKey: ['headline', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchHeadline(currency, selectedAccounts, signal),
     staleTime: 60 * 1000,
-    refetchInterval: isMarketOpen ? 60 * 1000 : false,
-    placeholderData: (prev) => prev ?? (cachedInitialSummary?.metrics ? { metrics: cachedInitialSummary.metrics } : undefined),
-    enabled: !!user,
+    refetchInterval: (query) => query.state.data?.freshness?.refreshing ? 2000 : (isMarketOpen && ['performance', 'allocation', 'markets'].includes(activeTab) ? 60 * 1000 : false),
+
+    enabled: !!user && mounted,
   });
 
   const summaryQuery = useQuery({
     queryKey: ['summary', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchSummary(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
-    refetchInterval: isMarketOpen ? 60 * 1000 : false,
-    placeholderData: (prev) => prev ?? cachedInitialSummary,
-    enabled: !!user,
+    refetchInterval: (query) => query.state.data?.freshness?.refreshing ? 2000 : (isMarketOpen && ['performance', 'allocation', 'markets'].includes(activeTab) ? 60 * 1000 : false),
+
+    enabled: !!user && mounted,
   });
 
   const holdingsQuery = useQuery({
-    queryKey: ['holdings', user?.username, currency, selectedAccounts, showClosed],
+    queryKey: portfolioKeys.holdings(user?.username, currency, selectedAccounts, showClosed),
     queryFn: ({ signal }) => fetchHoldings(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
     // Same cadence as the headline and the summary: every per-stock price on
     // this screen — the holdings table, the day's gainers and losers, the
     // heatmap — comes from here, and without a poll they sat on whatever the
     // session opened with until the tab lost and regained focus.
-    refetchInterval: isMarketOpen ? 60 * 1000 : false,
-    placeholderData: (prev) => prev ?? cachedInitialHoldings,
-    enabled: !!user,
+    refetchInterval: isMarketOpen && ['performance', 'allocation', 'markets'].includes(activeTab) ? 60 * 1000 : false,
+
+    enabled: !!user && mounted,
   });
-
-  useEffect(() => {
-    if (summaryQuery.data && user?.username) {
-      try {
-        localStorage.setItem(`investa_cached_summary_${user.username}`, JSON.stringify(summaryQuery.data));
-      } catch {}
-    }
-  }, [summaryQuery.data, user?.username]);
-
-  useEffect(() => {
-    if (holdingsQuery.data && user?.username) {
-      try {
-        localStorage.setItem(`investa_cached_holdings_${user.username}`, JSON.stringify(holdingsQuery.data));
-      } catch {}
-    }
-  }, [holdingsQuery.data, user?.username]);
 
   const transactionsQuery = useQuery({
     queryKey: ['transactions', user?.username, selectedAccounts],
     queryFn: ({ signal }) => fetchTransactions(selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'transactions' || backgroundFetchLevel >= 2),
+
+    enabled: !!user && mounted && (activeTab === 'transactions'),
   });
 
   const assetChangeQuery = useQuery({
     queryKey: ['assetChange', user?.username, currency, selectedAccounts, benchmarks, showClosed],
     queryFn: ({ signal }) => fetchAssetChange(currency, selectedAccounts, benchmarks, showClosed, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'asset_change' || backgroundFetchLevel >= 1),
+
+    enabled: !!user && mounted && (activeTab === 'asset_change'),
   });
 
   const capitalGainsQuery = useQuery({
     queryKey: ['capitalGains', user?.username, currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to],
     queryFn: ({ signal }) => fetchCapitalGains(currency, selectedAccounts, capitalGainsDates.from, capitalGainsDates.to, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'capital_gains' || backgroundFetchLevel >= 2),
+
+    enabled: !!user && mounted && (activeTab === 'capital_gains'),
   });
 
   const dividendsQuery = useQuery({
     queryKey: ['dividends', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchDividends(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
+
+    enabled: !!user && mounted && (activeTab === 'dividend'),
   });
 
   const projectionQuery = useQuery({
     queryKey: ['projection', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchProjection(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
+
+    enabled: !!user && mounted && (activeTab === 'performance' && visibleItems.includes('projection')),
   });
 
   const riskMetricsQuery = useQuery({
     queryKey: ['riskMetrics', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || activeTab === 'asset_change' || backgroundFetchLevel >= 1),
+
+    enabled: !!user && mounted && ((activeTab === 'performance' && visibleItems.includes('riskMetrics')) || activeTab === 'asset_change'),
   });
 
   const attributionQuery = useQuery({
     queryKey: ['attribution', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchAttribution(currency, selectedAccounts, false, showClosed, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || activeTab === 'asset_change' || backgroundFetchLevel >= 1),
+
+    enabled: !!user && mounted && ((activeTab === 'performance' && visibleItems.some(id => ['sectorContribution', 'topContributors'].includes(id))) || activeTab === 'asset_change'),
   });
 
   const dividendCalendarQuery = useQuery({
     queryKey: ['dividendCalendar', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchDividendCalendar(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'dividend' || activeTab === 'performance' || backgroundFetchLevel >= 2),
+
+    enabled: !!user && mounted && ((activeTab === 'performance' && visibleItems.includes('dashboardEvents')) || activeTab === 'dividend'),
   });
 
   const earningsCalendarQuery = useQuery({
     queryKey: ['earningsCalendar', user?.username, selectedAccounts],
     queryFn: ({ signal }) => fetchEarningsCalendar(selectedAccounts, signal),
     staleTime: 30 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 2),
-  });
 
-  const historySparklineQuery = useQuery({
-    queryKey: ['history', user?.username, currency, selectedAccounts, 'sparkline'],
-    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
-    staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && backgroundFetchLevel >= 1,
-  });
-
-  const historyWTDQuery = useQuery({
-    queryKey: ['history', user?.username, currency, selectedAccounts, 'wtd'],
-    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '5d', [], '15m', undefined, undefined, signal),
-    staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && backgroundFetchLevel >= 1,
+    enabled: !!user && mounted && (activeTab === 'performance' && visibleItems.includes('dashboardEvents')),
   });
 
   const graphInterval = useMemo(() => {
@@ -508,43 +484,57 @@ export default function AuthenticatedDashboard() {
   const graphToDate   = graphPeriod === 'custom' ? graphCustomToDate   : undefined;
 
   const historyQuery = useQuery({
-    queryKey: ['history', user?.username, currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate],
+    queryKey: portfolioKeys.history(user?.username, currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate),
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, graphPeriod, benchmarks, graphInterval, graphFromDate, graphToDate, signal),
-    placeholderData: keepPreviousData,
+
     staleTime: 5 * 60 * 1000,
     refetchInterval: isMarketOpen && (graphPeriod === '1d' || graphPeriod === '5d') ? 60000 : false,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
+    enabled: !!user && mounted && (activeTab === 'performance' && visibleItems.includes('performanceGraph')),
   });
 
   const perfHistoryQuery = useQuery({
-    queryKey: ['perf-history', user?.username, currency, selectedAccounts, benchmarks],
+    queryKey: portfolioKeys.history(user?.username, currency, selectedAccounts, '1y', benchmarks, '1d'),
     queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1y', benchmarks, '1d', undefined, undefined, signal),
-    placeholderData: keepPreviousData,
+
     staleTime: 5 * 60 * 1000,
-    enabled: !!user && (activeTab === 'asset_change' || activeTab === 'performance' || backgroundFetchLevel >= 1),
+    enabled: !!user && mounted && (activeTab === 'asset_change' || (activeTab === 'performance' && visibleItems.includes('portfolioHero'))),
+  });
+
+  const historySparklineQuery = useQuery({
+    queryKey: portfolioKeys.history(user?.username, currency, selectedAccounts, '1d', [], '5m'),
+    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '1d', [], '5m', undefined, undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!user && mounted && activeTab === 'performance' && visibleItems.includes('portfolioHero'),
+  });
+
+  const historyWTDQuery = useQuery({
+    queryKey: portfolioKeys.history(user?.username, currency, selectedAccounts, '5d', [], '15m'),
+    queryFn: ({ signal }) => fetchHistory(currency, selectedAccounts, '5d', [], '15m', undefined, undefined, signal),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!user && mounted && activeTab === 'performance' && visibleItems.includes('portfolioHero'),
   });
 
   const watchlistQuery = useQuery({
     queryKey: ['watchlist', user?.username, currency, 1],
     queryFn: ({ signal }) => fetchWatchlist(currency, 1, signal),
     staleTime: 1 * 60 * 1000,
-    enabled: !!user && (activeTab === 'watchlist' || activeTab === 'markets' || backgroundFetchLevel >= 2),
+    enabled: !!user && mounted && (activeTab === 'watchlist' || activeTab === 'markets'),
   });
 
   const portfolioHealthQuery = useQuery({
     queryKey: ['portfolioHealth', user?.username, currency, selectedAccounts, showClosed],
     queryFn: ({ signal }) => fetchPortfolioHealth(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'performance' || backgroundFetchLevel >= 1),
+
+    enabled: !!user && mounted && (activeTab === 'performance' && visibleItems.some(id => ['riskMetrics', 'dashboardInsights'].includes(id))),
   });
 
   const incomeProjectionQuery = useQuery({
     queryKey: ['incomeProjection', user?.username, currency, selectedAccounts],
     queryFn: ({ signal }) => fetchProjectedIncome(currency, selectedAccounts, signal),
     staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-    enabled: !!user && (activeTab === 'dividend' || backgroundFetchLevel >= 2),
+
+    enabled: !!user && mounted && (activeTab === 'dividend'),
   });
 
   // ── Derived data ──────────────────────────────────────────────────────────
@@ -560,9 +550,9 @@ export default function AuthenticatedDashboard() {
     ? { ...summary, metrics: cardMetrics }
     : (cardMetrics ? { metrics: cardMetrics, account_metrics: null } : undefined);
   const cardLoading = (summaryQuery.isLoading && !summary) && (headlineQuery.isLoading && !headlineMetrics);
-  const cardRefreshing = summaryQuery.isFetching || headlineQuery.isFetching;
-  const lastUpdatedAt = Math.max(summaryQuery.dataUpdatedAt || 0, headlineQuery.dataUpdatedAt || 0);
-  const lastUpdated = lastUpdatedAt ? new Date(lastUpdatedAt) : null;
+  const cardRefreshing = summaryQuery.isFetching || headlineQuery.isFetching || !!summaryQuery.data?.freshness?.refreshing || !!headlineQuery.data?.freshness?.refreshing;
+  const freshness = headlineFresher ? headlineQuery.data?.freshness : summary?.freshness;
+  const lastUpdated = freshness?.calculated_at ? new Date(freshness.calculated_at * 1000) : null;
   const holdings         = holdingsQuery.data || [];
   const transactions     = transactionsQuery.data || [];
   const assetChangeData  = assetChangeQuery.data || null;
@@ -619,7 +609,10 @@ export default function AuthenticatedDashboard() {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'performance':
-        if (!summaryQuery.isLoading && !summaryQuery.data && summaryQuery.isFetched) {
+        if (summaryQuery.isError && !summaryQuery.data && !headlineQuery.data?.metrics) {
+          return <QueryFailure message="Could not load your portfolio." onRetry={() => void summaryQuery.refetch()} />;
+        }
+        if (!summaryQuery.isLoading && summaryQuery.data?.metrics === null && summaryQuery.isFetched) {
           return <EmptyState onNavigate={handleNavigate} />;
         }
         return (
@@ -629,8 +622,11 @@ export default function AuthenticatedDashboard() {
               currency={currency}
               history={historySparklineQuery.data || []}
               wtdHistory={historyWTDQuery.data || []}
+              longHistory={perfHistoryQuery.data || []}
               isLoading={cardLoading}
-              isRefreshing={cardRefreshing || historySparklineQuery.isFetching || historyWTDQuery.isFetching}
+              isError={summaryQuery.isError || headlineQuery.isError}
+              onRetry={() => void queryClient.refetchQueries({ queryKey: ['summary'] })}
+              isRefreshing={cardRefreshing}
               riskMetrics={riskMetricsQuery.data || {}}
               riskMetricsLoading={riskMetricsQuery.isLoading && !riskMetricsQuery.data}
               portfolioHealth={portfolioHealthQuery.data || null}
@@ -638,7 +634,6 @@ export default function AuthenticatedDashboard() {
               attributionLoading={attributionQuery.isLoading && !attributionQuery.data}
               dividendEvents={dividendCalendarQuery.data || []}
               earningsEvents={earningsCalendarQuery.data || []}
-              longHistory={perfHistoryQuery.data || []}
               holdings={holdings}
               indices={indices}
               visibleItems={visibleItems}
@@ -648,22 +643,21 @@ export default function AuthenticatedDashboard() {
               excludeFromAnalytics={['riskMetrics', 'sectorContribution', 'topContributors', 'performanceGraph', 'projection']}
             />
             {visibleItems.includes('performanceGraph') && (
-              <PerformanceGraph
-                currency={currency}
-                period={graphPeriod}
-                onPeriodChange={setGraphPeriod}
-                view={graphView}
-                onViewChange={setGraphView}
-                data={graphData}
-                loading={graphLoading}
-                customFromDate={graphCustomFromDate}
-                onCustomFromDateChange={setGraphCustomFromDate}
-                customToDate={graphCustomToDate}
-                onCustomToDateChange={setGraphCustomToDate}
-                dayChange={cardMetrics?.day_change_display ?? null}
-                dayChangePercent={cardMetrics?.day_change_percent ?? null}
-              />
+              <PerformanceGraph currency={currency} period={graphPeriod} onPeriodChange={setGraphPeriod}
+                view={graphView} onViewChange={setGraphView} data={graphData} loading={graphLoading}
+                customFromDate={graphCustomFromDate} onCustomFromDateChange={setGraphCustomFromDate}
+                customToDate={graphCustomToDate} onCustomToDateChange={setGraphCustomToDate}
+                dayChange={cardMetrics?.day_change_display ?? null} dayChangePercent={cardMetrics?.day_change_percent ?? null} />
             )}
+            <button type="button" className="my-4 rounded-control border border-border px-4 py-2 text-sm"
+              aria-expanded={visibleItems.some(id => ['projection', 'riskMetrics', 'sectorContribution', 'topContributors'].includes(id))}
+              onClick={() => {
+                const detailed = ['projection', 'riskMetrics', 'sectorContribution', 'topContributors'];
+                const expanded = visibleItems.some(id => detailed.includes(id));
+                setVisibleItems(expanded ? visibleItems.filter(id => !detailed.includes(id)) : [...new Set([...visibleItems, ...detailed])]);
+              }}>
+              {visibleItems.some(id => ['projection', 'riskMetrics', 'sectorContribution', 'topContributors'].includes(id)) ? 'Hide detailed analytics' : 'Show detailed analytics'}
+            </button>
             {visibleItems.includes('projection') && (
               <ProjectionCard
                 data={projectionQuery.data}
@@ -739,6 +733,9 @@ export default function AuthenticatedDashboard() {
         );
 
       case 'allocation':
+        if (holdingsQuery.isError && !holdingsQuery.data) {
+          return <QueryFailure message="Could not load your holdings." onRetry={() => void holdingsQuery.refetch()} />;
+        }
         if (!holdingsQuery.isLoading && holdings.length === 0 && holdingsQuery.isFetched) {
           return <EmptyState onNavigate={handleNavigate} />;
         }
@@ -939,6 +936,8 @@ export default function AuthenticatedDashboard() {
                 onBack={goBack}
                 previousViewName={canGoBack ? 'Previous Stock' : (TAB_NAMES[activeTab] || 'Dashboard')}
                 currency={currency || modalCurrency}
+                accounts={selectedAccounts}
+                showClosed={showClosed}
               />
             ) : isMoreOpen ? (
               <div className="md:hidden">
@@ -951,10 +950,11 @@ export default function AuthenticatedDashboard() {
               </div>
             ) : (
               <>
+                {settingsMutation.isError && <QueryFailure message="Could not save your preferences." onRetry={() => {
+                  if (settingsMutation.variables) settingsMutation.mutate(settingsMutation.variables);
+                }} />}
                 {renderTabContent()}
-                <div className={activeTab === 'screener' ? 'block' : 'hidden'}>
-                  <ScreenerView currency={currency} />
-                </div>
+                {activeTab === 'screener' && <ScreenerView currency={currency} />}
               </>
             )}
           </div>
@@ -986,4 +986,10 @@ export default function AuthenticatedDashboard() {
       />
     </div>
   );
+}
+
+function QueryFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <div role="alert" className="rounded-xl border border-border bg-card p-6">
+    <p>{message}</p><button className="mt-3 rounded-control bg-primary px-4 py-2 text-primary-foreground" onClick={onRetry}>Retry</button>
+  </div>;
 }

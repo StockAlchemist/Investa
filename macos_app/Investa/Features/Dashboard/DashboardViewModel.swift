@@ -28,6 +28,12 @@ final class DashboardViewModel: ObservableObject {
 
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var widgetErrors: [String: String] = [:]
+    @Published var calculatedAt: Date?
+    @Published var backendRefreshing = false
+    private var generation = UUID()
+    private var loadedScope: String?
+    private var chartCache: [String: [PerformancePoint]] = [:]
 
     private let api: APIClient
     private var loadTask: Task<Void, Never>?
@@ -41,109 +47,90 @@ final class DashboardViewModel: ObservableObject {
         self.api = api
     }
 
-    /// Reload everything for the given selection. Cancels any in-flight load.
+    /// Portfolio data is independent of the chart period. Publish each resource
+    /// when it arrives, and reject every update belonging to an old selection.
     func reload(currency: String, accounts: [String]?, period: Period, showClosed: Bool, benchmarks: [String],
-                customFrom: String? = nil, customTo: String? = nil) {
+                customFrom: String? = nil, customTo: String? = nil,
+                visibleItems: Set<String> = TabLayout.performanceInitialVisible, force: Bool = false) {
         loadTask?.cancel()
+        generation = UUID()
+        let revision = generation
+        let scope = "\(APIConfig.baseURL)|\(currency)|\((accounts ?? []).sorted())|\(showClosed)|\(visibleItems.sorted())"
+        let sameSelection = loadedScope == scope
+        let sameScope = sameSelection && !force
+        if !sameSelection {
+            loadedScope = nil
+            metrics = nil; holdings = []; risk = nil; projection = nil; health = nil
+            attribution = nil; dividendEvents = []; earningsEvents = []
+            heroHistory = []; heroIntraday = []; heroWTD = []; calculatedAt = nil; backendRefreshing = false
+            projectionBacktest = nil; backtestKey = nil; isLoadingBacktest = false; chartCache.removeAll()
+        }
+        history = []
+        widgetErrors = [:]; errorMessage = nil; isLoading = true
         loadTask = Task { [weak self] in
-            await self?.load(currency: currency, accounts: accounts, period: period, showClosed: showClosed,
-                             benchmarks: benchmarks, customFrom: customFrom, customTo: customTo)
+            guard let self else { return }
+            defer { if self.generation == revision { self.isLoading = false } }
+            let cur = URLQueryItem(name: "currency", value: currency)
+            let accountItems = APIClient.arrayQuery("accounts", accounts)
+            let core = [cur, URLQueryItem(name: "show_closed", value: showClosed ? "true" : "false")] + accountItems
+            let base = [cur] + accountItems
+            var chart = base + [URLQueryItem(name: "period", value: period.rawValue), URLQueryItem(name: "interval", value: period.interval)] + APIClient.arrayQuery("benchmarks", benchmarks)
+            if period == .custom {
+                if let from = customFrom { chart.append(URLQueryItem(name: "from", value: from)) }
+                if let to = customTo { chart.append(URLQueryItem(name: "to", value: to)) }
+            }
+            let chartItems = chart
+            let chartKey = chartItems.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")
+            if sameScope, let cached = self.chartCache[chartKey] { self.history = cached }
+            let needsChart = visibleItems.contains("performanceGraph") && (force || self.chartCache[chartKey] == nil)
+            let needsCore = !sameScope
+            async let headline: Void = self.fetch("/summary/headline", query: base, revision: revision, enabled: needsCore) { (response: SummaryResponse) in
+                if self.metrics == nil { self.metrics = response.metrics; self.calculatedAt = response.freshness?.date; self.backendRefreshing = response.freshness?.refreshing ?? false }
+            }
+            async let summary: Void = self.fetch("/summary", query: core, revision: revision, enabled: needsCore, critical: true) { (response: SummaryResponse) in
+                self.metrics = response.metrics; self.calculatedAt = response.freshness?.date; self.backendRefreshing = response.freshness?.refreshing ?? false
+            }
+            async let holdings: Void = self.fetch("/holdings", query: core, revision: revision, enabled: needsCore, critical: true) { (value: [Holding]) in self.holdings = value }
+            async let history: Void = self.fetch("/history", query: chartItems, revision: revision, enabled: needsChart, critical: true) { (value: [PerformancePoint]) in
+                self.history = value
+                if self.chartCache.count >= 10 { self.chartCache.removeAll() }
+                self.chartCache[chartKey] = value
+            }
+            let needsHero = needsCore && visibleItems.contains("portfolioHero")
+            async let heroHistory: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "1y"), URLQueryItem(name: "interval", value: "1d")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroHistory = value }
+            async let heroIntraday: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "1d"), URLQueryItem(name: "interval", value: "2m")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroIntraday = value }
+            async let heroWTD: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "5d"), URLQueryItem(name: "interval", value: "15m")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroWTD = value }
+            async let risk: Void = self.fetch("/risk_metrics", query: core, revision: revision, enabled: needsCore && visibleItems.contains("riskMetrics")) { (value: RiskMetrics) in self.risk = value }
+            async let projection: Void = self.fetch("/projection", query: base, revision: revision, enabled: needsCore && visibleItems.contains("projection")) { (value: Projection) in self.projection = value }
+            async let health: Void = self.fetch("/portfolio_health", query: core, revision: revision, enabled: needsCore && !visibleItems.isDisjoint(with: ["riskMetrics", "dashboardInsights"])) { (value: PortfolioHealth) in self.health = value }
+            async let attr: Void = self.fetch("/attribution", query: core, revision: revision, enabled: needsCore && !visibleItems.isDisjoint(with: ["sectorContribution", "topContributors"])) { (value: Attribution) in self.attribution = value }
+            async let dividends: Void = self.fetch("/dividend_calendar", query: base, revision: revision, enabled: needsCore && visibleItems.contains("dashboardEvents")) { (value: [DividendEvent]) in self.dividendEvents = value }
+            async let earnings: Void = self.fetch("/earnings_calendar", query: accountItems, revision: revision, enabled: needsCore && visibleItems.contains("dashboardEvents")) { (value: [EarningsEvent]) in self.earningsEvents = value }
+            _ = await (headline, summary, holdings, history, heroHistory, heroIntraday, heroWTD, risk, projection, health, attr, dividends, earnings)
+            guard self.generation == revision, !Task.isCancelled else { return }
+            if self.errorMessage == nil { self.loadedScope = scope }
+            if self.backtestRequested && needsCore { await self.loadProjectionBacktest(currency: currency, accounts: accounts) }
+            if self.backendRefreshing {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard self.generation == revision, !Task.isCancelled else { return }
+                self.reload(currency: currency, accounts: accounts, period: period, showClosed: showClosed,
+                            benchmarks: benchmarks, customFrom: customFrom, customTo: customTo,
+                            visibleItems: visibleItems, force: true)
+            }
         }
     }
 
-    private func load(currency: String, accounts: [String]?, period: Period, showClosed: Bool, benchmarks: [String],
-                      customFrom: String?, customTo: String?) async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-
-        // A new selection invalidates the backtest; it is refetched below if the
-        // user is looking at it, and otherwise on demand.
-        projectionBacktest = nil
-        backtestKey = nil
-
-        let accountItems = APIClient.arrayQuery("accounts", accounts)
-        let closedItem = URLQueryItem(name: "show_closed", value: showClosed ? "true" : "false")
-        let curItem = URLQueryItem(name: "currency", value: currency)
-
-        // Headline first for a fast card, then the rest concurrently.
+    private func fetch<T: Decodable & Sendable>(_ path: String, query: [URLQueryItem], revision: UUID,
+                                      enabled: Bool, critical: Bool = false, publish: @MainActor (T) -> Void) async {
+        guard enabled, generation == revision, !Task.isCancelled else { return }
         do {
-            let headline: SummaryResponse = try await api.get(
-                "/summary/headline", query: [curItem] + accountItems
-            )
-            if Task.isCancelled { return }
-            self.metrics = headline.metrics
-        } catch is CancellationError {
-            return
-        } catch { /* non-fatal */ }
- 
-        async let summaryResult: SummaryResponse = api.get(
-            "/summary", query: [curItem, closedItem] + accountItems)
-        async let holdingsResult: [Holding] = api.get(
-            "/holdings", query: [curItem, closedItem] + accountItems)
-        var historyQuery: [URLQueryItem] = [curItem,
-            URLQueryItem(name: "period", value: period.rawValue),
-            URLQueryItem(name: "interval", value: period.interval)]
-        if period == .custom {
-            if let f = customFrom { historyQuery.append(URLQueryItem(name: "from", value: f)) }
-            if let t = customTo { historyQuery.append(URLQueryItem(name: "to", value: t)) }
-        }
-        historyQuery += accountItems + APIClient.arrayQuery("benchmarks", benchmarks)
-        async let historyResult: [PerformancePoint] = api.get("/history", query: historyQuery)
-        async let riskResult: RiskMetrics = api.get(
-            "/risk_metrics", query: [curItem, closedItem] + accountItems)
-        async let projectionResult: Projection = api.get(
-            "/projection", query: [curItem] + accountItems)
-        async let healthResult: PortfolioHealth = api.get(
-            "/portfolio_health", query: [curItem, closedItem] + accountItems)
-        async let attrResult: Attribution = api.get(
-            "/attribution", query: [curItem, closedItem] + accountItems)
-        async let divCalResult: [DividendEvent] = api.get(
-            "/dividend_calendar", query: [curItem] + accountItems)
-        // No amounts in the payload, so no currency query item.
-        async let earningsCalResult: [EarningsEvent] = api.get(
-            "/earnings_calendar", query: accountItems)
-
-        // Core data — surface its error to the user.
-        do {
-            let (summary, holdings, history) = try await (summaryResult, holdingsResult, historyResult)
-            if Task.isCancelled { return }
-            if let full = summary.metrics { self.metrics = full }
-            self.holdings = holdings
-            self.history = history
-        } catch is CancellationError {
-            return
-        } catch let error as APIError {
-            if case .unauthorized = error { return }
-            self.errorMessage = error.errorDescription
+            let value: T = try await api.get(path, query: query)
+            guard generation == revision, !Task.isCancelled else { return }
+            publish(value)
         } catch {
-            self.errorMessage = error.localizedDescription
-        }
-
-        // Secondary widgets — tolerate individual failures.
-        risk = try? await riskResult
-        projection = try? await projectionResult
-        health = try? await healthResult
-        attribution = try? await attrResult
-        dividendEvents = (try? await divCalResult) ?? []
-        earningsEvents = (try? await earningsCalResult) ?? []
-
-        // Market Today index strip (independent of the selection).
-        if let map: [String: IndexQuote] = try? await api.get("/indices") {
-            indices = Array(map.values)
-        }
-
-        // Hero long-history (1y) for the WTD/MTD/YTD/1Y period selector.
-        async let hero1YResult: [PerformancePoint]? = try? api.get("/history", query: [curItem, URLQueryItem(name: "period", value: "1y"), URLQueryItem(name: "interval", value: "1d")] + accountItems)
-        async let hero1DResult: [PerformancePoint]? = try? api.get("/history", query: [curItem, URLQueryItem(name: "period", value: "1d"), URLQueryItem(name: "interval", value: "2m")] + accountItems)
-        async let heroWTDResult: [PerformancePoint]? = try? api.get("/history", query: [curItem, URLQueryItem(name: "period", value: "5d"), URLQueryItem(name: "interval", value: "15m")] + accountItems)
-        
-        heroHistory = (await hero1YResult) ?? []
-        heroIntraday = (await hero1DResult) ?? []
-        heroWTD = (await heroWTDResult) ?? []
-
-        if backtestRequested, !Task.isCancelled {
-            await loadProjectionBacktest(currency: currency, accounts: accounts)
+            guard generation == revision, !Task.isCancelled else { return }
+            widgetErrors[path] = error.localizedDescription
+            if critical { errorMessage = "Could not load portfolio data. Retry to update it." }
         }
     }
 
@@ -154,11 +141,12 @@ final class DashboardViewModel: ObservableObject {
         let key = "\(currency)|\((accounts ?? []).joined(separator: ","))"
         if backtestKey == key, projectionBacktest != nil { return }
         if isLoadingBacktest { return }
+        let revision = generation
         isLoadingBacktest = true
-        defer { isLoadingBacktest = false }
+        defer { if generation == revision { isLoadingBacktest = false } }
         let query = [URLQueryItem(name: "currency", value: currency)] + APIClient.arrayQuery("accounts", accounts)
         let result: ProjectionBacktest? = try? await api.get("/projection/backtest", query: query)
-        guard !Task.isCancelled else { return }
+        guard generation == revision, !Task.isCancelled else { return }
         // A failed request still has to resolve the card's spinner, so it lands
         // as an explicit unavailable-with-reason rather than staying nil.
         projectionBacktest = result ?? ProjectionBacktest(

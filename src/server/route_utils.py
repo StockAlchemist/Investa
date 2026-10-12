@@ -3,29 +3,40 @@
 import asyncio
 import logging
 import time
+import threading
 from collections import OrderedDict
 
 import numpy as np
 
 # Bounded LRU caches: oldest entries are evicted beyond this size.
 _CACHE_MAX_SIZE = 20
+_LRU_LOCK = threading.RLock()
 
 
 def _lru_get(cache: OrderedDict, key):
     """Return cached value and promote to MRU position, or return sentinel."""
-    if key not in cache:
-        return None
-    cache.move_to_end(key)
-    return cache[key]
+    with _LRU_LOCK:
+        if key not in cache:
+            return None
+        cache.move_to_end(key)
+        return cache[key]
 
 
 def _lru_put(cache: OrderedDict, key, value, max_size: int = _CACHE_MAX_SIZE):
     """Insert/update a cache entry, evicting the LRU entry when over capacity."""
-    if key in cache:
-        cache.move_to_end(key)
-    cache[key] = value
-    while len(cache) > max_size:
-        cache.popitem(last=False)  # Remove LRU (oldest-accessed) entry
+    with _LRU_LOCK:
+        if key in cache:
+            cache.move_to_end(key)
+        cache[key] = value
+        while len(cache) > max_size:
+            cache.popitem(last=False)
+
+
+def _lru_invalidate(cache: OrderedDict, predicate=lambda _: True):
+    with _LRU_LOCK:
+        for key in list(cache):
+            if predicate(key):
+                del cache[key]
 
 
 class SWRCache:
@@ -49,48 +60,66 @@ class SWRCache:
         self._store: OrderedDict = OrderedDict()  # key -> (value, computed_at)
         self._inflight: dict = {}  # key -> asyncio.Task
         self._max_size = max_size
+        self._lock = threading.RLock()
 
     def put(self, key, value):
         """Store ``value`` for ``key`` with the current time as its freshness stamp."""
-        if key in self._store:
-            self._store.move_to_end(key)
-        self._store[key] = (value, time.time())
-        while len(self._store) > self._max_size:
-            self._store.popitem(last=False)
+        with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = (value, time.time())
+            while len(self._store) > self._max_size:
+                self._store.popitem(last=False)
 
     def peek(self, key):
         """Return the stored value without a freshness check, or ``None``."""
-        entry = self._store.get(key)
-        if entry is None:
-            return None
-        self._store.move_to_end(key)
-        return entry[0]
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            self._store.move_to_end(key)
+            return entry[0]
+
+    def freshness(self, key):
+        """Computation time and refresh state, rather than HTTP response time."""
+        with self._lock:
+            entry = self._store.get(key)
+            return {
+                "calculated_at": entry[1] if entry else None,
+                "refreshing": key in self._inflight,
+            }
 
     def clear(self):
-        """Drop all stored entries (in-flight refreshes are left to complete)."""
-        self._store.clear()
+        """Detach old computations; they may finish but cannot publish results."""
+        with self._lock:
+            self._store.clear()
+            self._inflight.clear()
 
     def invalidate(self, predicate):
         """Drop stored entries whose key matches ``predicate(key)``."""
-        for k in [k for k in self._store if predicate(k)]:
-            del self._store[k]
+        with self._lock:
+            for k in set(self._store) | set(self._inflight):
+                if predicate(k):
+                    self._store.pop(k, None)
+                    self._inflight.pop(k, None)
 
     async def get_or_compute(self, key, ttl: float, compute):
         """Return the cached value for ``key``, refreshing per stale-while-revalidate.
 
         ``compute`` is a zero-arg coroutine function that produces the value.
         """
-        entry = self._store.get(key)
-        if entry is not None:
-            self._store.move_to_end(key)
-            value, computed_at = entry
-            if time.time() - computed_at < ttl:
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is not None:
+                self._store.move_to_end(key)
+                value, computed_at = entry
+                if time.time() - computed_at < ttl:
+                    return value
+                self._ensure_task(key, compute, background=True)
                 return value
-            # Stale: serve the previous value now, refresh out of band.
-            self._ensure_task(key, compute, background=True)
-            return value
-        # Cold miss: compute and await (coalescing concurrent callers).
-        return await self._ensure_task(key, compute, background=False)
+            task = self._ensure_task(key, compute, background=False)
+        # Cancelling one HTTP caller must not cancel work shared by other callers.
+        return await asyncio.shield(task)
 
     def _ensure_task(self, key, compute, background: bool):
         task = self._inflight.get(key)
@@ -98,20 +127,21 @@ class SWRCache:
             return task
         task = asyncio.get_running_loop().create_task(self._run(key, compute))
         self._inflight[key] = task
-        if background:
-            # Nobody awaits a background refresh — retrieve its result in a
-            # callback so a failure is logged instead of warned as un-retrieved.
-            task.add_done_callback(self._on_background_done)
+        # A shielded cold caller may disconnect too; always consume exceptions.
+        task.add_done_callback(self._on_background_done)
         return task
 
     async def _run(self, key, compute):
         try:
             value = await compute()
-            self.put(key, value)
+            with self._lock:
+                if self._inflight.get(key) is asyncio.current_task():
+                    self.put(key, value)
             return value
         finally:
-            if self._inflight.get(key) is asyncio.current_task():
-                self._inflight.pop(key, None)
+            with self._lock:
+                if self._inflight.get(key) is asyncio.current_task():
+                    self._inflight.pop(key, None)
 
     @staticmethod
     def _on_background_done(task):

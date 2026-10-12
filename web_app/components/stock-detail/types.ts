@@ -1,4 +1,6 @@
 export interface StockDetailModalProps {
+    accounts?: string[];
+    showClosed?: boolean;
     symbol: string;
     isOpen?: boolean;
     onClose: () => void;

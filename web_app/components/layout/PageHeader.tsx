@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import ShareViewButton from '@/components/ShareViewButton';
 import { cn, formatCompactNumber } from '@/lib/utils';
 import { ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
 import AccountSelector from '@/components/AccountSelector';
@@ -133,7 +134,7 @@ export function PageHeader({
             )}
             {lastUpdated && (
               <span className="text-xs text-muted-foreground tabular-nums">
-                {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                Calculated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
           </div>
@@ -213,6 +214,7 @@ export function PageHeader({
         />
 
         {/* Saved-server switch; renders nothing with a single server */}
+        <ShareViewButton />
         <ServerSelector align="right" />
       </div>
     </header>

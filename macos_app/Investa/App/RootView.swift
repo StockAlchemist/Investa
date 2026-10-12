@@ -4,6 +4,8 @@ import SwiftUI
 /// the login screen or the dashboard.
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @State private var sharedURL: URL?
+    @State private var shareRevision = UUID()
 
     var body: some View {
         Group {
@@ -14,7 +16,7 @@ struct RootView: View {
             case .loggedOut:
                 LoginView()
             case .loggedIn(let user):
-                SignedInRoot()
+                SignedInRoot(sharedURL: sharedURL, revision: shareRevision)
                     .id(user.id)
             }
         }
@@ -24,6 +26,7 @@ struct RootView: View {
         // gets its bump from `\.appFontScale` instead (see AppFont.swift).
         .dynamicTypeSize(.xLarge)
         .toastOverlay()
+        .onOpenURL { url in if ViewNavigation(url: url) != nil { sharedURL = url; shareRevision = UUID() } }
         .task {
             await auth.restoreSession()
         }
@@ -38,10 +41,17 @@ struct RootView: View {
 /// it `didLoadSettings`, so their own settings were never fetched and their
 /// dashboard was filtered by the previous user's account names.
 private struct SignedInRoot: View {
+    let sharedURL: URL?
+    let revision: UUID
     @StateObject private var appState = AppState()
 
     var body: some View {
         MainView()
             .environmentObject(appState)
+            .task(id: revision) {
+                guard let sharedURL else { return }
+                if !appState.didLoadSettings { await appState.loadSettings() }
+                NotificationCenter.default.post(name: .openSharedView, object: sharedURL)
+            }
     }
 }

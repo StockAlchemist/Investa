@@ -7,6 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
 // `start_investa.sh` leaves a production `next start` there, which serves a
 // prebuilt bundle and never picks up working-tree changes.
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
+const port = new URL(baseURL).port || '3000';
 
 export default defineConfig({
     testDir: './tests/e2e',
@@ -39,7 +40,7 @@ export default defineConfig({
 
     /* Run your local dev server before starting the tests */
     webServer: {
-        command: 'npm run dev',
+        command: `npm run dev -- --port ${port}`,
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120 * 1000,

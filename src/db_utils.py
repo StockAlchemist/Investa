@@ -301,6 +301,7 @@ def get_db_connection(
 
 def create_transactions_table(conn: sqlite3.Connection):
     """Creates the transactions table and schema_version table if they don't exist."""
+    is_new = conn.execute("SELECT 1 FROM sqlite_master WHERE name='transactions'").fetchone() is None
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -329,6 +330,10 @@ def create_transactions_table(conn: sqlite3.Connection):
     try:
         cursor = conn.cursor()
         cursor.execute(create_table_sql)
+        if is_new:
+            from server.transaction_writes import RECEIPTS_SCHEMA
+
+            cursor.execute(RECEIPTS_SCHEMA)
         cursor.execute(create_version_table_sql)
 
         cursor.execute(
@@ -1028,7 +1033,7 @@ def _apply_total_amount_sign(transaction_data: Dict[str, Any]) -> Dict[str, Any]
 
 
 def add_transaction_to_db(
-    db_conn: sqlite3.Connection, transaction_data: Dict[str, Any]
+    db_conn: sqlite3.Connection, transaction_data: Dict[str, Any], *, commit: bool = True
 ) -> Tuple[bool, Optional[int]]:
     db_column_order = [
         "Date",
@@ -1118,7 +1123,8 @@ def add_transaction_to_db(
     try:
         cursor = db_conn.cursor()
         cursor.execute(sql_insert, data_for_sql_dict)
-        db_conn.commit()
+        if commit:
+            db_conn.commit()
         new_id = cursor.lastrowid
         logging.info(f"Successfully added transaction with ID: {new_id}.")
         return True, new_id
@@ -1128,7 +1134,8 @@ def add_transaction_to_db(
             exc_info=True,
         )
         try:
-            db_conn.rollback()
+            if commit:
+                db_conn.rollback()
         except Exception:
             pass
         return False, None

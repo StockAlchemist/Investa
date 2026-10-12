@@ -445,8 +445,24 @@ def update_settings(
                 # OPTIMIZATION: Only reload settings and clear summary/history caches.
                 # Avoid a full 'reload_data()' which wipes the transaction cache and forces a heavy DB reload.
                 clear_settings_cache(current_user.username)
-                clear_portfolio_caches()
-                trigger_background_precalculation(current_user)
+                calculation_fields = {
+                    "manual_price_overrides",
+                    "user_symbol_map",
+                    "user_excluded_symbols",
+                    "account_currency_map",
+                    "account_cash_mode_map",
+                    "account_closure_dates",
+                    "account_interest_rates",
+                    "interest_free_thresholds",
+                    "valuation_overrides",
+                }
+                changed = settings.model_dump(exclude_none=True)
+                if api_key_updates:
+                    clear_portfolio_caches()  # Provider credentials are process-wide.
+                    trigger_background_precalculation(current_user)
+                elif calculation_fields.intersection(changed):
+                    clear_portfolio_caches(current_user.username)
+                    trigger_background_precalculation(current_user)
                 return {
                     "status": "success",
                     "message": "Settings updated and data reloaded",

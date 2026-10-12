@@ -76,6 +76,8 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: InvestaTests
+      - path: ../tests/fixtures/portfolio_contract.json
+        buildPhase: resources
     dependencies:
       - target: Investa
     settings:
@@ -86,6 +88,25 @@ targets:
         ENABLE_TESTING_SEARCH_PATHS: YES
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Investa.app/Contents/MacOS/Investa"
+  Investa-iOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: InvestaTests
+        excludes:
+          - AppFontTests.swift
+          - KpiRowTests.swift
+      - path: ../tests/fixtures/portfolio_contract.json
+        buildPhase: resources
+    dependencies:
+      - target: Investa-iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.investa.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Investa.app/Investa"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 schemes:
   Investa:
     build:
@@ -101,6 +122,10 @@ schemes:
     build:
       targets:
         Investa-iOS: all
+        Investa-iOSTests: [test]
+    test:
+      targets:
+        - name: Investa-iOSTests
     run:
       config: Debug
 

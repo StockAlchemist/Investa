@@ -434,7 +434,7 @@ function DashboardInner({
 }: DashboardProps) {
     const m  = summary?.metrics;
 
-    if (isError && !isLoading) {
+    if (isError && !isLoading && !m) {
         return (
             <div className="flex flex-col items-center justify-center p-12 gap-4">
                 <p className="text-muted-foreground text-sm">Failed to load portfolio data.</p>

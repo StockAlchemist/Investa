@@ -1,17 +1,11 @@
 import { apiClient } from '../src/api/client';
+import { submissionKey } from './submission_keys';
 
 const getApiBaseUrl = () => {
     if (process.env.NEXT_PUBLIC_API_URL) {
         return process.env.NEXT_PUBLIC_API_URL;
     }
-    if (typeof window !== 'undefined') {
-        // If serving via Tailscale (HTTPS/proxy), use relative path
-        if (window.location.hostname.endsWith('ts.net')) {
-            return '/api';
-        }
-        // Dynamically use the current hostname (e.g., 100.66.59.98) but port 8000
-        return `http://${window.location.hostname}:8000/api`;
-    }
+    if (typeof window !== 'undefined') return '/api';
     return 'http://localhost:8000/api';
 };
 
@@ -178,7 +172,14 @@ const authFetch = async (url: string, options: RequestInit = {}) => {
     return response;
 };
 
+export interface Freshness {
+    calculated_at: number | null;
+    quotes_as_of?: number | null;
+    refreshing: boolean;
+}
+
 export interface PortfolioSummary {
+    freshness?: Freshness | null;
     metrics: {
         market_value: number;
         day_change_display: number;
@@ -306,13 +307,13 @@ export async function fetchIndices(signal?: AbortSignal): Promise<Record<string,
 
 // Fast headline metrics (total value, day change, …) for the top card. Skips the
 // expensive historical/TWR work in /summary so the card renders/updates first.
-export async function fetchHeadline(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<{ metrics: Record<string, unknown> | null }> {
+export async function fetchHeadline(currency: string = 'USD', accounts?: string[], signal?: AbortSignal): Promise<{ metrics: Record<string, unknown> | null; freshness?: Freshness | null }> {
     const { data, error } = await apiClient.GET("/api/summary/headline", {
         params: { query: { currency, accounts: accounts || undefined } },
         signal,
     });
     if (error) throw new Error('Failed to fetch headline summary');
-    return data as unknown as { metrics: Record<string, unknown> | null };
+    return data as unknown as { metrics: Record<string, unknown> | null; freshness?: Freshness | null };
 }
 
 export async function fetchHoldings(currency: string = 'USD', accounts?: string[], showClosed: boolean = false, signal?: AbortSignal): Promise<Holding[]> {
@@ -375,10 +376,13 @@ export interface StatusResponse {
 }
 
 export async function addTransaction(transaction: Transaction): Promise<StatusResponse> {
+    const receipt = await submissionKey(`${API_BASE_URL}/transactions`, transaction);
     const { data, error, response } = await apiClient.POST("/api/transactions", {
+        headers: { "Idempotency-Key": receipt.key },
         body: transaction as never,
     });
-    if (error) throw new Error(`Failed to add transaction: ${response.statusText}`);
+    if (error) throw new Error(`Failed to add transaction: ${'detail' in error ? error.detail : response.statusText}`);
+    receipt.forget();
     return data as unknown as StatusResponse;
 }
 
@@ -402,10 +406,13 @@ export async function parseDocument(file: File): Promise<{ status: string, trans
 }
 
 export async function addTransactionsBatch(transactions: Transaction[], autoAddCash: boolean = false): Promise<StatusResponse> {
+    const receipt = await submissionKey(`${API_BASE_URL}/transactions/batch`, { transactions, auto_add_cash: autoAddCash });
     const { data, error, response } = await apiClient.POST("/api/transactions/batch", {
+        headers: { "Idempotency-Key": receipt.key },
         body: { transactions, auto_add_cash: autoAddCash } as never,
     });
-    if (error) throw new Error(`Failed to add transactions: ${response.statusText}`);
+    if (error) throw new Error(`Failed to add transactions: ${'detail' in error ? error.detail : response.statusText}`);
+    receipt.forget();
     return data as unknown as StatusResponse;
 }
 
@@ -979,9 +986,15 @@ export async function fetchPendingIbkr(): Promise<Transaction[]> {
     return asList<Transaction>(data, 'Failed to fetch transactions');
 }
 
-export async function approveIbkr(ids: number[]): Promise<StatusResponse> {
+export interface IbkrApprovalInput {
+    ids: number[];
+    accounts: Record<number, string>;
+}
+
+export async function approveIbkr(ids: number[], accounts: Record<number, string> = {}): Promise<StatusResponse> {
+    const body: IbkrApprovalInput = { ids, accounts };
     const { data, error } = await apiClient.POST("/api/sync/ibkr/approve", {
-        body: ids as never,
+        body,
     });
     if (error) throw new Error('Failed to approve transactions');
     return data as unknown as StatusResponse;
