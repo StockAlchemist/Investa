@@ -77,6 +77,15 @@ struct MainView: View {
                     onOpenStock: { appState.openStock($0) })
             }
             .onReceive(NotificationCenter.default.publisher(for: .commandPalette)) { _ in showingPalette = true }
+            .onReceive(NotificationCenter.default.publisher(for: .openSharedView)) { notification in
+                guard let url = notification.object as? URL, let target = ViewNavigation(url: url) else { return }
+                selection = target.section
+                visitedSections.insert(target.section)
+                if let currency = target.currency { appState.displayCurrency = currency }
+                appState.selectedAccounts = Set(target.accounts)
+                appState.clearStock()
+                if let symbol = target.symbol { appState.openStock(symbol) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .navigateToSection)) { note in
                 if let section = note.object as? AppSection {
                     appState.clearStock()
@@ -246,8 +255,6 @@ struct MainView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                // Ledger: where you are is raised onto a card in ink, not
-                // tinted in the accent — the web sidebar's active row.
                 .background(isSelected ? Color.cardBg : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isSelected ? Color.line : Color.clear, lineWidth: 1))
                 .fontWeight(isSelected ? .semibold : .regular)

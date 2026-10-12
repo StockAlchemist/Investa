@@ -20,6 +20,7 @@
  */
 
 import { useState } from 'react';
+import ShareViewButton from '@/components/ShareViewButton';
 import {
   Building2, SlidersHorizontal, Eye, EyeOff, RefreshCw, Loader2, Settings as SettingsIcon, ChevronsUpDown,
 } from 'lucide-react';
@@ -294,7 +295,8 @@ export function MobileControlBar({
               ))}
             </MobileMenu>
 
-            {/* Settings sits at the right edge as itself, where a "•••" menu
+            <ShareViewButton />
+      {/* Settings sits at the right edge as itself, where a "•••" menu
                 used to hold it alongside sign-out. Signing out stays a tap
                 further in, on the Settings hub. */}
             <button type="button" onClick={onOpenSettings} aria-label="Settings" className={CONTROL}>

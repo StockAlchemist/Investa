@@ -1,4 +1,5 @@
 'use client';
+import { useDialogFocus } from './hooks/useDialogFocus';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -59,6 +60,8 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
     const [stockResults, setStockResults] = useState<SymbolSearchResult[]>([]);
     const [stockLoading, setStockLoading] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useDialogFocus(dialogRef, isOpen, onClose);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
@@ -153,7 +156,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, currency }
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
             {/* Modal */}
-            <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Search or jump to" className="relative w-full max-w-lg rounded-2xl border border-border bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
 
                 {/* Search input */}
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-border">

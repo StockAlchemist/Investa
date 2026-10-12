@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '@/context/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, CheckCircle, XCircle } from 'lucide-react';
-import { Transaction, fetchPendingIbkr, approveIbkr, rejectIbkr } from '../../lib/api';
+import { Transaction, fetchPendingIbkr, approveIbkr, rejectIbkr, fetchSummary } from '../../lib/api';
 import StockTicker from '../StockTicker';
 import { formatCalendarDate } from '@/lib/market_time';
+
+const EMPTY_PENDING: Transaction[] = [];
 
 function getPendingTypeStyle(type: string): string {
     const t = (type || '').toUpperCase();
@@ -22,15 +25,37 @@ function getPendingTypeStyle(type: string): string {
     return 'bg-violet-500/10 text-violet-600 dark:text-violet-400';
 }
 
-export const PendingIbkrBanner: React.FC = () => {
+export const PendingIbkrBanner: React.FC<{ availableAccounts?: string[]; currency?: string }> = ({ availableAccounts = [], currency = 'USD' }) => {
+    const { user } = useAuth();
     const queryClient = useQueryClient();
     const [selectedPendingIds, setSelectedPendingIds] = useState<Set<number>>(new Set());
     const [isApproving, setIsApproving] = useState(false);
+    const [accountSelections, setAccountSelections] = useState<Record<number, string>>({});
 
-    const { data: pendingTransactions = [] } = useQuery<Transaction[]>({
-        queryKey: ['pendingIbkr'],
+    const { data: pendingTransactions = EMPTY_PENDING } = useQuery<Transaction[]>({
+        queryKey: ['pendingIbkr', user?.username],
         queryFn: fetchPendingIbkr,
     });
+
+    const { data: allAccountsSummary } = useQuery({
+        queryKey: ['summary', user?.username, currency, [], true],
+        queryFn: ({ signal }) => fetchSummary(currency, [], true, signal),
+        staleTime: 5 * 60 * 1000,
+        enabled: !!user && pendingTransactions.length > 0,
+    });
+    const accountOptions = [...new Set([
+        ...availableAccounts,
+        ...(allAccountsSummary?.metrics?._available_accounts as string[] | undefined ?? []),
+        ...Object.keys(allAccountsSummary?.account_metrics ?? {}),
+        ...pendingTransactions.map(tx => tx.Account),
+    ])].filter(Boolean).sort((a, b) => a.localeCompare(b));
+
+    useEffect(() => {
+        // Retain unsaved choices across a refetch, and drop rows no longer pending.
+        const ids = new Set(pendingTransactions.map(tx => tx.id));
+        setAccountSelections(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => ids.has(Number(id)))));
+        setSelectedPendingIds(prev => new Set([...prev].filter(id => ids.has(id))));
+    }, [pendingTransactions]);
 
     if (pendingTransactions.length === 0) return null;
 
@@ -41,7 +66,8 @@ export const PendingIbkrBanner: React.FC = () => {
         setIsApproving(true);
         try {
             if (action === 'approve') {
-                await approveIbkr(idsToProcess);
+                const accounts = Object.fromEntries(idsToProcess.filter(id => accountSelections[id] !== undefined).map(id => [id, accountSelections[id]]));
+                await approveIbkr(idsToProcess, accounts);
             } else {
                 await rejectIbkr(idsToProcess);
             }
@@ -55,6 +81,8 @@ export const PendingIbkrBanner: React.FC = () => {
             queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['summary'] });
+            queryClient.invalidateQueries({ queryKey: ['headline'] });
+            queryClient.invalidateQueries({ queryKey: ['history'] });
             queryClient.invalidateQueries({ queryKey: ['holdings'] });
         } catch (error) {
             console.error(`Failed to ${action} pending transactions:`, error);
@@ -118,6 +146,8 @@ export const PendingIbkrBanner: React.FC = () => {
                             <th className="px-4 py-2 text-left w-8">
                                 <input
                                     type="checkbox"
+                                    aria-label="Select all pending IBKR transactions"
+                                    disabled={isApproving}
                                     checked={selectedPendingIds.size === pendingTransactions.length}
                                     onChange={() => {
                                         if (selectedPendingIds.size === pendingTransactions.length) setSelectedPendingIds(new Set());
@@ -142,6 +172,8 @@ export const PendingIbkrBanner: React.FC = () => {
                                 <td className="px-4 py-3">
                                     <input
                                         type="checkbox"
+                                        aria-label={`Select pending transaction ${tx.id}`}
+                                        disabled={isApproving}
                                         checked={selectedPendingIds.has(tx.id!)}
                                         onChange={() => {
                                             const next = new Set(selectedPendingIds);
@@ -166,13 +198,24 @@ export const PendingIbkrBanner: React.FC = () => {
                                 <td className="px-4 py-3 text-right font-bold tabular-nums">
                                     {tx["Total Amount"] ? Math.abs(tx["Total Amount"]).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                                 </td>
-                                <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{tx.Account}</td>
+                                <td className="px-4 py-3">
+                                    <select
+                                        aria-label={`Account for ${tx.Symbol} pending transaction ${tx.id}`}
+                                        value={accountSelections[tx.id!] ?? tx.Account}
+                                        onChange={event => setAccountSelections(prev => ({ ...prev, [tx.id!]: event.target.value }))}
+                                        disabled={isApproving}
+                                        className="min-w-32 max-w-60 rounded-control border border-input bg-card px-2 py-1.5 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+                                    >
+                                        {accountOptions.map(account => <option key={account} value={account}>{account}</option>)}
+                                    </select>
+                                </td>
                                 <td className="px-4 py-3 text-right">
                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button
                                             onClick={() => handlePendingAction('approve', [tx.id!])}
                                             className="p-1.5 text-up hover:bg-up/12 rounded transition-all"
                                             title="Approve"
+                                            disabled={isApproving}
                                         >
                                             <CheckCircle className="h-4 w-4" />
                                         </button>
@@ -180,6 +223,7 @@ export const PendingIbkrBanner: React.FC = () => {
                                             onClick={() => handlePendingAction('reject', [tx.id!])}
                                             className="p-1.5 text-down hover:bg-down/12 rounded transition-all"
                                             title="Reject"
+                                            disabled={isApproving}
                                         >
                                             <XCircle className="h-4 w-4" />
                                         </button>

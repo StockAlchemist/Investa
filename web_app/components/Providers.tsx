@@ -3,12 +3,11 @@
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { queryPersister } from '@/lib/query_persistence';
 
 import { ThemeProvider } from 'next-themes';
 import { StockModalProvider } from '@/context/StockModalContext';
 import { WatchlistProvider } from '@/context/WatchlistContext';
-import { QUERY_CACHE_STORAGE_KEY } from '@/lib/user_storage';
 import { useImportServersFromHash } from '@/lib/servers';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -16,7 +15,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         defaultOptions: {
             queries: {
                 // Garbage collect time needs to be higher than stale time for persistence to be effective
-                gcTime: 1000 * 60 * 60 * 24, // 24 hours
+                gcTime: 1000 * 60 * 60, // Match the one-hour persistence window
                 staleTime: 1000 * 60 * 5, // 5 minutes
                 refetchOnWindowFocus: false,
             },
@@ -27,18 +26,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     // here, at the root, before a signed-out redirect to /login drops it.
     useImportServersFromHash();
 
-    const [persister] = useState(() => {
-        if (typeof window !== 'undefined') {
-            return createSyncStoragePersister({
-                storage: window.localStorage,
-                key: QUERY_CACHE_STORAGE_KEY,
-                throttleTime: 1000,
-            });
-        }
-        return undefined;
-    });
-
-    if (typeof window === 'undefined' || !persister) {
+    if (typeof window === 'undefined') {
         // Fallback for SSR or if window is undefined, though this is a client component
         return (
             <QueryClientProvider client={queryClient}>
@@ -57,14 +45,15 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <PersistQueryClientProvider
             client={queryClient}
             persistOptions={{
-                persister,
-                // localStorage holds ~5MB; if the serialized cache tips over,
-                // the write fails silently and instant-restore dies for every
-                // tab. Skip bulky datasets that load fast anyway.
+                persister: queryPersister,
+                buster: 'portfolio-contract-v2',
+                maxAge: 60 * 60 * 1000,
+                // Persist compact dashboard data; large tables remain on demand.
                 dehydrateOptions: {
                     shouldDehydrateQuery: (query) =>
                         query.state.status === 'success' &&
-                        query.queryKey[0] !== 'transactions',
+                        ['summary', 'headline', 'holdings', 'history', 'settings', 'indices', 'marketStatus'].includes(String(query.queryKey[0])) &&
+                        (!Array.isArray(query.state.data) || query.state.data.length <= 5000),
                 },
             }}
         >

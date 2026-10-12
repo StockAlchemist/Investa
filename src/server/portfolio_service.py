@@ -7,6 +7,8 @@ imports from server.api, so route modules can depend on this freely.
 
 # ruff: noqa: E402
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import time
@@ -29,13 +31,21 @@ from portfolio_logic import (
 )
 from server.auth import User
 from server.dependencies import get_config_manager, reload_data, resolve_user_db_path
-from server.route_utils import SWRCache, _lru_get, _lru_put, clean_nans, get_mdp
+from server.route_utils import (
+    SWRCache,
+    _lru_get,
+    _lru_put,
+    _lru_invalidate,
+    clean_nans,
+    get_mdp,
+)
 from server.routes.market import clear_market_history_cache
 from utils_time import get_est_today, get_latest_trading_date, is_market_open
 
 _PRECALC_POOL = ThreadPoolExecutor(max_workers=2)
 _PRECALC_IN_FLIGHT: set = set()
 _PORTFOLIO_SUMMARY_CACHE: OrderedDict = OrderedDict()
+_CACHE_REVISIONS: dict[Optional[str], int] = {}
 # The two heavy computations use stale-while-revalidate: a rolled-over cache
 # window serves the previous result instantly and refreshes in the background,
 # instead of blocking the request for the full 11–50s recompute. Freshness is
@@ -44,15 +54,25 @@ _RAW_CALC_CACHE = SWRCache()
 _PORTFOLIO_HISTORY_CACHE = SWRCache()
 
 
+def configuration_key(*values) -> str:
+    """Stable revision of calculation inputs; independent of display preferences."""
+    payload = json.dumps(
+        values,
+        sort_keys=True,
+        default=lambda v: sorted(v) if isinstance(v, set) else str(v),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:20]
+
+
 def _evict_user_summary_cache(username: str):
     """Remove only the given user's entries from _PORTFOLIO_SUMMARY_CACHE.
 
     The summary cache key has db_path at index 2, which is unique per user.
     """
     user_path = resolve_user_db_path(username)
-    stale = [k for k in _PORTFOLIO_SUMMARY_CACHE if len(k) > 2 and k[2] == user_path]
-    for k in stale:
-        del _PORTFOLIO_SUMMARY_CACHE[k]
+    _lru_invalidate(
+        _PORTFOLIO_SUMMARY_CACHE, lambda key: len(key) > 2 and key[2] == user_path
+    )
 
 
 def _evict_user_history_cache(username: str):
@@ -80,32 +100,37 @@ def reload_data_and_clear_cache(current_user: Optional[User] = None):
     username = current_user.username if current_user else None
     reload_data(username)
     if username:
+        path = resolve_user_db_path(username)
+        _CACHE_REVISIONS[path] = _CACHE_REVISIONS.get(path, 0) + 1
         _evict_user_summary_cache(username)
         _evict_user_history_cache(username)
         _evict_user_raw_cache(username)
         # Market history is shared benchmark data — safe to clear entirely on a write
         clear_market_history_cache()
     else:
-        _PORTFOLIO_SUMMARY_CACHE.clear()
-        clear_market_history_cache()
-        _PORTFOLIO_HISTORY_CACHE.clear()
-        _RAW_CALC_CACHE.clear()
+        clear_portfolio_caches()
     logging.info(f"Caches cleared for user '{username or 'all'}'.")
     if current_user:
         trigger_background_precalculation(current_user)
 
 
-def clear_portfolio_caches():
+def clear_portfolio_caches(username: Optional[str] = None):
     """Clears calculated caches (Summary, Raw, History) without wiping the transaction dataframe cache.
 
-    _RAW_CALC_CACHE must be included: its key is
-    (currency, accounts_key, db_path, db_mtime), which carries no fingerprint of
-    manual overrides, the symbol map, excluded symbols, or interest-rate
-    settings. A settings write leaves db_mtime untouched, so without an explicit
-    clear the recompute triggered here reads pre-change numbers straight back
-    out of the raw layer for the rest of the TTL (60s open / 300s closed).
+    Preference-only writes do not call this. Calculation inputs are fingerprinted;
+    the revision additionally prevents old requests from publishing reusable entries
+    after an explicit invalidation (including changes to global provider credentials).
     """
-    _PORTFOLIO_SUMMARY_CACHE.clear()
+    if username:
+        path = resolve_user_db_path(username)
+        _CACHE_REVISIONS[path] = _CACHE_REVISIONS.get(path, 0) + 1
+        _evict_user_summary_cache(username)
+        _evict_user_history_cache(username)
+        _evict_user_raw_cache(username)
+        return
+    for path in list(_CACHE_REVISIONS):
+        _CACHE_REVISIONS[path] += 1
+    _lru_invalidate(_PORTFOLIO_SUMMARY_CACHE)
     clear_market_history_cache()
     _PORTFOLIO_HISTORY_CACHE.clear()
     _RAW_CALC_CACHE.clear()
@@ -454,6 +479,14 @@ async def _get_historical_performance_cached(
         interval,
         db_mtime,
         CURRENT_HIST_VERSION,
+        configuration_key(
+            manual_overrides_dict,
+            user_symbol_map,
+            user_excluded_symbols,
+            account_currency_map,
+            account_cash_mode_map,
+            _CACHE_REVISIONS.setdefault(original_csv_file_path, 0),
+        ),
     )
 
     async def compute():
@@ -602,7 +635,18 @@ async def _compute_raw_summary(
     # Freshness is tracked by SWRCache, so the key carries no time bucket; a
     # transaction write changes db_mtime, which evicts via a new key.
     cache_ttl_seconds = 60 if is_market_open() else 300
-    raw_key = (currency, accounts_key, db_path, db_mtime)
+    raw_key = (
+        currency,
+        accounts_key,
+        db_path,
+        db_mtime,
+        configuration_key(
+            data[1:6],
+            account_interest_rates,
+            interest_free_thresholds,
+            _CACHE_REVISIONS.setdefault(db_path, 0),
+        ),
+    )
 
     async def compute():
         logging.info("Calculating raw summary (SWR).")
@@ -658,7 +702,8 @@ async def _compute_raw_summary(
             account_level_metrics,
         )
 
-    return await _RAW_CALC_CACHE.get_or_compute(raw_key, cache_ttl_seconds, compute)
+    result = await _RAW_CALC_CACHE.get_or_compute(raw_key, cache_ttl_seconds, compute)
+    return result
 
 
 async def _calculate_portfolio_summary_internal(
@@ -721,12 +766,45 @@ async def _calculate_portfolio_summary_internal(
     cache_ttl_seconds = 60 if is_market_open() else 300
     time_key = int(time.time() / cache_ttl_seconds)
 
-    cache_key = (currency, accounts_key, db_path, db_mtime, time_key)
+    cache_key = (
+        currency,
+        accounts_key,
+        db_path,
+        db_mtime,
+        time_key,
+        configuration_key(
+            data[1:6],
+            account_interest_rates,
+            interest_free_thresholds,
+            config_manager.gui_config.get("account_closure_dates", {})
+            if config_manager
+            else {},
+            _CACHE_REVISIONS.setdefault(db_path, 0),
+        ),
+    )
 
     cached = _lru_get(_PORTFOLIO_SUMMARY_CACHE, cache_key)
     if cached is not None:
         logging.info(f"Using cached portfolio summary for key: {cache_key[:3]}...")
-        return _filter_closed_positions(cached, show_closed_positions)
+        raw_key = (
+            currency,
+            accounts_key,
+            db_path,
+            db_mtime,
+            configuration_key(
+                data[1:6],
+                account_interest_rates,
+                interest_free_thresholds,
+                _CACHE_REVISIONS.setdefault(db_path, 0),
+            ),
+        )
+        current_freshness = _RAW_CALC_CACHE.freshness(raw_key)
+        if current_freshness["calculated_at"] is not None and current_freshness[
+            "calculated_at"
+        ] == (cached.get("freshness") or {}).get("calculated_at"):
+            return _filter_closed_positions(
+                {**cached, "freshness": current_freshness}, show_closed_positions
+            )
 
     logging.info(f"Summary Cache Miss. Time key: {time_key}")
 
@@ -891,7 +969,20 @@ async def _calculate_portfolio_summary_internal(
     else:
         logging.error("Summary calculation returned None metrics")
 
+    raw_key = (
+        currency,
+        accounts_key,
+        db_path,
+        db_mtime,
+        configuration_key(
+            data[1:6],
+            account_interest_rates,
+            interest_free_thresholds,
+            _CACHE_REVISIONS.setdefault(db_path, 0),
+        ),
+    )
     result = {
+        "freshness": _RAW_CALC_CACHE.freshness(raw_key),
         "metrics": overall_summary_metrics,
         "summary_df": summary_df,
         "holdings_dict": holdings_dict,

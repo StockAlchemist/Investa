@@ -39,11 +39,14 @@ enum TabLayout {
         LayoutItem("topContributors", "Top Contributors", group: "Risk & Attribution"),
     ]
     static let performanceInitialVisible: Set<String> = [
-        "portfolioHero", "todayStrip", "trendSignal", "dashboardEvents", "dashboardInsights",
-        "totalReturn", "unrealizedGL", "realizedGain", "annualTWR", "mwr",
-        "ytdDividends", "dividendYield", "ytdReturn", "cashBalance", "fxGL", "fees", "taxes",
-        "portfolioDonut", "performanceGraph", "projection",
+        "portfolioHero", "todayStrip", "cashBalance", "annualTWR", "performanceGraph",
     ]
+    static func originalVisible(_ saved: Set<String>) -> Set<String> {
+        let redesign: Set<String> = ["portfolioHero", "performanceGraph", "annualTWR", "totalReturn", "cashBalance", "ledgerAllocation", "ledgerHoldings"]
+        if saved == redesign { return performanceInitialVisible }
+        let original = saved.subtracting(["ledgerAllocation", "ledgerHoldings"])
+        return original.isEmpty ? performanceInitialVisible : original
+    }
 
     static let allocationItems: [LayoutItem] = [
         LayoutItem("holdingsTable", "Holdings Table"),

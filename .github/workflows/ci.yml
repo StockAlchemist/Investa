@@ -196,3 +196,24 @@ jobs:
           name: playwright-report
           path: web_app/playwright-report/
           retention-days: 7
+
+  native:
+    name: Native macOS and iOS checks
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: macos_app
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: macOS tests
+        run: xcodebuild -quiet -project Investa.xcodeproj -scheme Investa -destination 'platform=macOS' CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= test
+      - name: Select available iPhone simulator
+        run: |
+          xcrun simctl list devices available --json > /tmp/investa-simulators.json
+          python3 -c 'import json, os; devices=json.load(open("/tmp/investa-simulators.json"))["devices"]; device=next(d for group in devices.values() for d in group if d["name"].startswith("iPhone")); open(os.environ["GITHUB_ENV"], "a").write("INVESTA_SIMULATOR="+device["udid"]+"\n")'
+      - name: iOS tests
+        run: xcodebuild -quiet -project Investa.xcodeproj -scheme Investa-iOS -destination "platform=iOS Simulator,id=$INVESTA_SIMULATOR" CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= test

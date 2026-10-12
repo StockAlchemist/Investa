@@ -59,26 +59,7 @@ export const DEFAULT_ITEMS = [
 ];
 
 export const INITIAL_VISIBLE_ITEMS = [
-    'portfolioHero',
-    'todayStrip',
-    'trendSignal',
-    'dashboardEvents',
-    'dashboardInsights',
-    'totalReturn',
-    'unrealizedGL',
-    'realizedGain',
-    'annualTWR',
-    'mwr',
-    'ytdDividends',
-    'dividendYield',
-    'ytdReturn',
-    'cashBalance',
-    'fxGL',
-    'fees',
-    'taxes',
-    'portfolioDonut',
-    'performanceGraph',
-    'projection',
+    'portfolioHero', 'todayStrip', 'cashBalance', 'annualTWR', 'performanceGraph',
 ];
 
 /**

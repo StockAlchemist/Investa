@@ -4,7 +4,6 @@
 import asyncio
 import logging
 import sqlite3
-import time
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -29,15 +28,24 @@ from server.dependencies import (
     get_user_db_connection,
 )
 from server.portfolio_service import (
-    _PORTFOLIO_SUMMARY_CACHE,
     _calculate_historical_performance_internal,
     _calculate_portfolio_summary_internal,
     _compute_raw_summary,
+    _RAW_CALC_CACHE,
+    configuration_key,
+    _CACHE_REVISIONS,
     _get_historical_performance_cached,
     compute_account_closure_state,
 )
-from server.route_utils import _lru_get, clean_nans, get_mdp
-from utils_time import is_market_open, get_est_today
+from server.route_utils import clean_nans, get_mdp
+from utils_time import get_est_today
+
+from server.response_models import (
+    SummaryResponse,
+    HeadlineResponse,
+    HoldingResponse,
+    HistoryPoint,
+)
 
 router = APIRouter()
 
@@ -156,7 +164,9 @@ async def get_asset_change(
         raise HTTPException(status_code=500, detail="Failed to calculate asset change")
 
 
-@router.get("/summary")
+@router.get(
+    "/summary", response_model=SummaryResponse, response_model_exclude_unset=True
+)
 async def get_portfolio_summary(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
@@ -187,7 +197,12 @@ async def get_portfolio_summary(
     ) = data
 
     if df.empty:
-        return {"error": "No transaction data available"}
+        return {
+            "metrics": None,
+            "account_metrics": None,
+            "summary_df": [],
+            "holdings_dict": {},
+        }
 
     try:
         # Calculate portfolio summary using helper
@@ -233,6 +248,7 @@ async def get_portfolio_summary(
             }
 
         response_data = {
+            "freshness": summary_data.get("freshness"),
             "metrics": overall_summary_metrics,
             "account_metrics": account_level_metrics,
             "summary_df": serialized_df,
@@ -248,7 +264,11 @@ async def get_portfolio_summary(
         )
 
 
-@router.get("/summary/headline")
+@router.get(
+    "/summary/headline",
+    response_model=HeadlineResponse,
+    response_model_exclude_unset=True,
+)
 async def get_portfolio_summary_headline(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
@@ -277,15 +297,6 @@ async def get_portfolio_summary_headline(
 
     if df.empty:
         return {"metrics": {}}
-
-    # If the full summary is already cached, it's a superset — reuse it.
-    accounts_key = tuple(sorted(accounts)) if accounts else "ALL"
-    cache_ttl_seconds = 60 if is_market_open() else 300
-    time_key = int(time.time() / cache_ttl_seconds)
-    full_key = (currency, accounts_key, db_path, db_mtime, time_key)
-    cached_full = _lru_get(_PORTFOLIO_SUMMARY_CACHE, full_key)
-    if cached_full is not None and cached_full.get("metrics"):
-        return clean_nans({"metrics": cached_full["metrics"]})
 
     # Interest settings are inputs to the calculation.
     account_interest_rates: dict = {}
@@ -343,7 +354,21 @@ async def get_portfolio_summary_headline(
         ):
             metrics[key] = None
 
-    return clean_nans({"metrics": metrics})
+    raw_key = (
+        currency,
+        tuple(sorted(accounts)) if accounts else "ALL",
+        db_path,
+        db_mtime,
+        configuration_key(
+            data[1:6],
+            account_interest_rates,
+            interest_free_thresholds,
+            _CACHE_REVISIONS.setdefault(db_path, 0),
+        ),
+    )
+    return clean_nans(
+        {"metrics": metrics, "freshness": _RAW_CALC_CACHE.freshness(raw_key)}
+    )
 
 
 @router.post("/portfolio/ai_review")
@@ -537,7 +562,9 @@ async def get_portfolio_ai_review(
         )
 
 
-@router.get("/holdings")
+@router.get(
+    "/holdings", response_model=List[HoldingResponse], response_model_exclude_unset=True
+)
 async def get_holdings(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),
@@ -1691,7 +1718,9 @@ async def get_stock_position_history(
         )
 
 
-@router.get("/history")
+@router.get(
+    "/history", response_model=List[HistoryPoint], response_model_exclude_unset=True
+)
 async def get_history(
     currency: str = "USD",
     accounts: Optional[List[str]] = Query(None),

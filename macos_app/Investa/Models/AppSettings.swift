@@ -9,6 +9,7 @@ struct AppSettings: Codable, Sendable {
     let displayCurrency: String?
     let selectedAccounts: [String]?
     let benchmarks: [String]?
+    var visibleItems: [String]? = nil
     let showClosed: Bool?
     let manualOverrides: [String: JSONValue]?
     let accountInterestRates: [String: Double]?
@@ -36,6 +37,7 @@ struct AppSettings: Codable, Sendable {
         case displayCurrency = "display_currency"
         case selectedAccounts = "selected_accounts"
         case benchmarks
+        case visibleItems = "visible_items"
         case showClosed = "show_closed"
         case manualOverrides = "manual_overrides"
         case accountInterestRates = "account_interest_rates"

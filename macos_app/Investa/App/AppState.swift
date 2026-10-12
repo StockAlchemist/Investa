@@ -192,6 +192,9 @@ final class AppState: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: visibleDefaultsKey),
               let decoded = try? JSONDecoder().decode([String: [String]].self, from: data) else { return }
         tabVisible = decoded.mapValues { Set($0) }
+        if let saved = tabVisible[AppSection.performance.rawValue] {
+            tabVisible[AppSection.performance.rawValue] = TabLayout.originalVisible(saved)
+        }
     }
 
     /// The `accounts` query value: nil when nothing (or everything) is selected.
@@ -248,6 +251,10 @@ final class AppState: ObservableObject {
             accountGroups = settings.accountGroups ?? [:]
             accountGroupOrder = settings.accountGroupOrder ?? Array(accountGroups.keys).sorted()
             if initial {
+                if tabVisible[AppSection.performance.rawValue] == nil, let items = settings.visibleItems, !items.isEmpty {
+                    tabVisible[AppSection.performance.rawValue] = TabLayout.originalVisible(Set(items))
+                    persistVisible()
+                }
                 if let cur = settings.displayCurrency, availableCurrencies.contains(cur) {
                     displayCurrency = cur
                 } else if !availableCurrencies.contains(displayCurrency) {
@@ -290,6 +297,7 @@ final class AppState: ObservableObject {
             }
             if selectedAccounts.isEmpty, let metrics = allAccountsHeadline?.metrics {
                 applyHeadline(metrics)   // same request the selector list came from
+                lastUpdated = allAccountsHeadline?.freshness?.date
             } else {
                 await fetchHeadline()
             }
@@ -315,6 +323,7 @@ final class AppState: ObservableObject {
         // Drop a response the user has already navigated away from.
         guard displayCurrency == currency, selectedAccounts.sorted() == accounts else { return }
         applyHeadline(res.metrics)
+        lastUpdated = res.freshness?.date
     }
 
     private func applyHeadline(_ metrics: Metrics?) {
@@ -358,7 +367,6 @@ final class AppState: ObservableObject {
         if let status: MarketStatusResponse = try? await api.get("/market_status") {
             marketIsOpen = status.is_open
         }
-        lastUpdated = Date()
     }
 
     // MARK: - Auto-refresh while the market is open

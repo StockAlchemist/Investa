@@ -25,7 +25,13 @@ private let columnPickerGroups: [(label: String, cols: [String])] = [
     ("Details", ["Sector", "Industry", "FX G/L %", "Fees", "Tags", "Contribution %", "AI Score", "Intrinsic Value"]),
 ]
 
-private let defaultVisibleColumns = columnPickerGroups.flatMap { $0.cols }
+private let holdingsPresets: [(name: String, columns: [String])] = [
+    ("Overview", ["Symbol", "% of Total", "Price", "Mkt Val", "Day Chg", "Day Chg %", "Unreal. G/L"]),
+    ("Performance", ["Symbol", "Mkt Val", "Total G/L", "Total Ret %", "IRR (%)", "Contribution %", "1M Trend"]),
+    ("Income", ["Symbol", "Mkt Val", "Divs", "Est. Income", "Yield (Cost) %", "Yield (Mkt) %"]),
+    ("Valuation", ["Symbol", "Price", "Intrinsic Value", "AI Score", "Sector"]),
+]
+private let defaultVisibleColumns = holdingsPresets[0].columns
 
 private let leftAlignedHeaders: Set<String> = ["Symbol", "Account", "Sector", "Industry", "Tags"]
 private let glHeaders: Set<String> = ["Day Chg", "Day Chg %", "Unreal. G/L", "Unreal. G/L %", "Real. G/L", "Total G/L", "Total Ret %", "FX G/L %", "IRR (%)"]
@@ -404,6 +410,7 @@ struct HoldingsTableView: View {
                 groupMenu
                 if !uniqueAccounts.isEmpty { accountMenu }
                 columnsButton
+                presetMenu
                 if hSizeClass == .compact {
                     toolButton("Details", "chevron.up.chevron.down", active: !expandedCards.isEmpty) {
                         withAnimation(.easeInOut(duration: 0.18)) { toggleAllCards() }
@@ -418,11 +425,20 @@ struct HoldingsTableView: View {
             groupMenu
             if !uniqueAccounts.isEmpty { accountMenu }
             columnsButton
+            presetMenu
             toolButton("Lots", "square.stack.3d.up", active: !expandedLots.isEmpty) { toggleAllLots() }
             Spacer()
             toolButton("Export", "square.and.arrow.down", active: false) { exportCSV() }
         }
         #endif
+    }
+
+    private var presetMenu: some View {
+        Menu("View preset") {
+            ForEach(holdingsPresets, id: \.name) { preset in
+                Button(preset.name) { visibleColumns = preset.columns }
+            }
+        }.accessibilityLabel("Holdings view preset")
     }
 
     private var groupMenu: some View {
@@ -476,6 +492,20 @@ struct HoldingsTableView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
+                    Text("Column order").appFont(.caption.bold())
+                    ForEach(visibleColumns, id: \.self) { column in
+                        HStack {
+                            Text(column).appFont(.caption)
+                            Spacer()
+                            Button { moveColumn(column, by: -1) } label: { Image(systemName: "arrow.left") }
+                                .accessibilityLabel("Move \(column) left")
+                                .disabled(visibleColumns.first == column)
+                            Button { moveColumn(column, by: 1) } label: { Image(systemName: "arrow.right") }
+                                .accessibilityLabel("Move \(column) right")
+                                .disabled(visibleColumns.last == column)
+                        }
+                    }
+                    Divider()
                     ForEach(columnPickerGroups, id: \.label) { group in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(group.label).appFont(.system(size: 10, weight: .bold)).tracking(1.5).textCase(.uppercase).foregroundStyle(.secondary)
@@ -1231,6 +1261,13 @@ struct HoldingsTableView: View {
 
     private var uniqueAccounts: [String] { Array(Set(holdings.compactMap { $0.account })).sorted() }
     private func sort(_ h: String) { if sortKey == h { sortAsc.toggle() } else { sortKey = h; sortAsc = false } }
+    private func moveColumn(_ column: String, by offset: Int) {
+        guard let index = visibleColumns.firstIndex(of: column) else { return }
+        let target = index + offset
+        guard visibleColumns.indices.contains(target) else { return }
+        visibleColumns.swapAt(index, target)
+    }
+
     private func toggleColumn(_ h: String) { if let i = visibleColumns.firstIndex(of: h) { visibleColumns.remove(at: i) } else { visibleColumns.append(h) } }
     private func toggleAccount(_ a: String) { if selectedAccounts.contains(a) { selectedAccounts.remove(a) } else { selectedAccounts.insert(a) } }
     private func toggleGroup(_ k: String) { if expandedGroups.contains(k) { expandedGroups.remove(k) } else { expandedGroups.insert(k) } }

@@ -20,12 +20,21 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Investa</string>
-	<!-- The backend is served over plain HTTP on localhost / LAN / Tailscale.
-	     This is a local developer tool, so arbitrary loads are permitted. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.investa.navigation</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>investa</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

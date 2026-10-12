@@ -65,6 +65,21 @@ xcodebuild -project Investa.xcodeproj -scheme Investa -destination 'platform=mac
 Generated artifacts (`Investa.xcodeproj/`, build output) are not meant to be
 committed — add them to `.gitignore` if desired.
 
+## Updating an existing backend
+
+Stop the backend and run `python scripts/migrate_transaction_receipts.py` from
+the repository root before submitting transactions with this client. The offline
+migration backs up each portfolio database. New portfolios already include receipts.
+Transaction creation and batch import keep a receipt key across retries, so a lost
+response cannot create duplicate trades or cash legs.
+
+The dashboard defaults to a compact overview with detailed analytics available
+on demand. Holdings offer Overview, Performance, Income and Valuation presets,
+plus accessible column-order controls. The toolbar can share the current section,
+currency, accounts and stock through `investa://open` links on macOS and iOS.
+The calculation timestamp comes from the backend; chart-period changes reuse
+portfolio data and late responses from obsolete selections are discarded.
+
 ## Architecture
 
 - **Networking/** — `APIClient` (async URLSession, bearer auth, 401 → `.authExpired`),

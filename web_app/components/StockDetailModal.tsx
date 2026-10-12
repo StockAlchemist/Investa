@@ -12,6 +12,8 @@ import {
     fetchHoldings,
     Holding
 } from '../lib/api';
+import { portfolioKeys } from '@/lib/query_keys';
+import { useAuth } from '@/context/AuthContext';
 import { Info, ArrowLeft } from 'lucide-react';
 import { Skeleton } from './ui/skeleton';
 import { TabType, StockDetailModalProps } from './stock-detail/types';
@@ -74,8 +76,11 @@ export default function StockDetailModal({
     onBack,
     previousViewName,
     currency,
+    accounts,
+    showClosed,
     initialTab = 'overview'
 }: StockDetailModalProps) {
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<TabType>((initialTab as TabType) || 'overview');
     const [mounted, setMounted] = useState(false);
     const queryClient = useQueryClient();
@@ -138,8 +143,8 @@ export default function StockDetailModal({
     }, [isOpen]);
 
     const { data: holdings = [] } = useQuery({
-        queryKey: ['holdings', symbol, currency, filters.accounts, filters.showClosed],
-        queryFn: () => fetchHoldings(currency, filters.accounts, filters.showClosed),
+        queryKey: portfolioKeys.holdings(user?.username, currency, accounts ?? filters.accounts, showClosed ?? filters.showClosed),
+        queryFn: () => fetchHoldings(currency, accounts ?? filters.accounts, showClosed ?? filters.showClosed),
         enabled: isOpen && !!symbol,
         staleTime: 5 * 60 * 1000,
     });

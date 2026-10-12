@@ -13,8 +13,9 @@ test.describe('Dashboard UI', () => {
         await expect(page.getByRole('button', { name: 'Portfolio' }).first()).toBeVisible();
         await expect(page.getByRole('button', { name: 'Transactions' }).first()).toBeVisible();
 
-        // Check dashboard metrics and holdings table
+        // The compact dashboard leads with metrics; holdings live in Portfolio.
         await expect(page.getByText('$125,450.00').first()).toBeVisible();
+        await page.getByRole('button', { name: 'Portfolio', exact: true }).first().click();
         await expect(page.getByText('AAPL').first()).toBeVisible();
     });
 });

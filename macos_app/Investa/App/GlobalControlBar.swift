@@ -27,6 +27,13 @@ struct GlobalControlBar<Trailing: View>: View {
         #endif
     }
 
+    private var shareView: some View {
+        ShareLink(item: ViewNavigation.url(section: section, currency: appState.displayCurrency,
+                                          accounts: Array(appState.selectedAccounts), symbol: appState.selectedStock)) {
+            Image(systemName: "square.and.arrow.up")
+        }.accessibilityLabel("Share current view")
+    }
+
     private var regularBar: some View {
         HStack(spacing: 12) {
             // Left cluster, in the web header's order (PageHeader.tsx):
@@ -56,6 +63,7 @@ struct GlobalControlBar<Trailing: View>: View {
             accountMenu()
             serverMenu
             refreshControl
+            shareView
             trailing
         }
         .padding(.horizontal, 20).padding(.vertical, 8)
@@ -169,7 +177,7 @@ struct GlobalControlBar<Trailing: View>: View {
     /// Last time the market data was refreshed (mirrors the web header time).
     @ViewBuilder private var lastUpdatedLabel: some View {
         if let ts = appState.lastUpdated {
-            Text(ts.formatted(date: .omitted, time: .shortened))
+            Text("Calculated " + ts.formatted(date: .omitted, time: .shortened))
                 .appFont(.system(size: 11, weight: .medium)).monospacedDigit()
                 .foregroundStyle(.secondary)
         }
@@ -258,6 +266,7 @@ struct GlobalControlBar<Trailing: View>: View {
                 marketStatusCompact
 
                 refreshControl
+                shareView
             }
             // Single instance kept across the active/inactive switch so focus and
             // typed text survive when the sibling controls show/hide.

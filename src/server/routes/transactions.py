@@ -6,13 +6,13 @@ import re
 import sqlite3
 import tempfile
 from datetime import datetime, date
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 import fastapi
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from starlette.concurrency import run_in_threadpool
 
 import config
@@ -33,6 +33,7 @@ from server.dependencies import (
 )
 from server.pdf_parser import extract_transactions_from_file
 from server.route_utils import clean_nans
+from server.transaction_writes import atomic_submission
 
 # Statements and screenshots are a few MB; a phone scan of a long statement
 # might reach tens. Past this, the upload is refused rather than buffered to disk.
@@ -130,6 +131,8 @@ def _handle_auto_cash_generation(
     conn: sqlite3.Connection,
     tx_data: Dict[str, Any],
     account_cash_mode_map: Optional[Dict[str, str]] = None,
+    *,
+    commit: bool = True,
 ):
     """
     Automatically creates associated $CASH transactions for a stock Buy or Sell.
@@ -191,7 +194,7 @@ def _handle_auto_cash_generation(
     def post_leg(leg_type: str, amount: float, note: str):
         """Post one $CASH leg. 'Total Amount' is stored signed, matching the
         convention the clients write: Buy/Withdrawal negative, Sell positive."""
-        add_transaction_to_db(
+        success, _ = add_transaction_to_db(
             conn,
             {
                 "Date": date_str,
@@ -207,7 +210,10 @@ def _handle_auto_cash_generation(
                 "Note": note,
                 "user_id": user_id,
             },
+            **({"commit": False} if not commit else {}),
         )
+        if not success:
+            raise HTTPException(500, "Failed to create associated cash transaction")
 
     # Funding a buy sells $CASH; proceeds from a sell buy $CASH.
     verb = "Buy" if tx_type == "buy" else "Sell"
@@ -225,49 +231,32 @@ def create_transaction(
     transaction: TransactionInput,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None),
 ):
-    """
-    Creates a new transaction.
+    _, _, _, _, _, cash_mode, db_path, _ = data
+    conn = get_db_connection(db_path, use_cache=False)
+    if conn is None:
+        raise HTTPException(500, "Database connection failed")
+    payload = transaction.model_dump(by_alias=True)
 
-    Args:
-        transaction (TransactionInput): The transaction data payload.
-        data (tuple): Dependency injection.
+    def write():
+        tx_data = {**payload, "user_id": current_user.id}
+        success, new_id = add_transaction_to_db(conn, tx_data, commit=False)
+        if not success:
+            raise HTTPException(500, "Failed to add transaction")
+        if tx_data.get("Auto-add Cash"):
+            _handle_auto_cash_generation(conn, tx_data, cash_mode, commit=False)
+        return {"status": "success", "id": new_id, "message": "Transaction added"}
 
-    Returns:
-        Dict: Status message and the new transaction ID.
-    """
     try:
-        _, _, _, _, _, account_cash_mode_map, db_path, _ = data
-        conn = get_db_connection(db_path)
-        if not conn:
-            raise HTTPException(status_code=500, detail="Database connection failed")
-
-        # Convert Pydantic model to dict with correct keys for DB
-        tx_data = transaction.dict(by_alias=True)
-        tx_data["user_id"] = current_user.id
-
-        success, new_id = add_transaction_to_db(conn, tx_data)
-
-        if success and tx_data.get("Auto-add Cash"):
-            _handle_auto_cash_generation(conn, tx_data, account_cash_mode_map)
-
+        response, changed = atomic_submission(
+            conn, current_user.id, "transactions", idempotency_key, payload, write
+        )
+    finally:
         conn.close()
-
-        if success:
-            reload_data_and_clear_cache(
-                current_user
-            )  # Refresh transaction and summary caches
-            return {"status": "success", "id": new_id, "message": "Transaction added"}
-        else:
-            raise HTTPException(
-                status_code=500, detail="Failed to add transaction to database"
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error adding transaction: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to add transaction")
+    if changed:
+        reload_data_and_clear_cache(current_user)
+    return response
 
 
 @router.post("/transactions/parse_document")
@@ -346,67 +335,45 @@ def add_transactions_batch(
     payload: TransactionBatchInput,
     data: tuple = Depends(get_transaction_data),
     current_user: User = Depends(get_current_user),
+    idempotency_key: Optional[str] = Header(None),
 ):
-    """
-    Adds a batch of transactions to the database. Used for the Review &
-    Confirm step after document parsing.
+    _, _, _, _, _, cash_mode, db_path, _ = data
+    conn = get_db_connection(db_path, use_cache=False)
+    if conn is None:
+        raise HTTPException(500, "Database connection failed")
 
-    Auto-add-cash behaviour is decided **per account** rather than globally:
-    the explicit $CASH legs only need to be generated for accounts that are
-    in *Manual* cash mode. Accounts already in *Auto* cash mode have the
-    engine generate cash deltas on the fly during valuation, so adding
-    explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
-    therefore acts as a user opt-in that still gets gated by the account's
-    cash mode — the gate itself lives in ``_handle_auto_cash_generation`` so
-    that the single-transaction route is covered by the same rule.
-    """
-    try:
-        _, _, _, _, _, account_cash_mode_map, db_path, _ = data
-        conn = get_db_connection(db_path)
-        if not conn:
-            raise HTTPException(status_code=500, detail="Database connection failed")
-
-        imported_count = 0
-        errors = []
-        cash_mode_map = account_cash_mode_map or {}
-
+    def write():
         for tx_input in payload.transactions:
-            # Convert back to dict for the lower-level add_transaction_to_db
-            # This handles JSON key aliases correctly
-            tx_data = tx_input.model_dump(by_alias=True)
-
-            # Set the user_id for isolation
-            tx_data["user_id"] = current_user.id
-
-            success, error = add_transaction_to_db(conn, tx_data)
-            if success:
-                imported_count += 1
-                if payload.auto_add_cash:
-                    # Accounts absent from the user's config default to Manual
-                    # inside the helper — opt-in stays safer for new accounts.
-                    _handle_auto_cash_generation(conn, tx_data, cash_mode_map)
-            else:
-                errors.append({"symbol": tx_input.Symbol, "error": error})
-
-        conn.close()
-
-        if imported_count > 0:
-            reload_data_and_clear_cache(current_user)
-
+            tx_data = {**tx_input.model_dump(by_alias=True), "user_id": current_user.id}
+            success, _ = add_transaction_to_db(conn, tx_data, commit=False)
+            if not success:
+                raise HTTPException(
+                    400, f"Could not import {tx_input.Symbol}; no rows were imported"
+                )
+            if payload.auto_add_cash:
+                _handle_auto_cash_generation(conn, tx_data, cash_mode, commit=False)
+        count = len(payload.transactions)
         return {
             "status": "success",
-            "message": f"Successfully imported {imported_count} transactions.",
-            "count": imported_count,
-            "errors": errors,
+            "message": f"Successfully imported {count} transactions.",
+            "count": count,
+            "errors": [],
         }
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Error in batch import: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="Failed to batch import transactions"
+    try:
+        response, changed = atomic_submission(
+            conn,
+            current_user.id,
+            "transactions/batch",
+            idempotency_key,
+            payload.model_dump(by_alias=True),
+            write,
         )
+    finally:
+        conn.close()
+    if changed and response["count"]:
+        reload_data_and_clear_cache(current_user)
+    return response
 
 
 @router.put("/transactions/{transaction_id}")
@@ -588,10 +555,6 @@ async def sync_ibkr(
             )
 
         _, _, _, _, _, _, db_path, _ = data
-        conn = get_db_connection(db_path)
-        if not conn:
-            raise HTTPException(status_code=500, detail="Database connection failed")
-
         connector = IBKRConnector(token=token, query_id=query_id)
         # Flex sync involves network I/O, run in threadpool to avoid blocking event loop
         try:
@@ -618,6 +581,12 @@ async def sync_ibkr(
                 "message": "Sync successful, but no new transactions were found in the report.",
                 "added_count": 0,
             }
+
+        # Open the portfolio only after IBKR returns transactions. Busy/error
+        # responses must not retain a database connection while retries run.
+        conn = get_db_connection(db_path)
+        if not conn:
+            raise HTTPException(status_code=500, detail="Database connection failed")
 
         staged_count = 0
         duplicate_count = 0
@@ -733,13 +702,33 @@ def get_pending_ibkr(
         )
 
 
+class IbkrApprovalInput(BaseModel):
+    ids: List[int]
+    accounts: Dict[
+        int,
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, strict=True)
+        ],
+    ] = Field(default_factory=dict)
+
+
 @router.post("/sync/ibkr/approve")
 def approve_ibkr(
-    ids: List[int],
+    approval: List[int] | IbkrApprovalInput,
     current_user: User = Depends(get_current_user),
     conn: sqlite3.Connection = Depends(get_user_db_connection),
 ):
-    """Approve and move transactions from staging to main table."""
+    """Approve pending rows with optional per-row destination accounts.
+
+    A legacy list of IDs retains the imported account for older clients.
+    """
+    ids = approval.ids if isinstance(approval, IbkrApprovalInput) else approval
+    accounts = approval.accounts if isinstance(approval, IbkrApprovalInput) else {}
+    if accounts.keys() - set(ids):
+        raise HTTPException(
+            status_code=422,
+            detail="Account selections must belong to approved transactions",
+        )
     try:
         cursor = conn.cursor()
         approved_count = 0
@@ -771,6 +760,9 @@ def approve_ibkr(
             )
             row = cursor.fetchone()
             if row:
+                row = list(row)
+                if p_id in accounts:
+                    row[cols.index("Account")] = accounts[p_id]
                 # Insert into main table
                 placeholders = ", ".join(["?"] * len(cols))
                 cursor.execute(

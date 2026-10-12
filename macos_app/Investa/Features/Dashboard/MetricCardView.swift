@@ -28,12 +28,15 @@ struct MetricCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 4) {
             Text(card.title)
                 .appFont(.caption)
                 .foregroundStyle(Color.ink3)
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
                 .fixedSize(horizontal: false, vertical: true)
+                MetricHelpButton(title: card.title)
+            }
 
             Text(card.value)
                 .appFont(.system(size: 22, weight: .semibold))

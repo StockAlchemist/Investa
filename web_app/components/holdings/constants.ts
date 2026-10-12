@@ -81,3 +81,10 @@ export const COLUMN_GROUPS: ColumnGroupDef[] = [
     { label: 'Income', cols: ['Divs', 'Est. Income', 'Yield (Cost) %', 'Yield (Mkt) %'] },
     { label: 'Details', cols: ['Sector', 'Industry', 'FX G/L %', 'Fees', 'Tags', 'Contribution %', 'AI Score', 'Intrinsic Value'] },
 ];
+
+export const HOLDINGS_PRESETS: Record<string, string[]> = {
+    Overview: ['Symbol', '% of Total', 'Price', 'Mkt Val', 'Day Chg', 'Day Chg %', 'Unreal. G/L'],
+    Performance: ['Symbol', 'Mkt Val', 'Total G/L', 'Total Ret %', 'IRR (%)', 'Contribution %', '1M Trend'],
+    Income: ['Symbol', 'Mkt Val', 'Divs', 'Est. Income', 'Yield (Cost) %', 'Yield (Mkt) %'],
+    Valuation: ['Symbol', 'Price', 'Intrinsic Value', 'AI Score', 'Sector'],
+};

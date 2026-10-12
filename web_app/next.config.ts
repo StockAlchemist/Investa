@@ -9,6 +9,7 @@ const withPWA = withPWAInit({
 const API_URL = process.env.API_URL || "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
+  distDir: process.env.INVESTA_NEXT_DIST_DIR || ".next",
   output: "standalone",
   compress: true,
   allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net", "muon", "*.ts.net"],

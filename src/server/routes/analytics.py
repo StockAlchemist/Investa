@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Set
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from starlette.concurrency import run_in_threadpool
+
 import config
 from finutils import is_cash_symbol
 from market_data import map_to_yf_symbol
@@ -623,8 +625,10 @@ async def get_risk_metrics(
         benchmark_values = (
             daily_df["^GSPC Price"] if "^GSPC Price" in daily_df.columns else None
         )
-        metrics = calculate_all_risk_metrics(
-            portfolio_values, benchmark_values=benchmark_values
+        metrics = await run_in_threadpool(
+            calculate_all_risk_metrics,
+            portfolio_values,
+            benchmark_values=benchmark_values,
         )
 
         # --- FIX: Calculate YTD Return from daily_df ---
@@ -663,7 +667,7 @@ async def get_risk_metrics(
 
     except Exception as e:
         logging.error(f"Error calculating risk metrics: {e}")
-        return {"error": str(e)}
+        raise HTTPException(500, "Failed to calculate risk metrics") from e
 
 
 async def _projection_history(currency: str, accounts, data: tuple):
@@ -792,7 +796,8 @@ async def get_projection_backtest(
             return {"available": False, "reason": "no_history", "currency": currency}
 
         bench_col = _benchmark_column(daily_df)
-        result = backtest_projection(
+        result = await run_in_threadpool(
+            backtest_projection,
             daily_df["Portfolio Accumulated Gain"].dropna(),
             benchmark_series=daily_df[bench_col] if bench_col else None,
             value_series=daily_df["Portfolio Value"]

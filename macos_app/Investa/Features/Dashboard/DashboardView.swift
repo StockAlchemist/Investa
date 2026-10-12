@@ -20,6 +20,7 @@ struct DashboardView: View {
             VStack(spacing: 0) {
                 VStack(spacing: 16) {
                     if let error = viewModel.errorMessage { errorBanner(error) }
+                    else if !viewModel.widgetErrors.isEmpty { errorBanner("Some analytics are unavailable. Retry to update them.") }
 
                     // Overview
                     if vis("portfolioHero") {
@@ -53,6 +54,7 @@ struct DashboardView: View {
                                              dayChange: viewModel.metrics?.dayChangeDisplay,
                                              dayChangePercent: viewModel.metrics?.dayChangePercent)
                     }
+                    detailedAnalyticsButton
                     if vis("projection") {
                         ProjectionCardView(projection: viewModel.projection, currency: cur,
                                            backtest: viewModel.projectionBacktest,
@@ -77,14 +79,17 @@ struct DashboardView: View {
             reload()
         }
         .onChange(of: selectionSignature) { _, _ in reload() }
-        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload(force: true) }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading || viewModel.backendRefreshing }
+        .onChange(of: viewModel.backendRefreshing) { _, refreshing in appState.isRefreshing = refreshing || viewModel.isLoading }
+        .onChange(of: viewModel.calculatedAt) { _, date in appState.lastUpdated = date }
         .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
         #else
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 16) {
                     if let error = viewModel.errorMessage { errorBanner(error) }
+                    else if !viewModel.widgetErrors.isEmpty { errorBanner("Some analytics are unavailable. Retry to update them.") }
 
                     // Overview
                     if vis("portfolioHero") {
@@ -118,6 +123,7 @@ struct DashboardView: View {
                                              dayChange: viewModel.metrics?.dayChangeDisplay,
                                              dayChangePercent: viewModel.metrics?.dayChangePercent)
                     }
+                    detailedAnalyticsButton
                     if vis("projection") {
                         ProjectionCardView(projection: viewModel.projection, currency: cur,
                                            backtest: viewModel.projectionBacktest,
@@ -142,8 +148,10 @@ struct DashboardView: View {
             reload()
         }
         .onChange(of: selectionSignature) { _, _ in reload() }
-        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload() }
-        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshRequested)) { _ in reload(force: true) }
+        .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading || viewModel.backendRefreshing }
+        .onChange(of: viewModel.backendRefreshing) { _, refreshing in appState.isRefreshing = refreshing || viewModel.isLoading }
+        .onChange(of: viewModel.calculatedAt) { _, date in appState.lastUpdated = date }
         .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
         #endif
     }
@@ -163,6 +171,15 @@ struct DashboardView: View {
 
     private func twoColumn<L: View, R: View>(_ left: L, _ right: R) -> some View {
         AdaptiveTwoColumn(left: left, right: right, spacing: 16)
+    }
+
+    private var detailedAnalyticsButton: some View {
+        let ids = ["projection", "riskMetrics", "sectorContribution", "topContributors"]
+        let expanded = ids.contains(where: vis)
+        return Button(expanded ? "Hide detailed analytics" : "Show detailed analytics") {
+            for id in ids where vis(id) == expanded { appState.toggle(.performance, id) }
+        }.buttonStyle(.bordered)
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
     }
 
     private func vis(_ id: String) -> Bool { appState.isVisible(.performance, id) }
@@ -218,8 +235,8 @@ struct DashboardView: View {
                             onSelectSymbol: { appState.openStock($0) })
     }
 
-    private let metricOrder = ["totalReturn", "unrealizedGL", "realizedGain", "annualTWR", "mwr",
-                                "ytdDividends", "dividendYield", "ytdReturn", "cashBalance", "fxGL", "fees", "taxes"]
+    private let metricOrder = ["cashBalance", "annualTWR", "totalReturn", "unrealizedGL", "realizedGain", "mwr",
+                                "ytdDividends", "dividendYield", "ytdReturn", "fxGL", "fees", "taxes"]
 
     // Compact metric grid: the web's 12 scalar cards, filtered by Layout visibility, in order.
     private var metricGrid: some View {
@@ -336,7 +353,7 @@ struct DashboardView: View {
             Image(systemName: "exclamationmark.triangle.fill")
             Text(message)
             Spacer()
-            Button("Retry") { reload() }
+            Button("Retry") { reload(force: true) }
         }
         .appFont(.callout)
         .padding(12)
@@ -348,14 +365,15 @@ struct DashboardView: View {
         let accounts = appState.selectedAccounts.sorted().joined(separator: ",")
         let benches = appState.benchmarks.sorted().joined(separator: ",")
         let custom = appState.period == .custom ? "\(appState.customFromYMD)>\(appState.customToYMD)" : ""
-        return "\(cur)|\(appState.period.rawValue)|\(custom)|\(appState.showClosed)|\(accounts)|\(benches)"
+        return "\(cur)|\(appState.period.rawValue)|\(custom)|\(appState.showClosed)|\(accounts)|\(benches)|\(appState.visibleOrdered(.performance))"
     }
 
-    private func reload() {
+    private func reload(force: Bool = false) {
         viewModel.reload(currency: cur, accounts: appState.accountsQuery, period: appState.period,
                          showClosed: appState.showClosed, benchmarks: appState.benchmarks,
                          customFrom: appState.period == .custom ? appState.customFromYMD : nil,
-                         customTo: appState.period == .custom ? appState.customToYMD : nil)
+                         customTo: appState.period == .custom ? appState.customToYMD : nil,
+                         visibleItems: Set(appState.visibleOrdered(.performance)), force: force)
     }
 }
 

@@ -443,17 +443,7 @@ export interface paths {
          */
         get: operations["get_transactions_api_transactions_get"];
         put?: never;
-        /**
-         * Create Transaction
-         * @description Creates a new transaction.
-         *
-         *     Args:
-         *         transaction (TransactionInput): The transaction data payload.
-         *         data (tuple): Dependency injection.
-         *
-         *     Returns:
-         *         Dict: Status message and the new transaction ID.
-         */
+        /** Create Transaction */
         post: operations["create_transaction_api_transactions_post"];
         delete?: never;
         options?: never;
@@ -491,20 +481,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Add Transactions Batch
-         * @description Adds a batch of transactions to the database. Used for the Review &
-         *     Confirm step after document parsing.
-         *
-         *     Auto-add-cash behaviour is decided **per account** rather than globally:
-         *     the explicit $CASH legs only need to be generated for accounts that are
-         *     in *Manual* cash mode. Accounts already in *Auto* cash mode have the
-         *     engine generate cash deltas on the fly during valuation, so adding
-         *     explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
-         *     therefore acts as a user opt-in that still gets gated by the account's
-         *     cash mode — the gate itself lives in ``_handle_auto_cash_generation`` so
-         *     that the single-transaction route is covered by the same rule.
-         */
+        /** Add Transactions Batch */
         post: operations["add_transactions_batch_api_transactions_batch_post"];
         delete?: never;
         options?: never;
@@ -622,7 +599,9 @@ export interface paths {
         put?: never;
         /**
          * Approve Ibkr
-         * @description Approve and move transactions from staging to main table.
+         * @description Approve pending rows with optional per-row destination accounts.
+         *
+         *     A legacy list of IDs retains the imported account for older clients.
          */
         post: operations["approve_ibkr_api_sync_ibkr_approve_post"];
         delete?: never;
@@ -2088,17 +2067,7 @@ export interface paths {
          */
         get: operations["get_transactions_transactions_get"];
         put?: never;
-        /**
-         * Create Transaction
-         * @description Creates a new transaction.
-         *
-         *     Args:
-         *         transaction (TransactionInput): The transaction data payload.
-         *         data (tuple): Dependency injection.
-         *
-         *     Returns:
-         *         Dict: Status message and the new transaction ID.
-         */
+        /** Create Transaction */
         post: operations["create_transaction_transactions_post"];
         delete?: never;
         options?: never;
@@ -2136,20 +2105,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Add Transactions Batch
-         * @description Adds a batch of transactions to the database. Used for the Review &
-         *     Confirm step after document parsing.
-         *
-         *     Auto-add-cash behaviour is decided **per account** rather than globally:
-         *     the explicit $CASH legs only need to be generated for accounts that are
-         *     in *Manual* cash mode. Accounts already in *Auto* cash mode have the
-         *     engine generate cash deltas on the fly during valuation, so adding
-         *     explicit legs there double-counts every imported trade. ``payload.auto_add_cash``
-         *     therefore acts as a user opt-in that still gets gated by the account's
-         *     cash mode — the gate itself lives in ``_handle_auto_cash_generation`` so
-         *     that the single-transaction route is covered by the same rule.
-         */
+        /** Add Transactions Batch */
         post: operations["add_transactions_batch_transactions_batch_post"];
         delete?: never;
         options?: never;
@@ -2267,7 +2223,9 @@ export interface paths {
         put?: never;
         /**
          * Approve Ibkr
-         * @description Approve and move transactions from staging to main table.
+         * @description Approve pending rows with optional per-row destination accounts.
+         *
+         *     A legacy list of IDs retains the imported account for older clients.
          */
         post: operations["approve_ibkr_sync_ibkr_approve_post"];
         delete?: never;
@@ -3401,10 +3359,73 @@ export interface components {
             /** History */
             history?: components["schemas"]["ChatMessage"][] | null;
         };
+        /** Freshness */
+        Freshness: {
+            /** Calculated At */
+            calculated_at?: number | null;
+            /** Quotes As Of */
+            quotes_as_of?: number | null;
+            /**
+             * Refreshing
+             * @default false
+             */
+            refreshing: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HeadlineResponse */
+        HeadlineResponse: {
+            metrics?: components["schemas"]["PortfolioMetrics"] | null;
+            freshness?: components["schemas"]["Freshness"] | null;
+        };
+        /** HistoryPoint */
+        HistoryPoint: {
+            /** Date */
+            date: string;
+            /** Value */
+            value: number;
+            /** Twr */
+            twr: number;
+            /** Drawdown */
+            drawdown: number;
+            /**
+             * Is Baseline
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Abs Gain
+             * @default 0
+             */
+            abs_gain: number;
+            /**
+             * Abs Roi
+             * @default 0
+             */
+            abs_roi: number;
+            /**
+             * Cum Flow
+             * @default 0
+             */
+            cum_flow: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** HoldingResponse */
+        HoldingResponse: {
+            /** Symbol */
+            Symbol: string;
+            /** Quantity */
+            Quantity?: number | null;
+            /** Account */
+            Account?: string | null;
+            /** Lots */
+            lots?: Record<string, never>[];
+        } & {
+            [key: string]: unknown;
         };
         /** HoldingTagUpdate */
         HoldingTagUpdate: {
@@ -3415,12 +3436,47 @@ export interface components {
             /** Tags */
             tags: string;
         };
+        /** IbkrApprovalInput */
+        IbkrApprovalInput: {
+            /** Ids */
+            ids: number[];
+            /** Accounts */
+            accounts?: {
+                [key: string]: string;
+            };
+        };
         /** ManualOverrideRequest */
         ManualOverrideRequest: {
             /** Symbol */
             symbol: string;
             /** Price */
             price?: number | null;
+        };
+        /** PortfolioMetrics */
+        PortfolioMetrics: {
+            /** Market Value */
+            market_value?: number | null;
+            /** Day Change Display */
+            day_change_display?: number | null;
+            /** Day Change Percent */
+            day_change_percent?: number | null;
+            /** Cash Balance */
+            cash_balance?: number | null;
+            /** Cumulative Twr */
+            cumulative_twr?: number | null;
+            /** Annualized Twr */
+            annualized_twr?: number | null;
+            /** Portfolio Mwr */
+            portfolio_mwr?: number | null;
+            /**
+             * All Selected Closed
+             * @default false
+             */
+            all_selected_closed: boolean;
+            /** Closed Accounts */
+            closed_accounts?: string[];
+        } & {
+            [key: string]: unknown;
         };
         /** ScreenerRequest */
         ScreenerRequest: {
@@ -3511,6 +3567,17 @@ export interface components {
                     [key: string]: number;
                 };
             } | null;
+        };
+        /** SummaryResponse */
+        SummaryResponse: {
+            metrics?: components["schemas"]["PortfolioMetrics"] | null;
+            freshness?: components["schemas"]["Freshness"] | null;
+            /** Account Metrics */
+            account_metrics?: Record<string, never> | null;
+            /** Summary Df */
+            summary_df?: Record<string, never>[];
+            /** Holdings Dict */
+            holdings_dict?: Record<string, never>;
         };
         /** Token */
         Token: {
@@ -4335,7 +4402,9 @@ export interface operations {
     create_transaction_api_transactions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "idempotency-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4401,7 +4470,9 @@ export interface operations {
     add_transactions_batch_api_transactions_batch_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "idempotency-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4579,7 +4650,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": number[];
+                "application/json": number[] | components["schemas"]["IbkrApprovalInput"];
             };
         };
         responses: {
@@ -4688,7 +4759,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SummaryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4720,7 +4791,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HeadlineResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4786,7 +4857,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HoldingResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -4927,7 +4998,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HistoryPoint"][];
                 };
             };
             /** @description Validation Error */
@@ -6771,7 +6842,9 @@ export interface operations {
     create_transaction_transactions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "idempotency-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -6837,7 +6910,9 @@ export interface operations {
     add_transactions_batch_transactions_batch_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "idempotency-key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -7015,7 +7090,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": number[];
+                "application/json": number[] | components["schemas"]["IbkrApprovalInput"];
             };
         };
         responses: {
@@ -7124,7 +7199,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SummaryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7156,7 +7231,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HeadlineResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7222,7 +7297,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HoldingResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -7363,7 +7438,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HistoryPoint"][];
                 };
             };
             /** @description Validation Error */

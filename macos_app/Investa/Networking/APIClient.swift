@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 extension Notification.Name {
     /// Posted when the backend rejects the token (HTTP 401). The auth layer
@@ -9,17 +10,17 @@ extension Notification.Name {
 
 /// Async HTTP client for the Investa FastAPI backend.
 ///
-/// Stateless aside from reading the bearer token from `KeychainStore` on each
-/// request, so it is safe to share. All methods are `async` and throw `APIError`.
+/// Concurrent reads share their transport request. Transaction submissions keep
+/// a durable receipt key until confirmed. All methods throw `APIError`.
 final class APIClient: Sendable {
     static let shared = APIClient()
 
     private let session: URLSession
-    private let decoder: JSONDecoder
+    private let requests = ReadRequests()
+    private let submissions = SubmissionKeys()
 
     init(session: URLSession = .shared) {
         self.session = session
-        self.decoder = JSONDecoder()
     }
 
     // MARK: - Public requests
@@ -67,7 +68,9 @@ final class APIClient: Sendable {
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             do {
-                request.httpBody = try JSONEncoder().encode(body)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                request.httpBody = try encoder.encode(body)
             } catch {
                 throw APIError.decoding(underlying: error)
             }
@@ -108,11 +111,25 @@ final class APIClient: Sendable {
 
     // MARK: - Core Execution with Exponential Backoff Retries
 
-    private func send<T: Decodable>(_ request: URLRequest, maxAttempts: Int = 3, baseDelay: TimeInterval = 0.35) async throws -> T {
+    private func send<T: Decodable>(_ original: URLRequest, maxAttempts requestedAttempts: Int = 3, baseDelay: TimeInterval = 0.35) async throws -> T {
+        var request = original
+        let path = request.url?.path ?? ""
+        let protectedWrite = request.httpMethod == "POST" && (path.hasSuffix("/transactions") || path.hasSuffix("/transactions/batch"))
+        var submission: String?
+        if protectedWrite {
+            var identity = Data((request.url!.absoluteString + (request.value(forHTTPHeaderField: "Authorization") ?? "")).utf8)
+            identity.append(request.httpBody ?? Data())
+            let digest = SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
+            submission = digest
+            request.setValue(await submissions.key(for: digest), forHTTPHeaderField: "Idempotency-Key")
+        }
+        let safeRead = ["GET", "HEAD", "OPTIONS"].contains(request.httpMethod ?? "GET")
+        let maxAttempts = safeRead || protectedWrite ? requestedAttempts : 1
         var lastError: Error?
         var lastResponse: HTTPURLResponse?
 
         for attempt in 0..<maxAttempts {
+            try Task.checkCancellation()
             if attempt > 0 {
                 let jitter = Double.random(in: 0.02...0.08)
                 let delay = baseDelay * pow(2.0, Double(attempt - 1)) + jitter
@@ -123,7 +140,10 @@ final class APIClient: Sendable {
             }
 
             do {
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = safeRead
+                    ? try await requests.data(for: request, session: session)
+                    : try await session.data(for: request)
+                try Task.checkCancellation()
                 guard let http = response as? HTTPURLResponse else {
                     let err = APIError.http(status: -1, detail: nil)
                     lastError = err
@@ -152,7 +172,9 @@ final class APIClient: Sendable {
                 }
 
                 do {
-                    return try decoder.decode(T.self, from: data)
+                    let result = try JSONDecoder().decode(T.self, from: data)
+                    if let submission { await submissions.forget(submission) }
+                    return result
                 } catch {
                     throw APIError.decoding(underlying: error)
                 }
@@ -268,5 +290,33 @@ final class APIClient: Sendable {
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         return obj["detail"] as? String ?? obj["message"] as? String
+    }
+}
+
+private actor SubmissionKeys {
+    private var keys = UserDefaults.standard.dictionary(forKey: "investa.pendingSubmissionKeys") as? [String: String] ?? [:]
+    func key(for digest: String) -> String {
+        if let key = keys[digest] { return key }
+        let key = UUID().uuidString
+        keys[digest] = key
+        UserDefaults.standard.set(keys, forKey: "investa.pendingSubmissionKeys")
+        return key
+    }
+    func forget(_ digest: String) {
+        keys.removeValue(forKey: digest)
+        UserDefaults.standard.set(keys, forKey: "investa.pendingSubmissionKeys")
+    }
+}
+
+private actor ReadRequests {
+    private var inflight: [String: (UUID, Task<(Data, URLResponse), Error>)] = [:]
+    func data(for request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
+        let key = (request.url?.absoluteString ?? "") + (request.value(forHTTPHeaderField: "Authorization") ?? "")
+        if let entry = inflight[key] { return try await entry.1.value }
+        let id = UUID()
+        let task = Task { try await session.data(for: request) }
+        inflight[key] = (id, task)
+        defer { if inflight[key]?.0 == id { inflight.removeValue(forKey: key) } }
+        return try await task.value
     }
 }
