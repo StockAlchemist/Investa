@@ -29,7 +29,7 @@ struct DashboardView: View {
                     if vis("todayStrip") {
                         TodayStripCard(holdings: viewModel.holdings, currency: cur,
                                        portfolioDayPct: viewModel.metrics?.dayChangePercent,
-                                       indices: viewModel.indices,
+                                       indices: appState.indices,
                                        onSelectSymbol: { appState.openStock($0) })
                     }
 
@@ -83,7 +83,6 @@ struct DashboardView: View {
         .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading || viewModel.backendRefreshing }
         .onChange(of: viewModel.backendRefreshing) { _, refreshing in appState.isRefreshing = refreshing || viewModel.isLoading }
         .onChange(of: viewModel.calculatedAt) { _, date in appState.lastUpdated = date }
-        .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
         #else
         VStack(spacing: 0) {
             ScrollView {
@@ -98,7 +97,7 @@ struct DashboardView: View {
                     if vis("todayStrip") {
                         TodayStripCard(holdings: viewModel.holdings, currency: cur,
                                        portfolioDayPct: viewModel.metrics?.dayChangePercent,
-                                       indices: viewModel.indices,
+                                       indices: appState.indices,
                                        onSelectSymbol: { appState.openStock($0) })
                     }
 
@@ -152,7 +151,6 @@ struct DashboardView: View {
         .onChange(of: viewModel.isLoading) { _, loading in appState.isRefreshing = loading || viewModel.backendRefreshing }
         .onChange(of: viewModel.backendRefreshing) { _, refreshing in appState.isRefreshing = refreshing || viewModel.isLoading }
         .onChange(of: viewModel.calculatedAt) { _, date in appState.lastUpdated = date }
-        .preference(key: IndicesPreferenceKey.self, value: Array(viewModel.indices.prefix(3)))
         #endif
     }
 
@@ -374,12 +372,5 @@ struct DashboardView: View {
                          customFrom: appState.period == .custom ? appState.customFromYMD : nil,
                          customTo: appState.period == .custom ? appState.customToYMD : nil,
                          visibleItems: Set(appState.visibleOrdered(.performance)), force: force)
-    }
-}
-
-struct IndicesPreferenceKey: PreferenceKey {
-    static var defaultValue: [IndexQuote] = []
-    static func reduce(value: inout [IndexQuote], nextValue: () -> [IndexQuote]) {
-        value = nextValue()
     }
 }

@@ -57,6 +57,32 @@ final class PortfolioRuntimeTests: XCTestCase {
         XCTAssertFalse(paths.contains { $0.contains("projection") || $0.contains("risk_metrics") })
     }
 
+    func testYTDCardLoadsWithoutRiskAnalytics() async throws {
+        var riskRequests: [URL] = []
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url!.path
+            let body: String
+            if path.hasSuffix("/risk_metrics") {
+                riskRequests.append(request.url!)
+                body = "{\"YTD Return\":0.182}"
+            } else if path.hasSuffix("/summary") || path.hasSuffix("/summary/headline") {
+                body = "{\"metrics\":{\"market_value\":100}}"
+            } else { body = "[]" }
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        defer { MockURLProtocol.requestHandler = nil }
+        let model = DashboardViewModel(api: client())
+        model.reload(currency: "USD", accounts: ["Taxable"], period: .oneYear,
+                     showClosed: false, benchmarks: [], visibleItems: ["ytdReturn"])
+        await settled(model)
+        XCTAssertEqual(model.risk?.ytdReturn, 0.182)
+        XCTAssertEqual(riskRequests.count, 1)
+        let request = try XCTUnwrap(riskRequests.first)
+        let query = URLComponents(url: request, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(query.first { $0.name == "currency" }?.value, "USD")
+        XCTAssertEqual(query.first { $0.name == "accounts" }?.value, "Taxable")
+    }
+
     func testSharedContractFixtureDecodes() throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "portfolio_contract", withExtension: "json"))
         struct Fixture: Decodable { let summary: SummaryResponse; let holdings: [Holding]; let history: [PerformancePoint] }

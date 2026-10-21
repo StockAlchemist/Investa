@@ -24,7 +24,6 @@ final class DashboardViewModel: ObservableObject {
     @Published var attribution: Attribution?
     @Published var dividendEvents: [DividendEvent] = []
     @Published var earningsEvents: [EarningsEvent] = []
-    @Published var indices: [IndexQuote] = []
 
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -100,7 +99,8 @@ final class DashboardViewModel: ObservableObject {
             async let heroHistory: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "1y"), URLQueryItem(name: "interval", value: "1d")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroHistory = value }
             async let heroIntraday: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "1d"), URLQueryItem(name: "interval", value: "2m")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroIntraday = value }
             async let heroWTD: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "5d"), URLQueryItem(name: "interval", value: "15m")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroWTD = value }
-            async let risk: Void = self.fetch("/risk_metrics", query: core, revision: revision, enabled: needsCore && visibleItems.contains("riskMetrics")) { (value: RiskMetrics) in self.risk = value }
+            // YTD is supplied by risk metrics even when Risk Analytics is hidden.
+            async let risk: Void = self.fetch("/risk_metrics", query: core, revision: revision, enabled: needsCore && !visibleItems.isDisjoint(with: ["riskMetrics", "ytdReturn"])) { (value: RiskMetrics) in self.risk = value }
             async let projection: Void = self.fetch("/projection", query: base, revision: revision, enabled: needsCore && visibleItems.contains("projection")) { (value: Projection) in self.projection = value }
             async let health: Void = self.fetch("/portfolio_health", query: core, revision: revision, enabled: needsCore && !visibleItems.isDisjoint(with: ["riskMetrics", "dashboardInsights"])) { (value: PortfolioHealth) in self.health = value }
             async let attr: Void = self.fetch("/attribution", query: core, revision: revision, enabled: needsCore && !visibleItems.isDisjoint(with: ["sectorContribution", "topContributors"])) { (value: Attribution) in self.attribution = value }

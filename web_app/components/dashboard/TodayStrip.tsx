@@ -48,13 +48,12 @@ function ColumnLabel({ icon: Icon, children, tone }: {
 }
 
 /**
- * One row of a column: a label, then its figures right beside it.
+ * Phone rows span the card and share right-aligned figure columns.
  *
- * The label column is capped rather than `1fr`: stretched across a third of a
- * wide dashboard it pushed each figure ~400px from the name it belongs to, and
- * the strip read as two unrelated lists with a gap down the middle.
+ * On wider screens the label column is capped: stretching across a wide
+ * dashboard would separate the figures from the names they belong to.
  */
-const ROW = 'grid grid-cols-[minmax(0,4.5rem)_4rem_4.25rem] items-baseline gap-x-3 text-xs';
+const ROW = 'grid w-full grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-baseline gap-x-2 text-xs sm:w-auto sm:grid-cols-[minmax(0,4.5rem)_4rem_4.25rem] sm:gap-x-3';
 
 /** Your own day, as the figure the rest of the strip is read against. */
 function YouColumn({ portfolioDayChangePct, benchmark }: {
@@ -79,7 +78,7 @@ function YouColumn({ portfolioDayChangePct, benchmark }: {
             <div className={cn('text-2xl font-bold tabular-nums leading-none', up ? 'text-up' : 'text-down')}>
                 {up ? '+' : ''}{portfolioDayChangePct.toFixed(2)}%
             </div>
-            <div className="mt-1.5 text-xs text-muted-foreground whitespace-nowrap">
+            <div className="mt-1.5 text-xs text-muted-foreground sm:whitespace-nowrap">
                 Your portfolio
                 {delta != null && benchmark && (
                     <>
@@ -148,7 +147,7 @@ function MoversColumn({ rows, currency, positive, onPick }: {
                             key={r.symbol}
                             type="button"
                             onClick={() => onPick(r.symbol)}
-                            className={cn(ROW, 'hover:bg-muted/40 -mx-1.5 px-1.5 rounded transition-colors text-left')}
+                            className={cn(ROW, 'hover:bg-muted/40 px-0 sm:-mx-1.5 sm:px-1.5 rounded transition-colors text-left')}
                         >
                             <span className="text-foreground font-bold truncate">{r.symbol}</span>
                             <span className={cn('tabular-nums font-bold text-right', tone)}>

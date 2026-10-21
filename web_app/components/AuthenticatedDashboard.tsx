@@ -446,7 +446,8 @@ export default function AuthenticatedDashboard() {
     queryFn: ({ signal }) => fetchRiskMetrics(currency, selectedAccounts, showClosed, signal),
     staleTime: 5 * 60 * 1000,
 
-    enabled: !!user && mounted && ((activeTab === 'performance' && visibleItems.includes('riskMetrics')) || activeTab === 'asset_change'),
+    // The standalone YTD card also consumes /risk_metrics; summary may omit it.
+    enabled: !!user && mounted && ((activeTab === 'performance' && visibleItems.some(id => ['riskMetrics', 'ytdReturn'].includes(id))) || activeTab === 'asset_change'),
   });
 
   const attributionQuery = useQuery({

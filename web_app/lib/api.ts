@@ -717,6 +717,8 @@ export async function updateSettings(settings: SettingsUpdate): Promise<StatusRe
 
 
 export interface RiskMetrics {
+    /** Year-to-date return as a fraction (0.123 means 12.3%). */
+    'YTD Return'?: number;
     'Max Drawdown'?: number;
     'Volatility (Ann.)'?: number;
     'Sharpe Ratio'?: number;

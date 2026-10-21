@@ -349,7 +349,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Fetch the global market indices for the app title bar.
+    /// Fetch shared market indices for the title bar and Today comparisons.
     func fetchIndices() async {
         do {
             if let map: [String: IndexQuote] = try await api.get("/indices") {
