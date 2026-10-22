@@ -454,6 +454,10 @@ struct GlobalControlBar<Trailing: View>: View {
                 }
             }
         }
+        MenuDivider()
+        MenuToggleRow(title: "Reset to Default", isOn: false, dismissOnTap: true) {
+            appState.resetLayout(section)
+        }
     }
 
     private func groupedItems(_ items: [LayoutItem]) -> [(label: String?, items: [LayoutItem])] {

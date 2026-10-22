@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import RebalanceHelper from '@/components/portfolio/RebalanceHelper';
 import type { Holding } from '@/lib/api';
@@ -53,7 +53,9 @@ async function renderCard(holdings: Holding[]) {
     );
     // The card needs the settings query to land before targets exist.
     await screen.findByText(/Asset Type/);
-    await new Promise(r => setTimeout(r, 0));
+    await act(async () => {
+        await new Promise(r => setTimeout(r, 0));
+    });
 }
 
 describe('RebalanceHelper with unclassified holdings', () => {

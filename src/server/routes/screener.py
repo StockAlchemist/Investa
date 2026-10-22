@@ -69,7 +69,7 @@ async def run_screener(
             universe_id,
             manual_symbols,
             db_conn=db_conn,
-            fast_mode=request.fast_mode,
+            fast_mode=request.fast_mode or False,
         )
         return clean_nans(results)
     except Exception as e:

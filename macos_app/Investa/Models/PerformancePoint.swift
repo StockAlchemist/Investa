@@ -51,13 +51,7 @@ struct PerformancePoint: Codable, Sendable, Identifiable {
         return PerformancePoint.dayFormatter.date(from: String(date.prefix(10)))
     }
 
-    private static let dayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
+    private static let dayFormatter: DateFormatter = MarketTime.isoFormatter(timeZone: MarketTime.utc)
     private static let intradayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")

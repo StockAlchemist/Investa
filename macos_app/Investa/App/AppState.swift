@@ -173,7 +173,12 @@ final class AppState: ObservableObject {
             set.insert(id)
         }
         tabVisible[section.rawValue] = set
-        persistVisible()
+        persistVisible(syncPerformanceToBackend: section == .performance)
+    }
+
+    func resetLayout(_ section: AppSection) {
+        tabVisible[section.rawValue] = TabLayout.defaultVisible(for: section)
+        persistVisible(syncPerformanceToBackend: section == .performance)
     }
 
     /// Visible ids for a tab, in the registry's canonical order.
@@ -182,10 +187,15 @@ final class AppState: ObservableObject {
         return TabLayout.items(for: section).map(\.id).filter { set.contains($0) }
     }
 
-    private func persistVisible() {
+    private func persistVisible(syncPerformanceToBackend: Bool = false) {
         let encodable = tabVisible.mapValues { Array($0) }
         if let data = try? JSONEncoder().encode(encodable) {
             UserDefaults.standard.set(data, forKey: visibleDefaultsKey)
+        }
+        if syncPerformanceToBackend {
+            let ordered = visibleOrdered(.performance)
+            struct Body: Encodable { let visible_items: [String] }
+            Task { let _: StatusResponse? = try? await api.send(method: "POST", path: "/settings/update", body: Body(visible_items: ordered)) }
         }
     }
     private func loadVisiblePersisted() {
@@ -202,9 +212,7 @@ final class AppState: ObservableObject {
         selectedAccounts.isEmpty ? nil : Array(selectedAccounts)
     }
 
-    private static let ymd: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
-    }()
+    private static let ymd: DateFormatter = MarketTime.isoFormatter()
     var customFromYMD: String { Self.ymd.string(from: customFrom) }
     var customToYMD: String { Self.ymd.string(from: customTo) }
 

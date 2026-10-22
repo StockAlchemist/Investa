@@ -63,8 +63,8 @@ final class DashboardViewModel: ObservableObject {
             attribution = nil; dividendEvents = []; earningsEvents = []
             heroHistory = []; heroIntraday = []; heroWTD = []; calculatedAt = nil; backendRefreshing = false
             projectionBacktest = nil; backtestKey = nil; isLoadingBacktest = false; chartCache.removeAll()
+            history = []
         }
-        history = []
         widgetErrors = [:]; errorMessage = nil; isLoading = true
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -80,7 +80,8 @@ final class DashboardViewModel: ObservableObject {
             }
             let chartItems = chart
             let chartKey = chartItems.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")
-            if sameScope, let cached = self.chartCache[chartKey] { self.history = cached }
+            if let cached = self.chartCache[chartKey] { self.history = cached }
+            else if !force { self.history = [] }
             let needsChart = visibleItems.contains("performanceGraph") && (force || self.chartCache[chartKey] == nil)
             let needsCore = !sameScope
             async let headline: Void = self.fetch("/summary/headline", query: base, revision: revision, enabled: needsCore) { (response: SummaryResponse) in
@@ -97,7 +98,7 @@ final class DashboardViewModel: ObservableObject {
             }
             let needsHero = needsCore && visibleItems.contains("portfolioHero")
             async let heroHistory: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "1y"), URLQueryItem(name: "interval", value: "1d")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroHistory = value }
-            async let heroIntraday: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "1d"), URLQueryItem(name: "interval", value: "2m")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroIntraday = value }
+            async let heroIntraday: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "1d"), URLQueryItem(name: "interval", value: "5m")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroIntraday = value }
             async let heroWTD: Void = self.fetch("/history", query: base + [URLQueryItem(name: "period", value: "5d"), URLQueryItem(name: "interval", value: "15m")], revision: revision, enabled: needsHero) { (value: [PerformancePoint]) in self.heroWTD = value }
             // YTD is supplied by risk metrics even when Risk Analytics is hidden.
             async let risk: Void = self.fetch("/risk_metrics", query: core, revision: revision, enabled: needsCore && !visibleItems.isDisjoint(with: ["riskMetrics", "ytdReturn"])) { (value: RiskMetrics) in self.risk = value }

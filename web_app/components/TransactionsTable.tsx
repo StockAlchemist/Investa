@@ -115,6 +115,16 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
         setIsModalOpen(true);
     };
 
+    const invalidateTransactionQueries = () => {
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['summary'] });
+        queryClient.invalidateQueries({ queryKey: ['headline'] });
+        queryClient.invalidateQueries({ queryKey: ['holdings'] });
+        queryClient.invalidateQueries({ queryKey: ['history'] });
+        queryClient.invalidateQueries({ queryKey: ['capital_gains'] });
+        queryClient.invalidateQueries({ queryKey: ['dividends'] });
+    };
+
     const handleDelete = async (tx: Transaction) => {
         if (!tx.id) {
             alert("Cannot delete transaction without ID");
@@ -123,9 +133,7 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
         if (window.confirm(`Are you sure you want to delete transaction ${tx.Symbol} on ${formatCalendarDate(tx.Date)}?`)) {
             try {
                 await deleteTransaction(tx.id);
-                queryClient.invalidateQueries({ queryKey: ['transactions'] });
-                queryClient.invalidateQueries({ queryKey: ['summary'] });
-                queryClient.invalidateQueries({ queryKey: ['holdings'] });
+                invalidateTransactionQueries();
             } catch (error) {
                 console.error("Failed to delete transaction:", error);
                 alert("Failed to delete transaction");
@@ -141,9 +149,7 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
                 if (!transaction.id) throw new Error("Transaction ID missing for update");
                 await updateTransaction(transaction.id, transaction);
             }
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
-            queryClient.invalidateQueries({ queryKey: ['summary'] });
-            queryClient.invalidateQueries({ queryKey: ['holdings'] });
+            invalidateTransactionQueries();
         } catch (error) {
             console.error("Failed to save transaction:", error);
             throw error;
@@ -155,12 +161,17 @@ export default function TransactionsTable({ transactions = [], currency = 'USD',
         setSyncStatus(null);
         try {
             const res = await syncIbkr();
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] }),
-                queryClient.invalidateQueries({ queryKey: ['transactions'] }),
-                queryClient.invalidateQueries({ queryKey: ['summary'] }),
-                queryClient.invalidateQueries({ queryKey: ['holdings'] }),
-            ]);
+            if (typeof res.staged_count === 'number' && res.staged_count > 0) {
+                await queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] });
+            } else {
+                await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ['pendingIbkr'] }),
+                    queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+                    queryClient.invalidateQueries({ queryKey: ['summary'] }),
+                    queryClient.invalidateQueries({ queryKey: ['headline'] }),
+                    queryClient.invalidateQueries({ queryKey: ['holdings'] }),
+                ]);
+            }
             setSyncStatus({
                 message: res.message || 'IBKR sync complete.',
                 type: 'success',

@@ -50,22 +50,30 @@ npm run test:e2e     # Playwright E2E tests (hermetic — backend mocked via pag
 
 ### Backend (`src/`)
 
-The backend separates concerns across large modules. Key files:
+The backend separates concerns across domain routers and core engine modules. Key files:
 
 | File | Role |
 |------|------|
-| `server/main.py` | FastAPI app setup, lifespan |
-| `server/api.py` | All REST routes (~3,600 LOC) |
-| `portfolio_logic.py` | Core portfolio engine — positions, P&L, cash flows (~7,300 LOC) |
-| `portfolio_analyzer.py` | Performance metrics, returns, drawdown |
-| `market_data.py` | yfinance integration, price caching, fallbacks |
-| `db_utils.py` | SQLite ORM, all database operations |
+| `server/main.py` | FastAPI app setup, lifespan, CORS, GZip & timing middleware |
+| `server/api.py` | Top-level router aggregating domain routers under `server/routes/*` |
+| `server/routes/*` | Domain REST routers (`portfolio`, `analytics`, `transactions`, `market`, `screener`, `watchlist`, `buffett_rank`, `strategies`, `settings`, `auth`, `admin`) |
+| `server/portfolio_service.py` | Portfolio summary/history calculation engine, SWR caches, and background warmup |
+| `portfolio_logic.py` | Core portfolio engine — positions, P&L, cash flows |
+| `portfolio_history.py` | Historical performance and daily valuation series |
+| `portfolio_valuation_kernels.py` | Numba JIT-accelerated portfolio valuation kernels |
+| `portfolio_analyzer.py` | Performance metrics, returns, FIFO lots, drawdown |
+| `market_data.py` | yfinance/Tiingo/FMP integration, bounded TTL caches, isolated worker pool |
+| `market_db.py` | Persistent SQLite archive for daily/intraday OHLCV, FX, and corporate actions |
+| `db_utils.py` | SQLite connection factory (`WAL` + `busy_timeout`), schema migrations, user/screener CRUD |
 | `finutils.py` | Low-level financial math |
 | `financial_ratios.py` | Twelve intrinsic-value models, the business-aware blend, financial ratios |
-| `server/refresh_worker.py` | Background tasks (price refresh, etc.) |
+| `server/refresh_worker.py` | Background tasks (price refresh, index quotes, Thai fund NAVs) |
 | `server/ai_analyzer.py` | Per-stock Gemini AI analysis |
+| `server/portfolio_ai_analyzer.py` | Whole-portfolio Gemini AI review and optimization analysis |
 | `server/screener_service.py` | Market screener logic |
-| `ibkr_connector.py` | Interactive Brokers sync |
+| `buffett_pipeline.py` | Buffett/value ranking of all US listed stocks (batch) |
+| `edgar_provider.py` | SEC EDGAR XBRL fundamentals (~17y annual + quarterly history, tag fallback chains) |
+| `ibkr_connector.py` | Interactive Brokers Flex Web Service sync |
 
 Performance-critical valuation paths use **Numba JIT** (`@jit(nopython=True)`). Avoid breaking Numba-compatible code (no Python objects, use NumPy arrays).
 
@@ -75,8 +83,8 @@ Next.js App Router layout:
 - `app/page.tsx` — Dashboard (main entry)
 - `app/(auth)/` — Login/register pages
 - `app/screener/` — Market screener
-- `components/` — 51 React components; key ones: `Dashboard.tsx`, `HoldingsTable.tsx`, `PerformanceGraph.tsx`, `StockDetailModal.tsx`
-- `lib/api.ts` — Typed API client
+- `components/` — Modular React components and feature subdirectories (`dashboard/`, `holdings/`, `stock-detail/`, `transactions/`, `performance/`, `portfolio/`, `capital-gains/`, `income/`, `watchlist/`, `settings/`, `layout/`, `ui/`)
+- `lib/api.ts` — Typed API client backed by OpenAPI types (`src/api/types.ts`)
 - `context/` — Auth and theme React contexts
 
 Data fetching uses **TanStack Query** (React Query). UI primitives come from **Radix UI** with **Tailwind CSS** styling. Charts use **Recharts**.

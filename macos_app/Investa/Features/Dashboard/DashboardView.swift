@@ -24,7 +24,7 @@ struct DashboardView: View {
 
                     // Overview
                     if vis("portfolioHero") {
-                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD, isLoading: viewModel.isLoading)
+                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD, isMarketOpen: appState.marketIsOpen == true, isLoading: viewModel.isLoading)
                     }
                     if vis("todayStrip") {
                         TodayStripCard(holdings: viewModel.holdings, currency: cur,
@@ -92,7 +92,7 @@ struct DashboardView: View {
 
                     // Overview
                     if vis("portfolioHero") {
-                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD, isLoading: viewModel.isLoading)
+                        PortfolioHeroCard(metrics: viewModel.metrics, currency: cur, longHistory: viewModel.heroHistory, intradayHistory: viewModel.heroIntraday, wtdHistory: viewModel.heroWTD, isMarketOpen: appState.marketIsOpen == true, isLoading: viewModel.isLoading)
                     }
                     if vis("todayStrip") {
                         TodayStripCard(holdings: viewModel.holdings, currency: cur,

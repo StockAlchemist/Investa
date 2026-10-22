@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import sqlite3
+from collections import OrderedDict
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -38,8 +39,10 @@ from server.portfolio_service import (
     _get_historical_performance_cached,
     compute_account_closure_state,
 )
-from server.route_utils import clean_nans, get_mdp
+from server.route_utils import _lru_get, _lru_put, clean_nans, get_mdp
 from utils_time import get_est_today
+
+_FIFO_LOTS_CACHE: OrderedDict = OrderedDict()
 
 from server.response_models import (
     SummaryResponse,
@@ -400,61 +403,26 @@ async def get_portfolio_ai_review(
             current_user=current_user,
         )
 
-        # 2. Get Risk Metrics
-        # We need historical data for risk metrics
-        # Use existing cache helper for history
-        min_date = df["Date"].min().date()
-        daily_df, _, _, _ = await _get_historical_performance_cached(
-            df=df,
-            manual_overrides_dict=manual,
-            user_symbol_map=user_map,
-            user_excluded_symbols=excluded,
-            account_currency_map=acc_curr,
-            original_csv_file_path=path,
-            start_date=min_date,  # Full history for better risk stats
-            end_date=get_est_today(),
-            interval="D",
-            benchmark_symbols_yf=["SPY"],  # Benchmark against SPY for Beta
-            display_currency=currency,
-            include_accounts=accounts,
-            account_cash_mode_map=cash_mode,
-            db_mtime=mtime,
-        )
-
-        # Calculate risk metrics
-        # We need historical data for this. Using a default period of 1y for risk analysis
-
+        # 2. Get Risk Metrics (1y window against S&P 500 for Beta/Alpha)
         risk_metrics = {}
         try:
-            # Unpack data dependency
-            (
-                df,
-                manual_overrides,
-                user_symbol_map,
-                user_excluded_symbols,
-                account_currency_map,
-                account_cash_mode_map,
-                original_csv_path,
-                mtime,
-            ) = data
-
-            start_date = get_est_today() - timedelta(days=365)
-            end_date = get_est_today()
+            today = get_est_today()
+            start_date = today - timedelta(days=365)
 
             daily_df, _, _, _ = await _get_historical_performance_cached(
                 df=df,
-                manual_overrides_dict=manual_overrides,
-                user_symbol_map=user_symbol_map,
-                user_excluded_symbols=user_excluded_symbols,
-                account_currency_map=account_currency_map,
-                original_csv_file_path=original_csv_path,
+                manual_overrides_dict=manual,
+                user_symbol_map=user_map,
+                user_excluded_symbols=excluded,
+                account_currency_map=acc_curr,
+                original_csv_file_path=path,
                 start_date=start_date,
-                end_date=end_date,
+                end_date=today,
                 display_currency=currency,
                 include_accounts=accounts,
                 benchmark_symbols_yf=["^GSPC"],  # Fetch S&P 500 for Beta/Alpha
                 interval="D",
-                account_cash_mode_map=account_cash_mode_map,
+                account_cash_mode_map=cash_mode,
                 db_mtime=mtime,
             )
 
@@ -536,8 +504,8 @@ async def get_portfolio_ai_review(
 
         # Fallback to holdings_dict if summary_df processing failed or was empty
         if not holdings_list and "holdings_dict" in summary_data:
-            print(
-                "DEBUG: AI Review - Fallback to holdings_dict (summary_df empty/missing)"
+            logging.debug(
+                "AI Review: Fallback to holdings_dict (summary_df empty/missing)"
             )
             holdings_list = list(summary_data["holdings_dict"].values())
 
@@ -899,17 +867,31 @@ async def get_stock_position(
             db_mtime=db_mtime,
         )
 
-        # 2. FIFO Lots & Realized Gains
-        tx_to_process = df.copy()
-        tx_to_process.sort_values(by=["Date", "original_index"], inplace=True)
-        df_gains, open_lots_dict = calculate_fifo_lots_and_gains(
-            transactions_df=tx_to_process,
-            display_currency=currency,
-            historical_fx_yf=historical_fx_yf,
-            default_currency=config.DEFAULT_CURRENCY,
-            shortable_symbols=config.SHORTABLE_SYMBOLS,
-            stock_quantity_close_tolerance=config.STOCK_QUANTITY_CLOSE_TOLERANCE,
+        # 2. FIFO Lots & Realized Gains (shared bounded LRU cache across stock modal opens)
+        fifo_cache_key = (
+            original_csv_path,
+            db_mtime,
+            currency,
+            tuple(sorted(accounts)) if accounts else (),
+            configuration_key(data[1:6], config.SHORTABLE_SYMBOLS),
+            _CACHE_REVISIONS.get(original_csv_path, 0),
+            get_est_today(),
         )
+        cached_fifo = _lru_get(_FIFO_LOTS_CACHE, fifo_cache_key)
+        if cached_fifo is not None:
+            df_gains, open_lots_dict = cached_fifo
+        else:
+            tx_to_process = df.copy()
+            tx_to_process.sort_values(by=["Date", "original_index"], inplace=True)
+            df_gains, open_lots_dict = calculate_fifo_lots_and_gains(
+                transactions_df=tx_to_process,
+                display_currency=currency,
+                historical_fx_yf=historical_fx_yf,
+                default_currency=config.DEFAULT_CURRENCY,
+                shortable_symbols=config.SHORTABLE_SYMBOLS,
+                stock_quantity_close_tolerance=config.STOCK_QUANTITY_CLOSE_TOLERANCE,
+            )
+            _lru_put(_FIFO_LOTS_CACHE, fifo_cache_key, (df_gains, open_lots_dict), max_size=16)
 
         # 3. Get exact holding metrics via summary generator
         summary_data = await _calculate_portfolio_summary_internal(

@@ -11,12 +11,20 @@ pythonpath = [".", "src"]
 # Gradual adoption: only the files listed here are checked, and they must stay
 # clean. When you touch a module, consider adding it to the list.
 files = [
+    "src/server/api.py",
     "src/server/auth.py",
     "src/server/dependencies.py",
     "src/server/main.py",
     "src/server/rate_limit.py",
+    "src/server/response_models.py",
     "src/server/route_utils.py",
+    "src/server/transaction_writes.py",
+    "src/server/routes/admin.py",
     "src/server/routes/auth.py",
+    "src/server/routes/buffett_rank.py",
+    "src/server/routes/screener.py",
+    "src/server/routes/strategies.py",
+    "src/server/routes/watchlist.py",
     "src/corporate_actions.py",
     "src/portfolio_version.py",
     "src/utils_time.py",

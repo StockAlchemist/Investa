@@ -104,7 +104,11 @@ export const ImportReviewModal: React.FC<ImportReviewModalProps> = ({
 
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['summary'] });
+            queryClient.invalidateQueries({ queryKey: ['headline'] });
             queryClient.invalidateQueries({ queryKey: ['holdings'] });
+            queryClient.invalidateQueries({ queryKey: ['history'] });
+            queryClient.invalidateQueries({ queryKey: ['capital_gains'] });
+            queryClient.invalidateQueries({ queryKey: ['dividends'] });
         } catch (error) {
             console.error("Failed to add batch transactions:", error);
             alert("Failed to add transactions to database.");

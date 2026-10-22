@@ -115,3 +115,24 @@ def test_failed_bulk_approval_rolls_back_earlier_rows(staged):
     )
     assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM pending_transactions").fetchone()[0] == 2
+
+
+def test_approval_skips_external_id_already_in_transactions(staged):
+    client, conn = staged
+    conn.execute(
+        """INSERT INTO transactions
+        (Date, Type, Symbol, Quantity, "Price/Share", "Total Amount", Commission,
+         Account, "Local Currency", ExternalID, user_id)
+        VALUES ('2026-09-25', 'Buy', 'ADBE', 122, 236.77, 28886.23, 1.5, 'IBKR', 'USD', 'ibkr-ADBE', 1)"""
+    )
+    conn.commit()
+    response = client.post("/sync/ibkr/approve", json={"ids": [1, 2]})
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert conn.execute(
+        "SELECT Symbol, ExternalID FROM transactions ORDER BY id"
+    ).fetchall() == [
+        ("ADBE", "ibkr-ADBE"),
+        ("MA", "ibkr-MA"),
+    ]
+    assert conn.execute("SELECT COUNT(*) FROM pending_transactions").fetchone()[0] == 0

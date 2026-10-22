@@ -343,7 +343,7 @@ async def add_to_watchlist_api(
             detail="Not authorized to modify this watchlist. Please create a watchlist first.",
         )
 
-    success = add_to_watchlist(conn, symbol_upper, item.note, watchlist_id=wl_id)
+    success = add_to_watchlist(conn, symbol_upper, item.note or "", watchlist_id=wl_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add to watchlist")
     return {"status": "success"}

@@ -121,7 +121,7 @@ export default function KpiStrip({ data, summary, riskMetrics = null, benchmarks
 
     const fmtMonth = (date: string) => {
         try {
-            return new Date(date).toLocaleDateString(undefined, { calendar: 'gregory', month: 'short', year: 'numeric' });
+            return new Date(date).toLocaleDateString(undefined, { calendar: 'gregory', month: 'short', year: 'numeric', timeZone: 'UTC' });
         } catch {
             return date;
         }

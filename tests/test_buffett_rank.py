@@ -827,3 +827,35 @@ def test_pruning_an_empty_store_is_a_no_op():
     with tempfile.TemporaryDirectory() as directory:
         store = BuffettRankStore(os.path.join(directory, "ranks.db"))
         assert store.prune_runs(keep=5) == 0
+
+
+def test_debt_free_company_computes_ev_to_ebit_without_explicit_debt(monkeypatch):
+    """Debt-free filers that omit debt tags (total_debt=None, debt_free=True) still compute EV/EBIT."""
+    import buffett_value
+    from buffett_metrics import CompanyMetrics
+
+    monkeypatch.setattr(
+        buffett_value.edgar_provider,
+        "get_concept_values",
+        lambda cik, tags: {
+            "revenue": {"2025-12-31": 500.0},
+            "equity": {"2025-12-31": 300.0},
+            "pretax_income": {"2025-12-31": 100.0},
+            "interest_expense": {},
+            "net_income": {"2025-12-31": 80.0},
+            "cash": {"2025-12-31": 50.0},
+        },
+    )
+    company = CompanyMetrics(
+        symbol="ZERO",
+        cik="0000000001",
+        name="Zero Debt Corp",
+        model="generic",
+        period_count=10,
+        latest_period="2025-12-31",
+        coverage=1.0,
+        metrics={"total_debt": None, "debt_free": True, "owner_earnings_latest": 75.0},
+    )
+    res = buffett_value.compute_market_metrics(company, price=100.0, shares_outstanding=10.0)
+    # Market cap = 1000, cash = 50, debt = 0 -> EV = 950; EBIT = 100 -> EV/EBIT = 9.5
+    assert res["ev_to_ebit"] == pytest.approx(9.5)

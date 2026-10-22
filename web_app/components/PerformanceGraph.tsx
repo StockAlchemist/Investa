@@ -259,9 +259,9 @@ export default function PerformanceGraph({
                 // Create a date object in browser local time
                 const d = new Date(firstTs);
 
-                // Get the date string for New York
+                // Get the date string for New York (pin Gregorian calendar so Thai/Buddhist locales don't produce year 2569)
                 // Format: "MM/DD/YYYY"
-                const nyDateStr = d.toLocaleDateString("en-US", { timeZone: "America/New_York" });
+                const nyDateStr = d.toLocaleDateString("en-US", { calendar: "gregory", timeZone: "America/New_York" });
 
                 // We need to find the timestamp corresponding to 9:30 on this NY date.
                 // Since we don't have a timezone library, we can find it by iteration or offset guessing.

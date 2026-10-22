@@ -419,10 +419,5 @@ struct TransactionEditView: View {
         }
     }
 
-    static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
+    static let dateFormatter: DateFormatter = MarketTime.isoFormatter()
 }

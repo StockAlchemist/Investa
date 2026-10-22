@@ -89,7 +89,7 @@ def _decorate_rows(rows: list) -> list:
 
     One batch lookup for the page, not one per row.
     """
-    symbols = [r.get("symbol") for r in rows if isinstance(r, dict) and r.get("symbol")]
+    symbols = [str(r["symbol"]) for r in rows if isinstance(r, dict) and r.get("symbol")]
     flags: dict = {}
     if symbols:
         try:

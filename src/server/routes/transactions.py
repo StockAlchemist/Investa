@@ -400,7 +400,7 @@ def update_transaction(
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
 
-        tx_data = transaction.dict(by_alias=True)
+        tx_data = transaction.model_dump(by_alias=True)
         tx_data["user_id"] = current_user.id
 
         success = update_transaction_in_db(conn, transaction_id, tx_data)
@@ -753,6 +753,7 @@ def approve_ibkr(
         ]
         cols_str = ", ".join([f'"{c}"' for c in cols])
 
+        ext_id_idx = cols.index("ExternalID")
         for p_id in ids:
             # Fetch from pending
             cursor.execute(
@@ -763,6 +764,17 @@ def approve_ibkr(
                 row = list(row)
                 if p_id in accounts:
                     row[cols.index("Account")] = accounts[p_id]
+                ext_id = row[ext_id_idx]
+                if ext_id:
+                    cursor.execute(
+                        "SELECT 1 FROM transactions WHERE ExternalID = ? LIMIT 1",
+                        (ext_id,),
+                    )
+                    if cursor.fetchone():
+                        cursor.execute(
+                            "DELETE FROM pending_transactions WHERE id = ?", (p_id,)
+                        )
+                        continue
                 # Insert into main table
                 placeholders = ", ".join(["?"] * len(cols))
                 cursor.execute(

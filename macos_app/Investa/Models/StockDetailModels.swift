@@ -162,16 +162,11 @@ struct StockHistoryPoint: Codable, Sendable, Identifiable {
 
     /// Parses either a date (`yyyy-MM-dd`) or an intraday timestamp.
     var parsedDate: Date? {
-        if let d = StockHistoryPoint.dayFmt.date(from: String(date.prefix(10))),
-           date.count <= 10 { return d }
+        if date.count <= 10, let d = MarketTime.calendarDay(date) { return d }
         return StockHistoryPoint.isoFmt.date(from: date)
             ?? StockHistoryPoint.isoFmt2.date(from: date)
-            ?? StockHistoryPoint.dayFmt.date(from: String(date.prefix(10)))
+            ?? MarketTime.calendarDay(date)
     }
-    private static let dayFmt: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC"); f.dateFormat = "yyyy-MM-dd"; return f
-    }()
     private static let isoFmt: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
     }()
@@ -769,11 +764,7 @@ public struct StockPositionHistoryPoint: Codable, Sendable, Identifiable {
     }
 
     public var parsedDate: Date? {
-        StockPositionHistoryPoint.dayFmt.date(from: String(date.prefix(10)))
+        MarketTime.calendarDay(date)
     }
-    private static let dayFmt: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC"); f.dateFormat = "yyyy-MM-dd"; return f
-    }()
 }
 

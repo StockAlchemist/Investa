@@ -33,7 +33,8 @@ test.describe('Stock Detail View Journey', () => {
         await page.getByRole('button', { name: 'Valuation' }).click();
 
         // Verify Valuation header metrics
-        await expect(page.getByText('Blended Intrinsic Value')).toBeVisible();
+        // This tab is lazy-loaded; a cold Next.js development server compiles it on demand.
+        await expect(page.getByText('Blended Intrinsic Value')).toBeVisible({ timeout: 15000 });
         await expect(page.getByText('$245.80').first()).toBeVisible();
         await expect(page.getByText('Margin of Safety').first()).toBeVisible();
 

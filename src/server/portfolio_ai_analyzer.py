@@ -2,9 +2,9 @@ import logging
 import json
 import os
 import hashlib
-from datetime import datetime
 import config
 from server.ai_analyzer import FALLBACK_MODELS
+from utils_time import get_est_now, get_est_today
 import requests
 
 # --- Helpers ---
@@ -33,7 +33,7 @@ def _compute_portfolio_hash(portfolio_data: dict, db_conn=None) -> str:
             if k and k[0]:
                 symbols.add(str(k[0]).upper())
 
-    key_components.append(datetime.now().strftime("%Y-%m-%d"))
+    key_components.append(get_est_today().isoformat())
 
     # Fingerprint the screener-cache rows for held symbols so a mid-day IV/MoS
     # refresh busts this AI-review cache. Without this, a cached review that
@@ -428,7 +428,7 @@ OUTPUT — strict JSON, no markdown, no commentary outside the JSON:
                     result["optimizations"] = []
 
                 # Stamp generation time so the UI can show freshness/staleness.
-                result["generated_at"] = datetime.now().isoformat()
+                result["generated_at"] = get_est_now().isoformat()
 
                 # Cache it
                 with open(cache_path, "w") as f:

@@ -28,6 +28,7 @@ interface PageHeaderProps {
   indices?: Record<string, any>;
   visibleItems: string[];
   onVisibleItemsChange: (items: string[]) => void;
+  onResetLayout?: () => void;
   layoutItems?: { id: string; title: string }[];
   layoutSectionTitle?: string;
   onCommandPaletteOpen?: () => void;
@@ -55,6 +56,7 @@ export function PageHeader({
   indices,
   visibleItems,
   onVisibleItemsChange,
+  onResetLayout,
   layoutItems,
   layoutSectionTitle,
   fxRate,
@@ -169,6 +171,7 @@ export function PageHeader({
           <LayoutConfigurator
             visibleItems={visibleItems}
             onVisibleItemsChange={onVisibleItemsChange}
+            onReset={onResetLayout}
             items={layoutItems}
             sectionTitle={layoutSectionTitle}
             variant="ghost"

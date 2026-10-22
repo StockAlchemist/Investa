@@ -32,6 +32,9 @@ interface DashboardProps {
     summary: PortfolioSummary;
     currency: string;
     history?: PerformanceData[];
+    historyLoading?: boolean;
+    isMarketOpen?: boolean;
+    valuationTime?: number;
     wtdHistory?: PerformanceData[];
     isLoading?: boolean;
     isRefreshing?: boolean;
@@ -108,6 +111,9 @@ interface HeroCardProps {
     isRefreshing: boolean;
     themeColor: string;
     history?: PerformanceData[];      // intraday (1d / 5m)
+    historyLoading?: boolean;
+    isMarketOpen?: boolean;
+    valuationTime?: number;
     wtdHistory?: PerformanceData[];   // intraday (5d / 15m)
     longHistory?: PerformanceData[];  // 1y / daily
 }
@@ -191,12 +197,11 @@ function HeroTooltip({ active, payload, start, currency }: {
 // the value at that moment and the move since the window began. Returns null
 // if there isn't enough variation to draw a meaningful line.
 function HeroSparkline({ history, currency }: { history: HeroPoint[]; currency: string }) {
-    const series = history.filter(d => typeof d.value === 'number' && !!d.date);
+    const series = history.filter(d => typeof d.value === 'number' && d.value > 0 && !!d.date);
     if (series.length < 2) return null;
     const values = series.map(s => s.value);
-    const min = Math.min(...values);
     const max = Math.max(...values);
-    if (max - min < Math.max(0.01, max * 0.0005)) return null; // ~flat — skip
+    if (max <= 0) return null;
 
     return (
         <div className="h-36 lg:h-44 w-full">
@@ -257,7 +262,7 @@ function StatPill({
 
 function PortfolioHeroCard({
     marketValue, dayGL, dayGLPct, cumTWR, annTWR, irr,
-    currency, isLoading, isRefreshing, themeColor, history, wtdHistory, longHistory,
+    currency, isLoading, isRefreshing, themeColor, history, historyLoading = false, isMarketOpen = false, valuationTime, wtdHistory, longHistory,
 }: HeroCardProps) {
     const animatedValue  = useAnimatedNumber(marketValue ?? 0);
     const animatedDayGL  = useAnimatedNumber(dayGL ?? 0);
@@ -271,7 +276,17 @@ function PortfolioHeroCard({
     // Derive the series + period return for the currently-selected window.
     const periodView = useMemo(() => {
         if (heroPeriod === 'day') {
-            const series = (history ?? []).filter(d => typeof d.value === 'number').map(d => ({ date: d.date, value: d.value as number }));
+            const series = (history ?? []).filter(d => typeof d.value === 'number' && (d.value as number) > 0).map(d => ({ date: d.date, value: d.value as number }));
+            if (isMarketOpen && valuationTime && typeof marketValue === 'number' && marketValue > 0 && series.length >= 1) {
+                const lastPt = series[series.length - 1];
+                const lastMs = new Date(lastPt.date).getTime();
+                const nowMs = valuationTime;
+                if (series.length === 1 || (Number.isFinite(lastMs) && nowMs - lastMs > 30 * 1000)) {
+                    series.push({ date: new Date(nowMs).toISOString(), value: marketValue });
+                } else {
+                    series[series.length - 1] = { date: lastPt.date, value: marketValue };
+                }
+            }
             return { series, pct: dayGLPct ?? null, abs: dayGL ?? null };
         }
         const historyToUse = heroPeriod === 'wtd' ? wtdHistory : longHistory;
@@ -293,7 +308,7 @@ function PortfolioHeroCard({
         const abs = endVal - startVal;
         const pct = (abs / startVal) * 100;
         return { series, pct, abs };
-    }, [heroPeriod, history, longHistory, wtdHistory, dayGL, dayGLPct]);
+    }, [heroPeriod, history, isMarketOpen, marketValue, valuationTime, longHistory, wtdHistory, dayGL, dayGLPct]);
 
     const periodPositive = (periodView.pct ?? 0) >= 0;
     // The figure is shown in full, on one line, whatever its size: it steps
@@ -391,10 +406,9 @@ function PortfolioHeroCard({
                         </div>
                         {periodView.series.length > 1 ? (
                             <HeroSparkline history={periodView.series} currency={currency} />
+                        ) : heroPeriod === 'day' && (historyLoading || isRefreshing) ? (
+                            <Skeleton className="h-36 lg:h-44 w-full rounded-lg" />
                         ) : heroPeriod !== 'day' ? (
-                            // Only shown for explicitly selected longer periods — on 1D
-                            // an empty series usually just means intraday history is
-                            // still loading, where this message would mislead.
                             <p className="text-[13px] text-muted-foreground mt-2">
                                 Not enough history yet to chart this period.
                             </p>
@@ -411,6 +425,9 @@ function DashboardInner({
     summary,
     currency,
     history = [],
+    historyLoading = false,
+    isMarketOpen = false,
+    valuationTime,
     wtdHistory = [],
     isLoading = false,
     isRefreshing = false,
@@ -641,6 +658,9 @@ function DashboardInner({
                     isRefreshing={isRefreshing}
                     themeColor={themeColor}
                     history={history}
+                    historyLoading={historyLoading}
+                    isMarketOpen={isMarketOpen}
+                    valuationTime={valuationTime}
                     wtdHistory={wtdHistory}
                     longHistory={longHistory}
                 />

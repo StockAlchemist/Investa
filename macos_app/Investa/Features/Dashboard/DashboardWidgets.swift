@@ -42,6 +42,7 @@ struct PortfolioHeroCard: View {
     let longHistory: [PerformancePoint]
     var intradayHistory: [PerformancePoint] = []
     var wtdHistory: [PerformancePoint] = []
+    var isMarketOpen: Bool = false
     var isLoading: Bool = false
     @State private var period: HeroPeriod = .day
     #if os(iOS)
@@ -58,8 +59,22 @@ struct PortfolioHeroCard: View {
     /// the hover card) — plus its return.
     private var periodView: (series: [Double], dates: [String], pct: Double?, abs: Double?) {
         if period == .day {
-            let series = intradayHistory.map { $0.value }
-            return (series, intradayHistory.map(\.date), dayGLPct, dayGL)
+            let valid = intradayHistory.filter { $0.value > 0 }
+            var series = valid.map { $0.value }
+            var dates = valid.map(\.date)
+            if isMarketOpen, let mv = metrics?.marketValue, mv > 0, !series.isEmpty {
+                let nowISO = ISO8601DateFormatter().string(from: Date())
+                if series.count == 1 {
+                    series.append(mv)
+                    dates.append(nowISO)
+                } else if let lastDate = valid.last?.parsedDate, Date().timeIntervalSince(lastDate) > 30 {
+                    series.append(mv)
+                    dates.append(nowISO)
+                } else {
+                    series[series.count - 1] = mv
+                }
+            }
+            return (series, dates, dayGLPct, dayGL)
         }
         let historyToUse = period == .wtd ? wtdHistory : longHistory
         let rows = historyToUse.compactMap { p -> (Date, Double, String)? in

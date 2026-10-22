@@ -669,14 +669,18 @@ class MarketDatabase:
         if not col:
             return
 
-        rows: List[Tuple[str, float]] = []
-        for timestamp, row in df.iterrows():
-            date_str = (
-                timestamp.strftime("%Y-%m-%d")
-                if hasattr(timestamp, "strftime")
-                else str(timestamp)[:10]
-            )
-            rows.append((date_str, row[col]))
+        idx = df.index
+        if isinstance(idx, pd.DatetimeIndex):
+            date_strs = _iso_days(idx)
+        else:
+            date_strs = [
+                ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
+                for ts in idx
+            ]
+        rates = (
+            pd.to_numeric(df[col], errors="coerce").to_numpy(dtype="float64").tolist()
+        )
+        rows: List[Tuple[str, float]] = list(zip(date_strs, rates))
         self.upsert_fx_rows(pair, rows, interval=interval, source=source)
 
     def upsert_fx_rows(

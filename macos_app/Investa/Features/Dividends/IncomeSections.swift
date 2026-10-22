@@ -1,10 +1,7 @@
 import SwiftUI
 import Charts
 
-private let isoDayFormatter: DateFormatter = {
-    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
-}()
-private func parseDay(_ s: String) -> Date? { isoDayFormatter.date(from: String(s.prefix(10))) }
+private func parseDay(_ s: String) -> Date? { MarketTime.calendarDay(s) }
 
 private func compactCurrency(_ v: Double, _ code: String) -> String {
     let a = abs(v)

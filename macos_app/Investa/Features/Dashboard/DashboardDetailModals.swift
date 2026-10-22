@@ -55,9 +55,7 @@ enum InsightScope: Identifiable {
     var id: String { switch self { case .all: return "all"; case .kind(let k): return k.rawValue } }
 }
 
-private let insightDateFmt: DateFormatter = {
-    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f
-}()
+private let insightDateFmt: DateFormatter = MarketTime.isoFormatter()
 
 private func isUnknownCategory(_ v: String?) -> Bool {
     guard let v else { return true }

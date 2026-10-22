@@ -1744,22 +1744,18 @@ def _load_or_calculate_daily_results(
                 # FIX 2: Check current time to prevent generating empty "future" points that get ffilled.
                 # User requested: "Do not plot a flat line where the data are not available yet"
                 now_utc = pd.Timestamp.now(tz="UTC")
-                # If the theoretical end of period is in the future, clip it to now (plus small buffer)
+                # If the theoretical end of period is in the future, clip to now and include
+                # the current in-progress bar so the intraday chart renders immediately from
+                # the opening bell and tracks real-time bars without a 5-10 minute lag.
                 if ts_end_of_period > now_utc:
-                    # Clip to now. Ceil to next interval?
-                    # Simply using 'now' works because inclusive='left' in date_range loops until it hits end.
-                    # We remove the buffer to strictly stop at 'now' and avoid any future flatline.
-                    # Actually, if we are at 10:00:01, inclusive='left' with freq='2min'
-                    # starting at 09:30 might generate 10:00:00 tick.
-                    # If data for 10:00:00 is not yet available/complete, it gets ffilled.
-                    # Safer to lag slightly behind 'now' to ensure we only show fully elapsed intervals.
-                    # FORCE CLIP: -5 minutes to guarantee no future flatline.
-                    active_end_bound = now_utc - timedelta(minutes=5)
+                    active_end_bound = now_utc
+                    active_inclusive = "both"
                     logging.info(
                         f"[_load_or_calculate] 1D Graph Clip: now={now_utc}, bound={active_end_bound}"
                     )
                 else:
                     active_end_bound = ts_end_of_period
+                    active_inclusive = "left"
 
                 _heading_into_future = (
                     False  # logic no longer needed, we fill what we have
@@ -1769,7 +1765,7 @@ def _load_or_calculate_daily_results(
                     start=pd.Timestamp(start_date, tz="UTC"),
                     end=active_end_bound,
                     freq=active_freq,
-                    inclusive="left",
+                    inclusive=active_inclusive,
                 )
 
                 # FIX for "5D graph showing afterhours":
@@ -3310,6 +3306,30 @@ def _calculate_accumulated_gains_and_resample(
 
 
 @profile
+def _intraday_symbols_for_window(
+    symbols_yf, benchmark_symbols_yf, holdings_qty, full_start_date, start_date,
+    end_date, id_to_symbol, internal_to_yf_map, transactions,
+):
+    """Include positions held in the window and trades absent from daily closes."""
+    if holdings_qty is None or holdings_qty.shape[0] == 0:
+        return list(symbols_yf)
+    start_offset = max(0, (start_date - full_start_date).days)
+    active_slice = holdings_qty[start_offset:]
+    if active_slice.shape[0] == 0:
+        return list(symbols_yf)
+    held_sids = np.where(np.any(np.abs(active_slice) > 1e-6, axis=(0, 2)))[0]
+    needed = set(benchmark_symbols_yf)
+    internal_symbols = {id_to_symbol[int(sid)] for sid in held_sids}
+    # A position bought and sold on the same day can be zero in every daily
+    # holdings snapshot, but its intraday prices still affect that day's path.
+    if not transactions.empty:
+        days = pd.to_datetime(transactions["Date"]).dt.date
+        traded = transactions.loc[(days >= start_date) & (days <= end_date), "Symbol"]
+        internal_symbols.update(traded.dropna())
+    needed.update(internal_to_yf_map[s] for s in internal_symbols if s in internal_to_yf_map)
+    return [s for s in symbols_yf if s in needed]
+
+
 def calculate_historical_performance(
     all_transactions_df_cleaned: Optional[pd.DataFrame],  # MODIFIED: Accept DataFrame
     original_transactions_df_for_ignored: Optional[pd.DataFrame],  # MODIFIED
@@ -3647,8 +3667,21 @@ def calculate_historical_performance(
     # Otherwise, the calculation loop (which runs at 5m resolution) will just find the same
     # 'daily' price for every 5m step, resulting in a flat line for the day.
     if interval in ["1h", "1m", "2m", "5m", "15m", "30m", "60m", "90m"]:
+        # Only fetch intraday bars for symbols actually held during [start_date, fetch_end_date]
+        # plus requested benchmarks. Fetching closed positions from 20 years ago wastes
+        # dozens of subprocess batches and triggers retries on delisted tickers.
+        intraday_symbols_yf = list(symbols_for_stocks_and_benchmarks_yf)
+        try:
+            intraday_symbols_yf = _intraday_symbols_for_window(
+                symbols_for_stocks_and_benchmarks_yf, clean_benchmark_symbols_yf,
+                all_holdings_qty, full_start_date, start_date, fetch_end_date,
+                id_to_symbol, internal_to_yf_map, all_transactions_df_cleaned,
+            )
+        except Exception as e_intra_syms:
+            logging.warning(f"Failed to narrow intraday symbol list: {e_intra_syms}")
+
         logging.info(
-            f"Intraday interval '{interval}' detected. Fetching coverage for {len(symbols_for_stocks_and_benchmarks_yf)} symbols..."
+            f"Intraday interval '{interval}' detected. Fetching coverage for {len(intraday_symbols_yf)}/{len(symbols_for_stocks_and_benchmarks_yf)} active symbols..."
         )
         try:
             # Fetch intraday data. yfinance handles 60d limit for 5m, 730d for 1h etc.
@@ -3660,13 +3693,13 @@ def calculate_historical_performance(
                 intraday_end_date = get_est_today() + timedelta(days=1)
 
             intraday_prices_adj, _ = market_provider.get_historical_data(
-                symbols_yf=symbols_for_stocks_and_benchmarks_yf,
+                symbols_yf=intraday_symbols_yf,
                 start_date=max(start_date, get_est_today() - timedelta(days=59))
                 if "m" in interval
                 else start_date,
                 end_date=intraday_end_date,
                 interval=interval,
-                use_cache=False,  # FORCE FALSE for intraday patch to ensure live data
+                use_cache=True,
             )
 
             if intraday_prices_adj:

@@ -148,6 +148,8 @@ def compute_market_metrics(
     revenue = _finite(concepts.get("revenue", {}).get(latest))
     cash = _finite(concepts.get("cash", {}).get(latest)) or 0.0
     total_debt = company.get("total_debt")
+    if total_debt is None and company.get("debt_free"):
+        total_debt = 0.0
 
     result["earnings_yield"] = _pct_yield(net_income, market_cap)
     result["fcf_yield"] = _pct_yield(owner_earnings, market_cap)
@@ -187,6 +189,11 @@ def score_value(frame: pd.DataFrame) -> pd.Series:
     scores = pd.Series(np.nan, index=frame.index, dtype=float)
 
     for model, group in frame.groupby("model"):
+        if len(group) < 5:
+            logging.warning(
+                f"Value: only {len(group)} '{model}' companies — "
+                "percentile scores for this group are unreliable"
+            )
         total = pd.Series(0.0, index=group.index)
         weight_sum = pd.Series(0.0, index=group.index)
 

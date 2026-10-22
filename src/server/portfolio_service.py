@@ -400,6 +400,7 @@ async def warm_summary_caches(max_users: int = 2) -> None:
                 show_closed_positions=True,
                 data=data,
                 current_user=user,
+                wait_for_completion=True,
             )
             # Performance tab queries, called exactly as the frontend does so
             # the warmed cache entries match the real request keys. Imported
@@ -472,8 +473,22 @@ async def _get_historical_performance_cached(
     accounts_key = tuple(sorted(include_accounts)) if include_accounts else "ALL"
     benchmarks_key = tuple(sorted(benchmark_symbols_yf)) if benchmark_symbols_yf else ()
 
-    # Match the old freshness windows: 5 min while the market is open, 1 hour after.
-    ttl_seconds = (5 * 60) if is_market_open() else (60 * 60)
+    # While the market is open, refresh intraday history every 60s to match
+    # live headline/summary polling; daily history keeps the 5-minute window.
+    is_intraday_interval = interval in {
+        "1m",
+        "2m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "90m",
+        "1h",
+    }
+    if is_market_open():
+        ttl_seconds = 60 if is_intraday_interval else (5 * 60)
+    else:
+        ttl_seconds = 60 * 60
 
     cache_key = (
         original_csv_file_path,
@@ -617,6 +632,7 @@ async def _compute_raw_summary(
     data: tuple,
     account_interest_rates: dict,
     interest_free_thresholds: dict,
+    wait_for_completion: bool = False,
 ):
     """Run (and cache) the heavy calculate_portfolio_summary.
 
@@ -698,7 +714,7 @@ async def _compute_raw_summary(
                 f"Error in calculate_portfolio_summary: {e_calc}", exc_info=True
             )
             raise HTTPException(
-                status_code=500, detail=f"Calculation Error: {str(e_calc)}"
+                status_code=500, detail="Failed to calculate portfolio summary"
             )
 
         return (
@@ -710,7 +726,8 @@ async def _compute_raw_summary(
 
     try:
         return await _RAW_CALC_CACHE.get_or_compute(
-            raw_key, cache_ttl_seconds, compute, wait_timeout=_RAW_SUMMARY_WAIT_SECONDS
+            raw_key, cache_ttl_seconds, compute,
+            wait_timeout=None if wait_for_completion else _RAW_SUMMARY_WAIT_SECONDS,
         )
     except ComputationPending:
         raise HTTPException(
@@ -726,6 +743,7 @@ async def _calculate_portfolio_summary_internal(
     show_closed_positions: bool = True,
     data: tuple = None,
     current_user: User = None,
+    wait_for_completion: bool = False,
 ) -> Dict[str, Any]:
     """Internal helper to calculate portfolio summary data."""
     (
@@ -835,6 +853,7 @@ async def _calculate_portfolio_summary_internal(
         data=data,
         account_interest_rates=account_interest_rates,
         interest_free_thresholds=interest_free_thresholds,
+        wait_for_completion=wait_for_completion,
     )
     # Copy before we enrich with TWR/dividend fields so the shared raw cache
     # entry stays a clean calculate_portfolio_summary output.

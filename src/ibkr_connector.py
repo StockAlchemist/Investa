@@ -7,6 +7,7 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from config import IBKR_TOKEN, IBKR_QUERY_ID
 from datetime import datetime
+from utils_time import get_est_today
 
 # --- Constants ---
 FLEX_SEND_REQUEST_URL = (
@@ -329,12 +330,12 @@ class IBKRConnector:
 
             # Parse date (IBKR format 20240130;201500)
             try:
-                dt = datetime.strptime(dt_str.split(";")[0], "%Y%m%d")
+                date_str = datetime.strptime(dt_str.split(";")[0], "%Y%m%d").strftime("%Y-%m-%d")
             except Exception:
-                dt = datetime.now()
+                date_str = get_est_today().isoformat()
 
             return {
-                "Date": dt.strftime("%Y-%m-%d"),
+                "Date": date_str,
                 "Type": tx_type,
                 "Symbol": symbol,
                 "Quantity": abs(qty),
@@ -380,9 +381,9 @@ class IBKRConnector:
                 return None
 
             try:
-                dt = datetime.strptime(dt_str.split(";")[0], "%Y%m%d")
+                date_str = datetime.strptime(dt_str.split(";")[0], "%Y%m%d").strftime("%Y-%m-%d")
             except Exception:
-                dt = datetime.now()
+                date_str = get_est_today().isoformat()
 
             tx_qty = 1.0
             tx_price = amount
@@ -401,7 +402,7 @@ class IBKRConnector:
                         pass
 
             return {
-                "Date": dt.strftime("%Y-%m-%d"),
+                "Date": date_str,
                 "Type": internal_type,
                 "Symbol": symbol if symbol and symbol != "None" else "$CASH",
                 "Quantity": tx_qty,
@@ -450,7 +451,7 @@ class IBKRConnector:
                 dt = datetime.strptime(dt_str.split(";")[0][:8], "%Y%m%d")
                 date_str = dt.strftime("%Y-%m-%d")
             except Exception:
-                date_str = datetime.now().strftime("%Y-%m-%d")
+                date_str = get_est_today().isoformat()
 
             currency = ca_elem.get("currency") or "USD"
             legs = build_spinoff_legs(

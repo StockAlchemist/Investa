@@ -622,6 +622,9 @@ export default function AuthenticatedDashboard() {
               summary={effectiveSummary || { metrics: null, account_metrics: null }}
               currency={currency}
               history={historySparklineQuery.data || []}
+              historyLoading={historySparklineQuery.isFetching && !historySparklineQuery.data}
+              isMarketOpen={isMarketOpen}
+              valuationTime={lastUpdated?.getTime() ?? (summaryQuery.dataUpdatedAt || headlineQuery.dataUpdatedAt)}
               wtdHistory={historyWTDQuery.data || []}
               longHistory={perfHistoryQuery.data || []}
               isLoading={cardLoading}
@@ -887,6 +890,7 @@ export default function AuthenticatedDashboard() {
           layoutSectionTitle={TAB_SECTION_LABELS[activeTab]}
           visibleItems={activeVisible}
           onVisibleItemsChange={(items) => setTabVisible(activeTab, items)}
+          onResetLayout={() => setTabVisible(activeTab, [...(TAB_INITIAL_VISIBLE[activeTab] ?? [])])}
           isMarketOpen={isMarketOpen}
           lastUpdated={lastUpdated}
           isRefreshing={cardRefreshing}
@@ -906,6 +910,7 @@ export default function AuthenticatedDashboard() {
           indices={indices}
           visibleItems={activeVisible}
           onVisibleItemsChange={(items) => setTabVisible(activeTab, items)}
+          onResetLayout={() => setTabVisible(activeTab, [...(TAB_INITIAL_VISIBLE[activeTab] ?? [])])}
           layoutItems={TAB_LAYOUT_ITEMS[activeTab]}
           layoutSectionTitle={TAB_SECTION_LABELS[activeTab]}
           onCommandPaletteOpen={() => setIsCommandPaletteOpen(true)}

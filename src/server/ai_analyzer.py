@@ -3,9 +3,9 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
 import config
 from db_utils import get_cached_screener_results
+from utils_time import get_est_now, get_est_today
 
 # --- Models and Fallback Configuration ---
 # Models identified from user provided rate limits (gemini-3-flash, gemma-3, etc)
@@ -189,8 +189,8 @@ def generate_stock_review(
         "Summary": fund_data.get("longBusinessSummary", "No summary available")[:1000],
     }
 
-    # Get current date for temporal context
-    current_date_str = datetime.now().strftime("%B %d, %Y")
+    # Get current date for temporal context (market clock, not server local time)
+    current_date_str = get_est_today().strftime("%B %d, %Y")
 
     prompt = f"""
 You are evaluating {symbol} for a quality-and-value investor in the tradition of Buffett, Munger, and Phil Fisher. The investor wants a small number of great businesses bought below intrinsic value and held for a very long time. Analyse this business accordingly — do NOT frame your answer around short-term trading, technicals, momentum, or analyst price-target consensus.
@@ -333,7 +333,7 @@ No markdown, no commentary outside the JSON.
                     metadata = {
                         "lastFiscalYearEnd": fund_data.get("lastFiscalYearEnd"),
                         "mostRecentQuarter": fund_data.get("mostRecentQuarter"),
-                        "generated_at": datetime.now().isoformat(),
+                        "generated_at": get_est_now().isoformat(),
                     }
                     with open(cache_path, "w") as f:
                         json.dump(

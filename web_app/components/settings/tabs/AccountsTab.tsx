@@ -64,12 +64,19 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
         }
     };
 
+    const invalidatePortfolioQueries = () => {
+        queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
+        queryClient.invalidateQueries({ queryKey: ['summary'] });
+        queryClient.invalidateQueries({ queryKey: ['headline'] });
+        queryClient.invalidateQueries({ queryKey: ['holdings'] });
+        queryClient.invalidateQueries({ queryKey: ['history'] });
+    };
+
     const updateAccountCurrency = async (account: string, currency: string) => {
         try {
             const updated = { ...accountCurrencyMap, [account]: currency };
             await updateSettings({ account_currency_map: updated });
-            queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-            queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+            invalidatePortfolioQueries();
         } catch {
             alert("Failed to update account currency");
         }
@@ -80,8 +87,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
             const currentMap = settings?.account_cash_mode_map || {};
             const updated = { ...currentMap, [account]: mode };
             await updateSettings({ account_cash_mode_map: updated });
-            queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-            queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+            invalidatePortfolioQueries();
         } catch {
             alert("Failed to update account cash mode");
         }
@@ -96,8 +102,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                 delete currentMap[account];
             }
             await updateSettings({ account_closure_dates: currentMap });
-            queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-            queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+            invalidatePortfolioQueries();
         } catch {
             alert("Failed to update account closure date");
         }
@@ -269,8 +274,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({
                     availableAccounts={availableAccounts}
                     holdings={holdings}
                     onSettingsUpdated={() => {
-                        queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-                        queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+                        invalidatePortfolioQueries();
                     }}
                 />
             )}

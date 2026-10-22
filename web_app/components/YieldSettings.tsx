@@ -74,9 +74,14 @@ export default function YieldSettings({ settings, availableAccounts, holdings, o
     };
 
     const userQueryClientInvalidation = async () => {
-        await queryClient.invalidateQueries({ queryKey: ['settings', user?.username] });
-        await queryClient.invalidateQueries({ queryKey: ['portfolio', user?.username] });
-        await queryClient.invalidateQueries({ queryKey: ['dividends', user?.username] }); 
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['settings', user?.username] }),
+            queryClient.invalidateQueries({ queryKey: ['summary'] }),
+            queryClient.invalidateQueries({ queryKey: ['headline'] }),
+            queryClient.invalidateQueries({ queryKey: ['holdings'] }),
+            queryClient.invalidateQueries({ queryKey: ['projected_income'] }),
+            queryClient.invalidateQueries({ queryKey: ['dividends'] }),
+        ]);
     };
 
     // Pre-calculate cash balances and fx rates to avoid expensive loops on every keystroke

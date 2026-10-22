@@ -11,6 +11,7 @@ interface LayoutItem {
 interface LayoutConfiguratorProps {
     visibleItems: string[];
     onVisibleItemsChange: (items: string[]) => void;
+    onReset?: () => void;
     /** The ordered list of toggleable items for the current context. */
     items: LayoutItem[];
     /** Header label shown above the item list (e.g. "Dashboard Elements"). */
@@ -80,6 +81,7 @@ function renderItemList(
 export default function LayoutConfigurator({
     visibleItems,
     onVisibleItemsChange,
+    onReset,
     items,
     sectionTitle = 'Elements',
     className,
@@ -153,6 +155,7 @@ export default function LayoutConfigurator({
     return (
         <div className={cn("relative", className)} ref={containerRef}>
             <button
+                type="button"
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
                     "flex items-center justify-center gap-2 p-2 rounded-xl transition-all duration-300 group",
@@ -160,8 +163,8 @@ export default function LayoutConfigurator({
                     isOpen ? "" : "text-cyan-500",
                     "h-[44px] px-3"
                 )}
-                title="Configure Layout"
-                aria-label="Configure Layout"
+                title={sectionTitle}
+                aria-label={sectionTitle}
                 aria-expanded={isOpen}
             >
                 <SlidersHorizontal className="w-4 h-4 text-cyan-500" />
@@ -184,6 +187,12 @@ export default function LayoutConfigurator({
                             {sectionTitle}
                         </div>
                         {renderItemList(items, visibleItems, toggleItem)}
+                        {onReset && (
+                            <button type="button" className="w-full border-t border-border px-4 py-3 text-left text-sm font-medium hover:bg-muted"
+                                onClick={() => { onReset(); setIsOpen(false); }}>
+                                Reset to Default
+                            </button>
+                        )}
                     </div>
                 </div>
             )}

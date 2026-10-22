@@ -964,13 +964,13 @@ struct HoldingsTableView: View {
         func mkt() -> Double? { lot["Market Value"]?.doubleValue ?? ((r.num["Price"] ?? 0) > 0 ? (r.num["Price"]!) * qty : nil) }
         let g = lot["Unreal. Gain"]?.doubleValue ?? ((mkt() ?? 0) - (cost ?? 0))
         
-        return HStack {
-            Text("↳ \(MarketTime.formatted(date))").appFont(.caption2).foregroundStyle(.tertiary)
-            Spacer()
-            Text("\(Fmt.number(qty)) shs").appFont(.caption2).foregroundStyle(.secondary)
-            Spacer()
+        return HStack(spacing: 8) {
+            Text("↳ \(MarketTime.formatted(date)) · \(Fmt.shares(qty)) sh").appFont(.caption2).foregroundStyle(.secondary)
+            Spacer(minLength: 8)
             Text(format(g, "Unreal. G/L")).appFont(.caption2).monospacedDigit().foregroundStyle(glColor(g))
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
     }
 
     // MARK: Data row

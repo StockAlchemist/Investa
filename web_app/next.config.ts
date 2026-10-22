@@ -8,6 +8,11 @@ const withPWA = withPWAInit({
 
 const API_URL = process.env.API_URL || "http://127.0.0.1:8000";
 
+const extraDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const nextConfig: NextConfig = {
   distDir: process.env.INVESTA_NEXT_DIST_DIR || ".next",
   output: "standalone",
@@ -15,7 +20,7 @@ const nextConfig: NextConfig = {
   // External rewrites otherwise abort after 30 seconds, including IBKR report
   // generation and cold historical calculations that are still valid work.
   experimental: { proxyTimeout: 300_000 },
-  allowedDevOrigins: ["100.66.59.98", "localhost:3000", "muon.tail33e9df.ts.net", "muon", "*.ts.net"],
+  allowedDevOrigins: ["localhost:3000", "127.0.0.1:3000", "*.ts.net", "*.local", ...extraDevOrigins],
   devIndicators: false,
   turbopack: {}, // Required to prevent error when using next-pwa in Next 16
   async headers() {

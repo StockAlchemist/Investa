@@ -27,7 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { StockSearchBar } from '@/components/StockSearchBar';
 import { defaultServerName, switchToServer, useServerChoices } from '@/lib/servers';
-import { MobileMenu, MenuToggleRow, MenuSectionHeader, MenuDivider } from './MobileMenu';
+import { MobileMenu, MenuRow, MenuToggleRow, MenuSectionHeader, MenuDivider } from './MobileMenu';
 
 interface LayoutItem { id: string; title: string; group?: string }
 
@@ -47,6 +47,7 @@ interface MobileControlBarProps {
   layoutSectionTitle?: string;
   visibleItems: string[];
   onVisibleItemsChange: (items: string[]) => void;
+  onResetLayout?: () => void;
   isMarketOpen?: boolean;
   lastUpdated?: Date | null;
   isRefreshing?: boolean;
@@ -63,7 +64,7 @@ export function MobileControlBar({
   currency, onCurrencyChange, availableCurrencies,
   availableAccounts, selectedAccounts, onAccountsChange, accountGroups = {}, accountGroupOrder = [], closedAccounts = [],
   showClosed, onShowClosedChange,
-  layoutItems, layoutSectionTitle, visibleItems, onVisibleItemsChange,
+  layoutItems, layoutSectionTitle, visibleItems, onVisibleItemsChange, onResetLayout,
   isMarketOpen, lastUpdated, isRefreshing, onRefresh, onOpenSettings,
 }: MobileControlBarProps) {
   const [searchActive, setSearchActive] = useState(false);
@@ -219,6 +220,10 @@ export function MobileControlBar({
                       ))}
                     </div>
                   ))}
+                  {onResetLayout && <>
+                    <MenuDivider />
+                    <MenuRow title="Reset to Default" onSelect={onResetLayout} />
+                  </>}
                 </MobileMenu>
               )}
 

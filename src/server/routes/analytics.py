@@ -38,6 +38,8 @@ from server.dependencies import (
 )
 from server.portfolio_service import (
     _calculate_portfolio_summary_internal,
+    _compute_raw_summary,
+    _filter_closed_positions,
     _get_historical_performance_cached,
 )
 from server.route_utils import clean_nans, get_mdp
@@ -461,13 +463,28 @@ async def get_projected_income(
     Returns projected monthly dividend income for the next 12 months.
     """
     try:
-        # 1. Get Current Holdings
-        summary_data = await _calculate_portfolio_summary_internal(
+        # 1. Get Current Holdings (share the raw summary cache — historical TWR is not needed here)
+        manager = get_config_manager(current_user) if current_user else None
+        if manager:
+            manager.load_manual_overrides()
+        overall_metrics, summary_df, holdings_dict, _ = await _compute_raw_summary(
             currency=currency,
             include_accounts=accounts,
-            show_closed_positions=False,
             data=data,
-            current_user=current_user,
+            account_interest_rates=(
+                manager.manual_overrides.get("account_interest_rates", {})
+                if manager
+                else {}
+            ),
+            interest_free_thresholds=(
+                manager.manual_overrides.get("interest_free_thresholds", {})
+                if manager
+                else {}
+            ),
+        )
+        summary_data = _filter_closed_positions(
+            {"metrics": overall_metrics or {}, "summary_df": summary_df, "holdings_dict": holdings_dict},
+            show_closed_positions=False,
         )
         summary_df = summary_data.get("summary_df")
         if summary_df is None or summary_df.empty:
@@ -774,7 +791,7 @@ async def get_projection(
 
     except Exception as e:
         logging.error(f"Error calculating projection: {e}", exc_info=True)
-        return {"available": False, "error": str(e)}
+        return {"available": False, "error": "Failed to calculate projection"}
 
 
 @router.get("/projection/backtest")
@@ -811,7 +828,7 @@ async def get_projection_backtest(
 
     except Exception as e:
         logging.error(f"Error backtesting projection: {e}", exc_info=True)
-        return {"available": False, "reason": "error", "error": str(e)}
+        return {"available": False, "reason": "error", "error": "Failed to backtest projection"}
 
 
 @router.get("/benchmark_scoreboard")

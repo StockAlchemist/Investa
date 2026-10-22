@@ -17,7 +17,7 @@ src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-from portfolio_history import align_prices_to_grid  # noqa: E402
+from portfolio_history import align_prices_to_grid, _intraday_symbols_for_window  # noqa: E402
 from server.portfolio_service import _previous_trading_day  # noqa: E402
 
 
@@ -64,3 +64,20 @@ def test_bar_between_grid_points_is_not_dropped():
 
     assert not np.isnan(aligned[0]).any()
     assert aligned[0].iloc[-1] == 42.0
+
+
+def test_intraday_prices_include_same_day_round_trips_and_skip_old_closed_positions():
+    quantities = np.zeros((3, 3, 1))
+    quantities[0, 0, 0] = 10  # OLD was closed before the requested window.
+    quantities[1:, 1, 0] = 2  # HELD remains in the portfolio.
+    transactions = pd.DataFrame({
+        "Date": pd.to_datetime(["2026-10-20", "2026-10-21", "2026-10-21"]),
+        "Symbol": ["OLD", "ROUNDTRIP", "ROUNDTRIP"],
+    })
+    result = _intraday_symbols_for_window(
+        ["OLD", "HELD", "ROUNDTRIP", "^GSPC"], ["^GSPC"], quantities,
+        date(2026, 10, 20), date(2026, 10, 21), date(2026, 10, 22),
+        {0: "OLD", 1: "HELD", 2: "ROUNDTRIP"},
+        {s: s for s in ["OLD", "HELD", "ROUNDTRIP"]}, transactions,
+    )
+    assert result == ["HELD", "ROUNDTRIP", "^GSPC"]
