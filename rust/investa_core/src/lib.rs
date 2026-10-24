@@ -1,0 +1,54 @@
+//! Investa's calculation core.
+//!
+//! The Python backend keeps the web layer, data fetching and orchestration; the
+//! calculations it hands arrays to live here. Each module is a port of a Python
+//! (formerly Numba) kernel and keeps that kernel's arithmetic exactly, so the
+//! golden tests and every cached history stay valid.
+
+pub mod analyzer;
+pub mod holdings;
+mod py;
+pub mod util;
+
+use pyo3::prelude::*;
+
+/// Hash of this crate's sources, folded into the history-cache version.
+pub const SOURCE_HASH: &str = env!("INVESTA_CORE_SOURCE_HASH");
+
+#[pymodule]
+fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("SOURCE_HASH", SOURCE_HASH)?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+
+    m.add_function(wrap_pyfunction!(py::calculate_holdings, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        py::calculate_daily_holdings_chronological,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(py::process_core, m)?)?;
+    m.add_function(wrap_pyfunction!(py::dividend_amount, m)?)?;
+
+    // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
+    let types = PyModule::new(m.py(), "analyzer_types")?;
+    use analyzer::types as t;
+    for (name, value) in [
+        ("TYPE_BUY", t::BUY),
+        ("TYPE_SELL", t::SELL),
+        ("TYPE_DEPOSIT", t::DEPOSIT),
+        ("TYPE_WITHDRAWAL", t::WITHDRAWAL),
+        ("TYPE_DIVIDEND", t::DIVIDEND),
+        ("TYPE_FEES", t::FEES),
+        ("TYPE_SPLIT", t::SPLIT),
+        ("TYPE_TRANSFER", t::TRANSFER),
+        ("TYPE_SHORT_SELL", t::SHORT_SELL),
+        ("TYPE_BUY_TO_COVER", t::BUY_TO_COVER),
+        ("TYPE_TAX", t::TAX),
+        ("TYPE_INTEREST", t::INTEREST),
+        ("TYPE_SPIN_OFF", t::SPIN_OFF),
+        ("TYPE_UNKNOWN", t::UNKNOWN),
+    ] {
+        types.add(name, value)?;
+    }
+    m.add_submodule(&types)?;
+    Ok(())
+}

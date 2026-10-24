@@ -1,7 +1,9 @@
-"""Numba-JIT valuation kernels and Python fallbacks for holdings/portfolio value.
+"""Holdings/portfolio-value kernels and their Python orchestration.
 
-Split from portfolio_logic.py. Code inside the @numba.jit functions must stay
-NumPy-compatible (nopython mode): no Python objects, NumPy arrays only.
+Split from portfolio_logic.py. The two replay kernels run in Rust
+(rust/investa_core, imported as `investa_core`); this module prepares their
+NumPy inputs and values the results. Their names still say "numba" because
+callers import them by those names.
 """
 
 # ruff: noqa: E402
@@ -9,7 +11,7 @@ import logging
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-import numba
+import investa_core
 import numpy as np
 import pandas as pd
 
@@ -23,6 +25,18 @@ from config import (
 )
 from finutils import get_historical_price, get_historical_rate_via_usd_bridge
 
+
+
+def _i64(a):
+    """An int64, C-contiguous view (or copy) of `a`, as the Rust kernels take."""
+    return np.ascontiguousarray(a, dtype=np.int64)
+
+
+def _f64(a):
+    """A float64, C-contiguous view (or copy) of `a`, as the Rust kernels take."""
+    return np.ascontiguousarray(a, dtype=np.float64)
+
+
 try:
     from line_profiler import profile
 except ImportError:
@@ -31,7 +45,6 @@ except ImportError:
         return func
 
 
-@numba.jit(nopython=True, fastmath=True, cache=True)
 def _dividend_amount(qty, price, total_amount):
     """The cash a dividend row pays, read the way the summary reads it.
 
@@ -40,13 +53,11 @@ def _dividend_amount(qty, price, total_amount):
     reinvestment the rounded share count makes the product drift, so it is the
     fallback; a bare Price/Share is the legacy form. Mirrors the dividend
     normalization in portfolio_analyzer so the graph and the holdings table
-    book the same cash.
+    book the same cash. Computed in Rust (investa_core) alongside the kernels.
     """
-    if abs(total_amount) > 1e-9:
-        return abs(total_amount)
-    if abs(qty) > 1e-9 and abs(price) > 1e-9:
-        return abs(qty) * abs(price)
-    return abs(price)
+    return investa_core.dividend_amount(
+        float(qty), float(price), float(total_amount)
+    )
 
 
 def _normalize_series(series):
@@ -599,17 +610,16 @@ def _calculate_portfolio_value_at_date_unadjusted_python(
     return total_market_value_display_curr_agg, any_lookup_nan_on_date
 
 
-@numba.jit(nopython=True, fastmath=True, cache=True)
 def _calculate_holdings_numba(
     target_date_ordinal,
     tx_dates_ordinal_np,
     tx_symbols_np,
     tx_accounts_np,
-    tx_to_accounts_np,  # NEW argument
+    tx_to_accounts_np,
     tx_types_np,
     tx_quantities_np,
     tx_prices_np,
-    tx_totals_np,  # Total Amount per tx; primary fallback for cash math
+    tx_totals_np,
     tx_commissions_np,
     tx_split_ratios_np,
     tx_local_currencies_np,
@@ -623,364 +633,75 @@ def _calculate_holdings_numba(
     sell_type_id,
     withdrawal_type_id,
     short_sell_type_id,
-    buy_to_cover_type_id,  # type: ignore
-    transfer_type_id,  # NEW argument
-    spin_off_type_id,  # SPIN-OFF: parent basis reduction + child receipt
+    buy_to_cover_type_id,
+    transfer_type_id,
+    spin_off_type_id,
     fees_type_id,
     dividend_type_id,
     interest_type_id,
-    tax_type_id,  # AUTO CASH
+    tax_type_id,
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
-    acc_cash_modes,  # AUTO CASH: int64 array, 0=Manual, 1=Auto
+    acc_cash_modes,
 ):
-    # Initialize state arrays
-    holdings_qty_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-    holdings_cost_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-    holdings_currency_np = np.full((num_symbols, num_accounts), -1, dtype=np.int64)
+    """Holdings, cost basis, currencies, cash and last trade prices as of one date.
 
-    holdings_short_proceeds_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-    holdings_short_orig_qty_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-
-    cash_balances_np = np.zeros(num_accounts, dtype=np.float64)
-    cash_currency_np = np.full(num_accounts, -1, dtype=np.int64)
-
-    # --- NEW: Track last prices ---
-    last_prices_np = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-
-    num_transactions = len(tx_dates_ordinal_np)
-
-    for i in range(num_transactions):
-        tx_date = tx_dates_ordinal_np[i]
-        if tx_date > target_date_ordinal:
-            continue
-
-        symbol_id = tx_symbols_np[i]
-        account_id = tx_accounts_np[i]
-        type_id = tx_types_np[i]
-        qty = tx_quantities_np[i]
-        price = tx_prices_np[i]
-        total_amount = tx_totals_np[i]
-        commission = tx_commissions_np[i]
-        split_ratio = tx_split_ratios_np[i]
-        currency_id = tx_local_currencies_np[i]
-
-        # --- Handle CASH transactions ---
-        if symbol_id == cash_symbol_id:
-            if cash_currency_np[account_id] == -1:
-                cash_currency_np[account_id] = currency_id
-
-            # Column conventions per direction — see the chronological version:
-            # money in reads Quantity, money out reads Total Amount.
-            cash_in = abs(qty) if abs(qty) > 1e-9 else abs(total_amount)
-            cash_out = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
-            # Income / fee rows on $CASH move the balance in Auto mode only —
-            # see the chronological version for why Manual mode must skip them.
-            is_auto_cash = acc_cash_modes[account_id] == 1
-            # Commission on a $CASH row is descriptive — see the chronological
-            # version. Only the amount moves the balance.
-            if type_id == buy_type_id or type_id == deposit_type_id:
-                cash_balances_np[account_id] += cash_in
-            elif type_id == dividend_type_id:
-                if is_auto_cash:
-                    cash_balances_np[account_id] += _dividend_amount(
-                        qty, price, total_amount
-                    )
-            elif type_id == interest_type_id:
-                if is_auto_cash:
-                    cash_balances_np[account_id] += cash_out
-            elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                cash_balances_np[account_id] -= cash_out
-            elif type_id == fees_type_id or type_id == tax_type_id:
-                if is_auto_cash:
-                    fee_val = (
-                        abs(total_amount)
-                        if abs(total_amount) > 1e-9
-                        else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
-                    )
-                    cash_balances_np[account_id] -= fee_val
-            elif type_id == transfer_type_id:
-                dest_account_id = tx_to_accounts_np[i]
-                if dest_account_id != -1:
-                    if cash_currency_np[dest_account_id] == -1:
-                        cash_currency_np[dest_account_id] = currency_id
-
-                    cash_balances_np[account_id] -= cash_out + commission
-                    cash_balances_np[dest_account_id] += cash_out
-            continue
-        # --- Handle STOCK transactions ---
-        if holdings_currency_np[symbol_id, account_id] == -1:
-            holdings_currency_np[symbol_id, account_id] = currency_id
-
-        # Update Last Price ONLY for transaction types where Price/Share is the
-        # stock price. Dividend / Tax / Interest / Fee rows store the per-share
-        # dividend or fee amount in that column, which would poison the
-        # last-known-price fallback and create phantom valuation jumps on days
-        # where yfinance returns NaN for that symbol.
-        if price > 1e-9 and (
-            type_id == buy_type_id
-            or type_id == sell_type_id
-            or type_id == short_sell_type_id
-            or type_id == buy_to_cover_type_id
-            or type_id == transfer_type_id
-            or type_id == spin_off_type_id
-        ):
-            last_prices_np[symbol_id, account_id] = price
-
-        # --- SPIN-OFF LOGIC ---
-        # Cash-neutral corporate action, imported as two legs sharing a date:
-        #   - child receipt (qty > 0): create the new position at its allocated
-        #     cost basis (Total Amount, or qty * per-share allocated price).
-        #   - parent basis reduction (qty == 0): reduce the parent symbol's cost
-        #     basis by the amount allocated to the child (Total Amount).
-        # See corporate_actions.apply_spin_off for the reference arithmetic.
-        if type_id == spin_off_type_id:
-            if qty > 1e-9:
-                cost = abs(total_amount) if abs(total_amount) > 1e-9 else (qty * price)
-                holdings_qty_np[symbol_id, account_id] += qty
-                holdings_cost_np[symbol_id, account_id] += cost
-            else:
-                moved = abs(total_amount)
-                current_cost = holdings_cost_np[symbol_id, account_id]
-                if moved > current_cost:
-                    moved = current_cost
-                holdings_cost_np[symbol_id, account_id] = current_cost - moved
-            continue
-
-        # --- STOCK TRANSFER LOGIC ---
-        if type_id == transfer_type_id:
-            if qty > 1e-9:
-                source_qty = holdings_qty_np[symbol_id, account_id]
-                source_cost_basis = holdings_cost_np[symbol_id, account_id]
-
-                # Determine the quantity to transfer. Do not cap it. Trust the transaction.
-                transfer_qty = qty
-                cost_to_transfer = 0.0
-
-                # Calculate proportional cost to transfer.
-                if abs(source_qty) > 1e-9:  # Avoid division by zero
-                    # If transferring more than held (e.g., due to same-day buy), transfer 100% of cost.
-                    proportion = min(transfer_qty / source_qty, 1.0)
-                    cost_to_transfer = source_cost_basis * proportion
-
-                # 1. Deduct from Source Account
-                holdings_qty_np[symbol_id, account_id] -= transfer_qty
-                holdings_cost_np[symbol_id, account_id] -= cost_to_transfer
-
-                # Zero out if quantity becomes negligible
-                if (
-                    abs(holdings_qty_np[symbol_id, account_id])
-                    < stock_qty_close_tolerance
-                ):
-                    holdings_qty_np[symbol_id, account_id] = 0.0
-                    holdings_cost_np[symbol_id, account_id] = 0.0
-
-                # 2. Add to Destination
-                dest_account_id = tx_to_accounts_np[i]
-                if dest_account_id != -1:
-                    if holdings_currency_np[symbol_id, dest_account_id] == -1:
-                        holdings_currency_np[symbol_id, dest_account_id] = currency_id
-                    holdings_qty_np[symbol_id, dest_account_id] += transfer_qty
-                    holdings_cost_np[symbol_id, dest_account_id] += cost_to_transfer
-
-                    # Also copy last price to destination if available
-                    if last_prices_np[symbol_id, account_id] > 1e-9:
-                        last_prices_np[symbol_id, dest_account_id] = last_prices_np[
-                            symbol_id, account_id
-                        ]
-            continue
-
-        # --- Existing Split Logic ---
-        if type_id == split_type_id or type_id == stock_split_type_id:
-            if split_ratio > 1e-9:
-                for acc_idx in range(num_accounts):
-                    if abs(holdings_qty_np[symbol_id, acc_idx]) > 1e-9:
-                        holdings_qty_np[symbol_id, acc_idx] *= split_ratio
-
-                        # Handle Shorts
-                        is_shortable = False
-                        for short_id in shortable_symbol_ids:
-                            if symbol_id == short_id:
-                                is_shortable = True
-                                break
-                        if holdings_qty_np[symbol_id, acc_idx] < -1e-9 and is_shortable:
-                            holdings_short_orig_qty_np[symbol_id, acc_idx] *= (
-                                split_ratio
-                            )
-            elif split_ratio < -1e-9:
-                # "Target quantity" encoding — see the chronological version.
-                # Applies to this account only.
-                target_qty = -split_ratio
-                old_qty = holdings_qty_np[symbol_id, account_id]
-                if abs(old_qty) > 1e-9:
-                    implied_ratio = target_qty / old_qty
-                    holdings_qty_np[symbol_id, account_id] = target_qty
-                    if abs(holdings_short_orig_qty_np[symbol_id, account_id]) > 1e-9:
-                        holdings_short_orig_qty_np[symbol_id, account_id] *= (
-                            implied_ratio
-                        )
-                    if (
-                        abs(last_prices_np[symbol_id, account_id]) > 1e-9
-                        and abs(implied_ratio) > 1e-9
-                    ):
-                        last_prices_np[symbol_id, account_id] /= implied_ratio
-
-            if abs(commission) > 1e-9:
-                holdings_cost_np[symbol_id, account_id] += commission
-            continue
-
-        # --- Existing Shorting Logic ---
-        is_shortable_flag = False
-        for short_id in shortable_symbol_ids:
-            if symbol_id == short_id:
-                is_shortable_flag = True
-                break
-
-        if is_shortable_flag and (
-            type_id == short_sell_type_id or type_id == buy_to_cover_type_id
-        ):
-            qty_abs = abs(qty)
-            if qty_abs > 1e-9:
-                if type_id == short_sell_type_id:
-                    proceeds = (qty_abs * price) - commission
-                    holdings_qty_np[symbol_id, account_id] -= qty_abs
-                    holdings_short_proceeds_np[symbol_id, account_id] += proceeds
-                    holdings_short_orig_qty_np[symbol_id, account_id] += qty_abs
-                    holdings_cost_np[symbol_id, account_id] += commission
-                elif type_id == buy_to_cover_type_id:
-                    qty_currently_short = (
-                        abs(holdings_qty_np[symbol_id, account_id])
-                        if holdings_qty_np[symbol_id, account_id] < -1e-9
-                        else 0.0
-                    )
-                    if qty_currently_short > 1e-9:
-                        qty_covered = min(qty_abs, qty_currently_short)
-                        cost_to_cover = (qty_covered * price) + commission
-                        holdings_qty_np[symbol_id, account_id] += qty_covered
-                        holdings_cost_np[symbol_id, account_id] += cost_to_cover
-
-                        short_orig = holdings_short_orig_qty_np[symbol_id, account_id]
-                        if short_orig > 1e-9:
-                            ratio = qty_covered / short_orig
-                            holdings_short_proceeds_np[symbol_id, account_id] *= (
-                                1.0 - ratio
-                            )
-                            holdings_short_orig_qty_np[symbol_id, account_id] -= (
-                                qty_covered
-                            )
-            continue
-
-        # --- Standard Buy/Sell ---
-        if type_id == buy_type_id or type_id == deposit_type_id:
-            if qty > 1e-9:
-                cost = (qty * price) + commission
-                holdings_qty_np[symbol_id, account_id] += qty
-                holdings_cost_np[symbol_id, account_id] += cost
-        elif type_id == sell_type_id or type_id == withdrawal_type_id:
-            if qty > 1e-9:
-                held_qty = holdings_qty_np[symbol_id, account_id]
-                if held_qty > 1e-9:
-                    qty_sold = min(qty, held_qty)
-                    cost_basis_held = holdings_cost_np[symbol_id, account_id]
-                    cost_sold = qty_sold * (cost_basis_held / held_qty)
-
-                    holdings_qty_np[symbol_id, account_id] -= qty_sold
-                    holdings_cost_np[symbol_id, account_id] -= cost_sold
-
-                    if abs(holdings_qty_np[symbol_id, account_id]) < 1e-9:
-                        holdings_qty_np[symbol_id, account_id] = 0.0
-                        holdings_cost_np[symbol_id, account_id] = 0.0
-        elif type_id == fees_type_id:
-            if abs(commission) > 1e-9:
-                holdings_cost_np[symbol_id, account_id] += commission
-
-        # --- AUTO CASH LOGIC (Single-date valuation) ---
-        # Mirror the conventions used in the chronological version: prefer
-        # Total Amount for cash math; fall back to qty * price (or price
-        # alone for dividends entered with the legacy "price holds amount"
-        # convention).
-        if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
-            cash_delta = 0.0
-            if type_id == buy_type_id:
-                cash_delta = -(
-                    abs(total_amount)
-                    if abs(total_amount) > 1e-9
-                    else (abs(qty) * price + commission)
-                )
-            elif type_id == sell_type_id:
-                cash_delta = +(
-                    abs(total_amount)
-                    if abs(total_amount) > 1e-9
-                    else (abs(qty) * price - commission)
-                )
-            elif type_id == dividend_type_id:
-                cash_delta = +_dividend_amount(qty, price, total_amount)
-            elif type_id == interest_type_id:
-                cash_delta = +(
-                    abs(total_amount) if abs(total_amount) > 1e-9 else abs(price)
-                )
-            elif type_id == fees_type_id or type_id == tax_type_id:
-                cash_delta = -(
-                    abs(total_amount)
-                    if abs(total_amount) > 1e-9
-                    else (abs(commission) if abs(commission) > 1e-9 else abs(price))
-                )
-            elif type_id == short_sell_type_id:
-                # See the chronological version: a short on a shortable symbol
-                # books its cash through its own $CASH rows, so synthesizing
-                # here would count the proceeds twice.
-                if not is_shortable_flag:
-                    cash_delta = +(
-                        abs(total_amount)
-                        if abs(total_amount) > 1e-9
-                        else (abs(qty) * price - commission)
-                    )
-            elif type_id == buy_to_cover_type_id:
-                if not is_shortable_flag:
-                    cash_delta = -(
-                        abs(total_amount)
-                        if abs(total_amount) > 1e-9
-                        else (abs(qty) * price + commission)
-                    )
-            # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
-
-            if abs(cash_delta) > 1e-9:
-                cash_balances_np[account_id] += cash_delta
-
-    # Apply Final Tolerance
-    for s_id in range(num_symbols):
-        if s_id == cash_symbol_id:
-            continue
-        for a_id in range(num_accounts):
-            if 0 < abs(holdings_qty_np[s_id, a_id]) < stock_qty_close_tolerance:
-                holdings_qty_np[s_id, a_id] = 0.0
-                holdings_cost_np[s_id, a_id] = 0.0
-
-    return (
-        holdings_qty_np,
-        holdings_cost_np,
-        holdings_currency_np,
-        cash_balances_np,
-        cash_currency_np,
-        last_prices_np,  # NEW return
+    Runs in Rust: investa_core.calculate_holdings, a line-for-line port of the
+    Numba kernel that used to live here (frozen in tests/reference/). Returns
+    (qty[S, A], cost[S, A], currency[S, A], cash[A], cash_currency[A],
+    last_prices[S, A]). The business rules behind each branch are documented in
+    rust/investa_core/src/holdings.rs.
+    """
+    return investa_core.calculate_holdings(
+        int(target_date_ordinal),
+        _i64(tx_dates_ordinal_np),
+        _i64(tx_symbols_np),
+        _i64(tx_accounts_np),
+        _i64(tx_to_accounts_np),
+        _i64(tx_types_np),
+        _f64(tx_quantities_np),
+        _f64(tx_prices_np),
+        _f64(tx_totals_np),
+        _f64(tx_commissions_np),
+        _f64(tx_split_ratios_np),
+        _i64(tx_local_currencies_np),
+        int(num_symbols),
+        int(num_accounts),
+        int(num_currencies),
+        int(split_type_id),
+        int(stock_split_type_id),
+        int(buy_type_id),
+        int(deposit_type_id),
+        int(sell_type_id),
+        int(withdrawal_type_id),
+        int(short_sell_type_id),
+        int(buy_to_cover_type_id),
+        int(transfer_type_id),
+        int(spin_off_type_id),
+        int(fees_type_id),
+        int(dividend_type_id),
+        int(interest_type_id),
+        int(tax_type_id),
+        int(cash_symbol_id),
+        float(stock_qty_close_tolerance),
+        _i64(shortable_symbol_ids),
+        _i64(acc_cash_modes),
     )
 
 
-@profile
-@numba.jit(nopython=True, fastmath=True, cache=True)
 def _calculate_daily_holdings_chronological_numba(
     date_ordinals_np,
     tx_dates_ordinal_np,
-    tx_symbols_np,  # type: ignore
-    tx_to_accounts_np,  # NEW argument
+    tx_symbols_np,
+    tx_to_accounts_np,
     tx_accounts_np,
     tx_types_np,
     tx_quantities_np,
     tx_commissions_np,
     tx_split_ratios_np,
-    tx_prices_np,  # NEW argument
-    tx_totals_np,  # BUG-06 FIX: Total Amount for accurate Auto Cash deltas
+    tx_prices_np,
+    tx_totals_np,
     num_symbols,
     num_accounts,
     split_type_id,
@@ -991,285 +712,58 @@ def _calculate_daily_holdings_chronological_numba(
     withdrawal_type_id,
     short_sell_type_id,
     buy_to_cover_type_id,
-    transfer_type_id,  # NEW argument
-    spin_off_type_id,  # SPIN-OFF: child share receipt (qty-only here)
-    dividend_type_id,  # AUTO CASH
-    interest_type_id,  # AUTO CASH
-    fees_type_id,  # AUTO CASH
-    tax_type_id,  # AUTO CASH
+    transfer_type_id,
+    spin_off_type_id,
+    dividend_type_id,
+    interest_type_id,
+    fees_type_id,
+    tax_type_id,
     cash_symbol_id,
     stock_qty_close_tolerance,
     shortable_symbol_ids,
-    acc_cash_modes,  # AUTO CASH: int64 array, 0=Manual, 1=Auto
+    acc_cash_modes,
 ):
+    """Holdings, cash and last trade prices at the end of every day in a range.
+
+    Runs in Rust: investa_core.calculate_daily_holdings_chronological, a
+    line-for-line port of the Numba kernel that used to live here (frozen in
+    tests/reference/). Transactions must be sorted by date. Returns
+    (daily_qty[D, S, A], daily_cash[D, A], daily_last_prices[D, S, A]). Note the
+    argument order: destination accounts before source accounts.
     """
-    Calculates holdings and cash balances chronologically for each day in the target range.
-    This is much more efficient than recalculating from scratch each day.
-    """
-    num_days = len(date_ordinals_np)
-    # Initialize daily result arrays
-    daily_holdings_qty_np = np.zeros(
-        (num_days, num_symbols, num_accounts), dtype=np.float64
+    return investa_core.calculate_daily_holdings_chronological(
+        _i64(date_ordinals_np),
+        _i64(tx_dates_ordinal_np),
+        _i64(tx_symbols_np),
+        _i64(tx_to_accounts_np),
+        _i64(tx_accounts_np),
+        _i64(tx_types_np),
+        _f64(tx_quantities_np),
+        _f64(tx_commissions_np),
+        _f64(tx_split_ratios_np),
+        _f64(tx_prices_np),
+        _f64(tx_totals_np),
+        int(num_symbols),
+        int(num_accounts),
+        int(split_type_id),
+        int(stock_split_type_id),
+        int(buy_type_id),
+        int(deposit_type_id),
+        int(sell_type_id),
+        int(withdrawal_type_id),
+        int(short_sell_type_id),
+        int(buy_to_cover_type_id),
+        int(transfer_type_id),
+        int(spin_off_type_id),
+        int(dividend_type_id),
+        int(interest_type_id),
+        int(fees_type_id),
+        int(tax_type_id),
+        int(cash_symbol_id),
+        float(stock_qty_close_tolerance),
+        _i64(shortable_symbol_ids),
+        _i64(acc_cash_modes),
     )
-    daily_cash_balances_np = np.zeros((num_days, num_accounts), dtype=np.float64)
-    # --- NEW: Track last transaction prices for fallback ---
-    daily_last_prices_np = np.zeros(
-        (num_days, num_symbols, num_accounts), dtype=np.float64
-    )
-
-    # Initialize current state
-    current_holdings_qty = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-    current_cash_balances = np.zeros(num_accounts, dtype=np.float64)
-    current_last_prices = np.zeros((num_symbols, num_accounts), dtype=np.float64)
-
-    tx_idx = 0
-    num_transactions = len(tx_dates_ordinal_np)
-
-    for day_idx in range(num_days):
-        current_date_ordinal = date_ordinals_np[day_idx]
-
-        # Process all transactions for this day
-        while (
-            tx_idx < num_transactions
-            and tx_dates_ordinal_np[tx_idx] <= current_date_ordinal
-        ):
-            symbol_id = tx_symbols_np[tx_idx]
-            account_id = tx_accounts_np[tx_idx]
-            type_id = tx_types_np[tx_idx]
-            qty = tx_quantities_np[tx_idx]
-            commission = tx_commissions_np[tx_idx]
-            split_ratio = tx_split_ratios_np[tx_idx]
-            # --- NEW: Get price for fallback ---
-            price = tx_prices_np[tx_idx]
-            # BUG-06 FIX: Get Total Amount for accurate Auto Cash deltas
-            total_amount = tx_totals_np[tx_idx]
-
-            if symbol_id == cash_symbol_id:
-                # Which column carries the amount depends on the direction, and
-                # these are the summary's conventions (portfolio_analyzer) —
-                # the two ledgers have to read a row the same way or the graph
-                # drifts away from the headline total.
-                #   in  (buy/deposit): Quantity, falling back to Total Amount
-                #   out (sell/withdrawal): Total Amount, falling back to Quantity
-                # Manual entries historically store the amount in Quantity
-                # (Style A); PDF imports store it in Total Amount (Style B), and
-                # when both are present they can differ by a fee.
-                cash_in = abs(qty) if abs(qty) > 1e-9 else abs(total_amount)
-                cash_out = abs(total_amount) if abs(total_amount) > 1e-9 else abs(qty)
-                # Income and fee rows booked on $CASH move the balance only in
-                # Auto mode. In Manual mode the movement is already recorded by
-                # its own $CASH buy/withdrawal row and the dividend/fee row just
-                # classifies it, so crediting both counts the money twice.
-                is_auto_cash = acc_cash_modes[account_id] == 1
-                # The commission on a $CASH row is descriptive, not a second
-                # charge: the money it cost leaves through its own $CASH row (a
-                # "Commission ..." withdrawal), and the trade leg it mirrors
-                # carries the same figure. Only the amount moves the balance —
-                # again matching the summary, which books the commission to its
-                # own bucket and never touches the cash quantity with it.
-                if type_id == buy_type_id or type_id == deposit_type_id:
-                    current_cash_balances[account_id] += cash_in
-                elif type_id == dividend_type_id:
-                    if is_auto_cash:
-                        current_cash_balances[account_id] += _dividend_amount(
-                            qty, price, total_amount
-                        )
-                elif type_id == interest_type_id:
-                    if is_auto_cash:
-                        current_cash_balances[account_id] += cash_out
-                elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                    current_cash_balances[account_id] -= cash_out
-                elif type_id == fees_type_id or type_id == tax_type_id:
-                    # Account-level fee/tax recorded on $CASH symbol (wire fees,
-                    # margin interest, withholding, etc.). Debit cash by Total
-                    # Amount (preferred), quantity, or commission as fallback.
-                    if is_auto_cash:
-                        fee_val = (
-                            abs(total_amount)
-                            if abs(total_amount) > 1e-9
-                            else (abs(qty) if abs(qty) > 1e-9 else abs(commission))
-                        )
-                        current_cash_balances[account_id] -= fee_val
-                elif type_id == transfer_type_id:
-                    dest_account_id = tx_to_accounts_np[tx_idx]
-                    if dest_account_id != -1:
-                        # Move Cash: Deduct from Source, Add to Dest
-                        # Assuming commission is paid by source
-                        current_cash_balances[account_id] -= cash_out + commission
-                        current_cash_balances[dest_account_id] += cash_out
-
-            else:
-                # Update Last Price ONLY for transaction types where Price/Share
-                # is the stock price. See the matching note in the target-date
-                # function. Prevents dividend/tax/etc rows from poisoning the
-                # last-known-price fallback.
-                if price > 1e-9 and (
-                    type_id == buy_type_id
-                    or type_id == sell_type_id
-                    or type_id == short_sell_type_id
-                    or type_id == buy_to_cover_type_id
-                    or type_id == transfer_type_id
-                    or type_id == spin_off_type_id
-                ):
-                    current_last_prices[symbol_id, account_id] = price
-
-                if type_id == split_type_id or type_id == stock_split_type_id:
-                    if split_ratio > 1e-9:
-                        for acc_idx in range(num_accounts):
-                            if abs(current_holdings_qty[symbol_id, acc_idx]) > 1e-9:
-                                current_holdings_qty[symbol_id, acc_idx] *= split_ratio
-                            # --- FIX: Also adjust the fallback price for the split ---
-                            # This prevents valuation spikes if market data is missing on the split day.
-                            if abs(current_last_prices[symbol_id, acc_idx]) > 1e-9:
-                                current_last_prices[symbol_id, acc_idx] /= split_ratio
-                    elif split_ratio < -1e-9:
-                        # Negative ratio is the "target quantity" encoding: the
-                        # position *becomes* this many shares, for this account
-                        # only (see portfolio_analyzer's split branch, which the
-                        # summary uses). Ignoring it strands the difference as a
-                        # phantom holding the summary has long since closed.
-                        target_qty = -split_ratio
-                        old_qty = current_holdings_qty[symbol_id, account_id]
-                        if abs(old_qty) > 1e-9:
-                            implied_ratio = target_qty / old_qty
-                            current_holdings_qty[symbol_id, account_id] = target_qty
-                            if (
-                                abs(current_last_prices[symbol_id, account_id]) > 1e-9
-                                and abs(implied_ratio) > 1e-9
-                            ):
-                                current_last_prices[symbol_id, account_id] /= (
-                                    implied_ratio
-                                )
-
-                elif type_id == buy_type_id or type_id == deposit_type_id:
-                    if qty > 1e-9:
-                        current_holdings_qty[symbol_id, account_id] += qty
-
-                elif type_id == sell_type_id or type_id == withdrawal_type_id:
-                    if qty > 1e-9:
-                        held_qty = current_holdings_qty[symbol_id, account_id]
-                        qty_sold = min(qty, held_qty) if held_qty > 1e-9 else 0.0
-                        current_holdings_qty[symbol_id, account_id] -= qty_sold
-
-                elif type_id == transfer_type_id:
-                    if qty > 1e-9:
-                        transfer_qty = qty
-
-                        # 1. Deduct from Source Account
-                        current_holdings_qty[symbol_id, account_id] -= transfer_qty
-
-                        # 2. Add to Destination Account
-                        dest_account_id = tx_to_accounts_np[tx_idx]
-                        if dest_account_id != -1:
-                            current_holdings_qty[symbol_id, dest_account_id] += (
-                                transfer_qty
-                            )
-                            # Also copy last price to destination if available
-                            if current_last_prices[symbol_id, account_id] > 1e-9:
-                                current_last_prices[symbol_id, dest_account_id] = (
-                                    current_last_prices[symbol_id, account_id]
-                                )
-
-                        # Note: This function only tracks quantity, not cost basis.
-                        # The cost basis transfer is handled in _calculate_holdings_numba.
-
-                elif type_id == spin_off_type_id:
-                    # Only the child-receipt leg (qty > 0) changes share counts;
-                    # the parent basis-reduction leg (qty == 0) is a no-op here.
-                    # Cost basis is handled in _calculate_holdings_numba.
-                    if qty > 1e-9:
-                        current_holdings_qty[symbol_id, account_id] += qty
-                else:
-                    is_shortable = False
-                    for short_id in shortable_symbol_ids:
-                        if symbol_id == short_id:
-                            is_shortable = True
-                            break
-                    if is_shortable:
-                        if type_id == short_sell_type_id:
-                            current_holdings_qty[symbol_id, account_id] -= abs(qty)
-                        elif type_id == buy_to_cover_type_id:
-                            qty_currently_short = (
-                                abs(current_holdings_qty[symbol_id, account_id])
-                                if current_holdings_qty[symbol_id, account_id] < -1e-9
-                                else 0.0
-                            )
-                            qty_covered = min(abs(qty), qty_currently_short)
-                            current_holdings_qty[symbol_id, account_id] += qty_covered
-
-                sym_is_shortable = False
-                for short_id in shortable_symbol_ids:
-                    if symbol_id == short_id:
-                        sym_is_shortable = True
-                        break
-
-                # --- AUTO CASH LOGIC (Historical) ---
-                # For Auto-mode accounts, generate implicit cash balance changes
-                # Skip: Deposit/Withdrawal (in-kind shares), Split, Transfer
-                # BUG-02/03 FIX: Aligned with analyzer's three-tier fallback (total → qty*price ± comm)
-                if acc_cash_modes[account_id] == 1 and cash_symbol_id >= 0:
-                    cash_delta = 0.0
-                    if type_id == buy_type_id:
-                        cash_delta = -(
-                            abs(total_amount)
-                            if abs(total_amount) > 1e-9
-                            else (abs(qty) * price + commission)
-                        )
-                    elif type_id == sell_type_id:
-                        cash_delta = +(
-                            abs(total_amount)
-                            if abs(total_amount) > 1e-9
-                            else (abs(qty) * price - commission)
-                        )
-                    elif type_id == dividend_type_id:
-                        cash_delta = +_dividend_amount(qty, price, total_amount)
-                    elif type_id == interest_type_id:
-                        cash_delta = +(
-                            abs(total_amount)
-                            if abs(total_amount) > 1e-9
-                            else abs(price)
-                        )
-                    elif type_id == fees_type_id or type_id == tax_type_id:
-                        cash_delta = -(
-                            abs(total_amount)
-                            if abs(total_amount) > 1e-9
-                            else (
-                                abs(commission)
-                                if abs(commission) > 1e-9
-                                else abs(price)
-                            )
-                        )
-                    elif type_id == short_sell_type_id:
-                        # A short on a shortable symbol books its cash through
-                        # its own $CASH rows; the summary's shortable branch
-                        # returns before synthesizing any, so synthesizing here
-                        # would count the proceeds twice.
-                        if not sym_is_shortable:
-                            cash_delta = +(abs(qty) * price - commission)
-                    elif type_id == buy_to_cover_type_id:
-                        if not sym_is_shortable:
-                            cash_delta = -(abs(qty) * price + commission)
-                    # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
-
-                    if abs(cash_delta) > 1e-9:
-                        current_cash_balances[account_id] += cash_delta
-
-            tx_idx += 1
-
-        for s_id in range(num_symbols):
-            if s_id == cash_symbol_id:
-                continue
-            for a_id in range(num_accounts):
-                qty_val = current_holdings_qty[s_id, a_id]
-                if 0 < abs(qty_val) < stock_qty_close_tolerance:
-                    current_holdings_qty[s_id, a_id] = 0.0
-
-        daily_holdings_qty_np[day_idx] = current_holdings_qty
-        daily_cash_balances_np[day_idx] = current_cash_balances
-        # --- NEW: Store daily last prices ---
-        daily_last_prices_np[day_idx] = current_last_prices
-
-    return daily_holdings_qty_np, daily_cash_balances_np, daily_last_prices_np
 
 
 @profile
@@ -1553,8 +1047,8 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
             acc_cash_modes_val,
         )
 
-    except Exception as e_numba_call:
-        logging.error(f"Numba Call Error for {target_date}: {e_numba_call}")
+    except Exception as e_kernel_call:
+        logging.error(f"Holdings kernel error for {target_date}: {e_kernel_call}")
         return np.nan, True
 
     # --- Valuation Loop (using results from Numba) ---

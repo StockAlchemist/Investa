@@ -36,7 +36,7 @@ except ImportError:
 # --- END ADDED ---
 from typing import List, Tuple, Dict, Optional, Any, Set
 from collections import defaultdict
-from numba import jit, int64
+import investa_core
 
 # --- Import Configuration ---
 try:
@@ -105,6 +105,18 @@ TYPE_INTEREST = 11
 TYPE_SPIN_OFF = 12
 TYPE_UNKNOWN = -1
 
+# The Rust replay (investa_core.process_core) hard-codes these numbers. A
+# mismatch would silently book every row as the wrong type, so refuse to load.
+_rust_mismatch = [
+    _name
+    for _name, _value in vars(investa_core.analyzer_types).items()
+    if _name.startswith("TYPE_") and globals().get(_name) != _value
+]
+if _rust_mismatch:
+    raise ImportError(
+        f"portfolio_analyzer TYPE_* constants disagree with investa_core: {_rust_mismatch}"
+    )
+
 
 # --- Helper to map string types to ints ---
 def get_type_id(t):
@@ -138,7 +150,6 @@ def get_type_id(t):
     return TYPE_UNKNOWN
 
 
-@jit(nopython=True, cache=True)
 def _process_numba_core(
     sym_ids,
     acc_ids,
@@ -159,494 +170,40 @@ def _process_numba_core(
     num_accs,
     acc_cash_modes,
 ):
-    # State Array: (num_syms, num_accs, 14)
-    # 0: qty
-    # 1: total_cost_local
-    # 2: realized_gain_local
-    # 3: dividends_local
-    # 4: commissions_local
-    # 5: short_proceeds_local
-    # 6: short_original_qty
-    # 7: total_cost_invested_local
-    # 8: cumulative_investment_local
-    # 9: total_buy_cost_local
-    # 10: total_cost_display_historical_fx
-    # 11: local_curr_id (stored as float)
-    # 12: realized_gain_display (accumulated at historical FX)
-    # 13: taxes_local (separate from commissions; tax withholding on dividends, etc.)
+    """Replay the ledger into per-position state.
 
-    state = np.zeros((num_syms, num_accs, 14), dtype=np.float64)
-    # Initialize currency ID to -1.0 to detect first use
-    state[:, :, 11] = -1.0
-
-    # Transfer costs array: index -> unit_cost (NaN if none)
-    transfer_costs = np.full(num_tx, np.nan, dtype=np.float64)
-
-    for i in range(num_tx):
-        sym = sym_ids[i]
-        acc = acc_ids[i]
-        typ = type_ids[i]
-        qty = qtys[i]
-        price = prices[i]
-        comm = comms[i]
-        total = totals[i]
-        split = split_ratios[i]
-        to_acc = to_acc_ids[i]
-        curr = local_curr_ids[i]
-        fx_rate = fx_rates_hist[i]
-
-        if np.isnan(fx_rate):
-            fx_rate = 1.0
-
-        # Access state slice
-        current_state = state[sym, acc]
-
-        # Initialize/Check Currency
-        if current_state[11] == -1.0:
-            current_state[11] = float(curr)
-        elif abs(current_state[11] - float(curr)) > 0.1:
-            # Currency mismatch - skip logic (simulated)
-            # In array approach, we just continue, effectively ignoring it for this transaction
-            # But we can't easily skip the *loop* for this transaction if we already started?
-            # We just won't update the state.
-            pass
-
-        # --- SPLIT ---
-        if typ == TYPE_SPLIT:
-            # Case 1: Standard Split Ratio (Positive) -> Applies GLOBAL to all accounts
-            if split > 1e-9:
-                # Iterate all accounts for this symbol
-                for a_idx in range(num_accs):
-                    h_data = state[sym, a_idx]
-                    # Check if initialized (currency != -1)
-                    if h_data[11] != -1.0:
-                        old_qty = h_data[0]
-                        if abs(old_qty) >= 1e-9:
-                            h_data[0] *= split
-                            # Short logic
-                            is_shortable = False
-                            # Check if sym is in shortable list
-                            # O(N) scan on list? Or we can pass shortable_sym_ids as a boolean array?
-                            # Optimization: pass shortable_flags array of size num_syms
-                            # For now, list scan is okay if list is small.
-                            for s_short in shortable_sym_ids:
-                                if s_short == sym:
-                                    is_shortable = True
-                                    break
-
-                            if is_shortable:
-                                if old_qty < -1e-9:
-                                    h_data[6] *= split
-                                    if abs(h_data[6]) < 1e-9:
-                                        h_data[6] = 0.0
-
-                            if abs(h_data[0]) < 1e-9:
-                                h_data[0] = 0.0
-
-                # Apply split fee to specific account
-                if comm != 0:
-                    fee_cost = abs(comm)
-                    current_state[4] += fee_cost
-                    current_state[7] += fee_cost
-                    current_state[8] += fee_cost
-
-            # Case 2: Target Quantity (Negative Encoded) -> Applies LOCAL to specific account only
-            elif split < -1e-9:
-                target_qty = abs(split)
-                # current_state is state[sym, acc]
-                if current_state[11] != -1.0:
-                    old_qty = current_state[0]
-                    # Only apply if we hold something, to calculate implied ratio
-                    if abs(old_qty) > 1e-9:
-                        # Calculate implied ratio for this specific account
-                        ratio = target_qty / old_qty
-
-                        # Apply ratio logic LOCALLY
-                        current_state[0] = target_qty
-
-                        # Short logic
-                        # (Assume target qty is absolute hold count, logic might be complex for short)
-                        # For simplicity, scale short original qty by ratio too
-                        if abs(current_state[6]) > 1e-9:
-                            current_state[6] *= ratio
-
-                        # Note: We do NOT apply this to other accounts.
-                        # This safeguards against "E*TRADE reports 700 shares" blowing up "Sharebuilder" account
-
-                    elif abs(old_qty) < 1e-9 and target_qty > 0:
-                        # We held 0, now we hold target_qty?
-                        # That's a "Set Quantity" or "Add" event, not really a split.
-                        # But strictly for splits usually we hold shares already.
-                        # If we had 0, and now have 700, implied ratio is infinite.
-                        # Treat as just setting quantity, but cost basis remains 0?
-                        # Probably best to leave as 0 or set as is.
-                        # If it's a split, usually cost basis propagates.
-                        # Let's trust the logic that splits happen on existing holdings.
-                        pass
-
-                # Apply split fee
-                if comm != 0:
-                    fee_cost = abs(comm)
-                    current_state[4] += fee_cost
-                    current_state[7] += fee_cost
-                    current_state[8] += fee_cost
-
-            continue
-
-        # --- TRANSFER ---
-        if typ == TYPE_TRANSFER:
-            if qty > 1e-9 and to_acc != -1 and to_acc != acc:
-                from_qty = current_state[0]
-                to_state = state[sym, to_acc]
-
-                if sym == cash_sym_id or from_qty >= qty - 1e-9:
-                    to_state = state[sym, to_acc]
-
-                    # Initialize To State if needed
-                    if to_state[11] == -1.0:
-                        to_state[11] = current_state[11]
-
-                    if True:  # GLD Fix
-                        if sym == cash_sym_id:
-                            cost_transferred = qty
-                            cost_transferred_hist = qty * fx_rate
-                            invested_transferred = qty
-                            cumulative_transferred = qty
-                            buy_cost_transferred = qty
-                        else:
-                            proportion = 0.0
-                            if from_qty > 1e-9:
-                                proportion = qty / from_qty
-
-                            cost_transferred = current_state[1] * proportion
-                            cost_transferred_hist = current_state[10] * proportion
-                            invested_transferred = current_state[7] * proportion
-                            cumulative_transferred = current_state[8] * proportion
-                            buy_cost_transferred = current_state[9] * proportion
-
-                        current_state[0] -= qty
-                        current_state[1] -= cost_transferred
-                        current_state[10] -= cost_transferred_hist
-                        current_state[7] -= invested_transferred
-                        current_state[8] -= cumulative_transferred
-                        current_state[9] -= buy_cost_transferred
-
-                        if abs(current_state[0]) < stock_qty_tol:
-                            current_state[0] = 0.0
-                            current_state[1] = 0.0
-                            current_state[10] = 0.0
-                            current_state[7] = 0.0
-                            current_state[8] = 0.0
-                            current_state[9] = 0.0
-
-                        to_state[0] += qty
-                        to_state[1] += cost_transferred
-                        to_state[10] += cost_transferred_hist
-                        to_state[7] += invested_transferred
-                        to_state[8] += cumulative_transferred
-                        to_state[9] += buy_cost_transferred
-
-                        transfer_costs[i] = cost_transferred / qty
-            continue
-
-        # --- SPIN-OFF ---
-        # Cash-neutral basis reallocation, imported as two legs sharing a date
-        # (see corporate_actions.apply_spin_off). The child receipt (qty > 0)
-        # creates the new position at its allocated basis; the parent leg
-        # (qty == 0) removes that same basis from the parent. Total cost basis is
-        # conserved across the two symbols, mirroring a cross-account transfer.
-        if typ == TYPE_SPIN_OFF:
-            amt = abs(total)
-            if abs(qty) > 1e-9:
-                # Child receipt — acquire shares at the allocated cost basis.
-                current_state[0] += abs(qty)
-                current_state[1] += amt
-                current_state[7] += amt
-                current_state[8] += amt
-                current_state[9] += amt
-                current_state[10] += amt * fx_rate
-            else:
-                # Parent basis reduction — clamp so basis can't go negative, and
-                # shrink the historical-FX basis proportionally to stay FX-consistent.
-                base = current_state[1]
-                red = amt if amt < base else base
-                proportion = (red / base) if base > 1e-9 else 0.0
-                current_state[1] -= red
-                current_state[7] -= red
-                current_state[8] -= red
-                current_state[9] -= red
-                current_state[10] -= current_state[10] * proportion
-            continue
-
-        # --- STANDARD TYPES ---
-        qty_abs = abs(qty)
-
-        # Short Logic
-        # Check shortable
-        is_shortable = False
-        for s_short in shortable_sym_ids:
-            if s_short == sym:
-                is_shortable = True
-                break
-
-        if is_shortable and (typ == TYPE_SHORT_SELL or typ == TYPE_BUY_TO_COVER):
-            if typ == TYPE_SHORT_SELL:
-                proceeds = (qty_abs * price) - comm
-                current_state[0] -= qty_abs
-                current_state[5] += proceeds
-                current_state[6] += qty_abs
-                current_state[4] += comm
-                current_state[8] -= proceeds
-                current_state[10] -= proceeds * fx_rate
-
-            elif typ == TYPE_BUY_TO_COVER:
-                qty_curr_short = (
-                    abs(current_state[0]) if current_state[0] < -1e-9 else 0.0
-                )
-                qty_covered = min(qty_abs, qty_curr_short)
-                cost = (qty_covered * price) + comm
-
-                if current_state[6] > 1e-9:
-                    # Calculate historical proceeds (negative cost basis) for the covered portion
-                    # BEFORE updating the state
-                    if abs(current_state[6]) > 1e-9:
-                        avg_proceeds_display_neg = current_state[10] / current_state[6]
-                        avg_proceeds = current_state[5] / current_state[6]
-                    else:
-                        avg_proceeds_display_neg = 0.0
-                        avg_proceeds = 0.0
-
-                    proceeds_display_attr = -(
-                        avg_proceeds_display_neg * qty_covered
-                    )  # This is positive value in display currency
-
-                    # Also calculate local proceeds for gain calc (existing logic)
-                    proceeds_attr = qty_covered * avg_proceeds
-                    gain = proceeds_attr - cost
-
-                    # Update State
-                    current_state[0] += qty_covered
-                    current_state[5] -= proceeds_attr
-                    current_state[6] -= qty_covered
-                    current_state[4] += comm
-                    current_state[2] += gain
-                    current_state[8] += cost
-
-                    # Update historical cost basis (remove the portion covered)
-                    # current_state[10] is negative (proceeds). We want to reduce its magnitude.
-                    # proceeds_covered_hist_val = avg_proceeds_display_neg * qty_covered (negative)
-                    # current_state[10] -= proceeds_covered_hist_val
-                    current_state[10] -= avg_proceeds_display_neg * qty_covered
-
-                    # Realized Gain Display Calculation
-                    # Gain = Proceeds (Historical) - Cost (Current)
-                    cost_display_cover = cost * fx_rate
-                    gain_display = proceeds_display_attr - cost_display_cover
-
-                    current_state[12] += gain_display
-
-                    if abs(current_state[6]) < 1e-9:
-                        current_state[5] = 0.0
-                        current_state[6] = 0.0
-                    if abs(current_state[0]) < 1e-9:
-                        current_state[0] = 0.0
-            continue
-
-        # Buy / Deposit
-        if typ == TYPE_BUY or typ == TYPE_DEPOSIT:
-            # Prefer 'total' if provided and non-zero (it's the absolute cash/cost impact)
-            # otherwise fallback to qty * price + comm
-            cost = abs(total) if abs(total) > 1e-9 else (qty_abs * price) + comm
-            current_state[0] += qty_abs
-            current_state[1] += cost
-            current_state[4] += comm
-            current_state[7] += cost
-            current_state[8] += cost
-            current_state[9] += cost
-            current_state[10] += cost * fx_rate
-
-        # Sell / Withdrawal
-        elif typ == TYPE_SELL or typ == TYPE_WITHDRAWAL:
-            held_qty = current_state[0]
-            if sym == cash_sym_id:
-                # Cash allows negative balances, process fully without held_qty limits
-                # Ensure price is at least 1.0 if not specified (for cost basis)
-                eff_price = price if abs(price) > 1e-9 else 1.0
-                qty_to_deduct = abs(total) if abs(total) > 1e-9 else qty_abs
-                cost_sold = qty_to_deduct * eff_price
-                cost_sold_hist = cost_sold * fx_rate
-
-                proceeds = (qty_to_deduct * eff_price) - comm
-                gain = 0.0
-                gain_display = 0.0
-
-                current_state[0] -= qty_to_deduct
-                current_state[1] -= cost_sold
-                current_state[10] -= cost_sold_hist
-                current_state[4] += comm
-                current_state[2] += gain
-                current_state[12] += gain_display
-                current_state[7] -= cost_sold
-                current_state[8] -= proceeds
-
-            elif held_qty > 1e-9:
-                qty_sold = min(qty_abs, held_qty)
-
-                cost_sold = 0.0
-                cost_sold_hist = 0.0
-                if abs(current_state[1]) > 1e-9:
-                    cost_sold = qty_sold * (current_state[1] / held_qty)
-                    cost_sold_hist = qty_sold * (current_state[10] / held_qty)
-
-                proceeds = (
-                    abs(total) if abs(total) > 1e-9 else (qty_sold * price) - comm
-                )
-                gain = proceeds - cost_sold
-
-                # Realized Gain Display Calculation (Long Sell)
-                # Proceeds (Display) = Proceeds_Local * FX_Rate_At_Sell
-                # Cost (Display) = Cost_Sold_Hist (already in display currency)
-                proceeds_display = proceeds * fx_rate
-                gain_display = proceeds_display - cost_sold_hist
-
-                current_state[0] -= qty_sold
-                current_state[1] -= cost_sold
-                current_state[10] -= (
-                    cost_sold_hist  # Update total_cost_display_historical_fx
-                )
-                current_state[4] += comm
-                current_state[2] += gain  # Update realized_gain_local
-                current_state[12] += gain_display  # Update realized_gain_display
-                current_state[7] -= cost_sold
-                current_state[8] -= proceeds
-
-                if abs(current_state[0]) < 1e-9:
-                    current_state[0] = 0.0
-                    current_state[1] = 0.0
-                    current_state[10] = 0.0
-
-        # Dividend
-        elif typ == TYPE_DIVIDEND:
-            div_amt = price
-            div_effect = abs(div_amt)
-            if current_state[0] < -1e-9:  # Short
-                div_effect = -div_effect
-
-            current_state[3] += div_effect
-            current_state[4] += comm
-            current_state[10] -= div_effect * fx_rate
-
-            # Explicit Cash Handling:
-            # In Auto-mode, we update balance for explicit cash dividends (e.g. awards).
-            # In Manual-mode, we skip this to avoid double-counting or breaking legacy bookkeeping.
-            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
-                current_state[0] += div_effect
-                if div_effect > 0:
-                    current_state[1] += div_effect
-                    current_state[7] += div_effect
-                    current_state[8] += div_effect
-                    current_state[9] += div_effect
-                else:
-                    abs_div = abs(div_effect)
-                    current_state[1] -= abs_div
-                    current_state[7] -= abs_div
-                    current_state[8] -= abs_div
-
-        # Fees / Tax
-        elif typ == TYPE_FEES or typ == TYPE_TAX:
-            cost_val = (
-                abs(total)
-                if abs(total) > 1e-9
-                else (abs(comm) if abs(comm) > 1e-9 else abs(price))
-            )
-            if typ == TYPE_TAX:
-                current_state[13] += cost_val  # taxes_local (separate bucket)
-            else:
-                current_state[4] += cost_val  # commissions_local
-            current_state[7] += cost_val
-            current_state[8] += cost_val
-            current_state[10] += cost_val * fx_rate
-
-            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
-                current_state[0] -= cost_val
-                current_state[1] -= cost_val
-                current_state[7] -= cost_val
-                current_state[8] -= cost_val
-
-        # Interest
-        elif typ == TYPE_INTEREST:
-            int_amt = abs(total) if abs(total) > 1e-9 else abs(price)
-            current_state[3] += int_amt
-            current_state[4] += comm
-            current_state[10] -= int_amt * fx_rate
-
-            if sym == cash_sym_id and acc_cash_modes[acc] == 1:
-                current_state[0] += int_amt
-                current_state[1] += int_amt
-                current_state[7] += int_amt
-                current_state[8] += int_amt
-                current_state[9] += int_amt
-
-        # --- AUTO CASH LOGIC ---
-        # For Auto-mode accounts, generate implicit $CASH balance changes
-        # from non-cash stock transactions.
-        # Skip: $CASH symbol (explicit), Deposit/Withdrawal (in-kind shares),
-        #        Split (no cash impact), Transfer (handled separately).
-        if acc_cash_modes[acc] == 1 and sym != cash_sym_id and cash_sym_id >= 0:
-            cash_state = state[cash_sym_id, acc]
-            # Initialize cash position if needed
-            if cash_state[11] == -1.0:
-                cash_state[11] = float(curr)
-
-            cash_delta = 0.0
-            if typ == TYPE_BUY:
-                cash_delta = -(
-                    abs(total) if abs(total) > 1e-9 else (qty_abs * price) + abs(comm)
-                )
-            elif typ == TYPE_SELL:
-                cash_delta = +(
-                    abs(total) if abs(total) > 1e-9 else (qty_abs * price) - abs(comm)
-                )
-            elif typ == TYPE_DIVIDEND:
-                cash_delta = +abs(price)
-            elif typ == TYPE_INTEREST:
-                cash_delta = +(abs(total) if abs(total) > 1e-9 else abs(price))
-            elif typ == TYPE_FEES or typ == TYPE_TAX:
-                cash_delta = -(
-                    abs(total)
-                    if abs(total) > 1e-9
-                    else (abs(comm) if abs(comm) > 1e-9 else abs(price))
-                )
-            elif typ == TYPE_SHORT_SELL:
-                cash_delta = +((qty_abs * price) - abs(comm))
-            elif typ == TYPE_BUY_TO_COVER:
-                cash_delta = -((qty_abs * price) + abs(comm))
-            # Deposit, Withdrawal, Split, Transfer: cash_delta stays 0.0
-
-            if abs(cash_delta) > 1e-9:
-                cash_state[0] += cash_delta  # qty
-                if cash_delta > 0:
-                    cash_state[1] += cash_delta
-                    cash_state[7] += cash_delta
-                    cash_state[8] += cash_delta
-                    cash_state[9] += cash_delta
-                    cash_state[10] += cash_delta * fx_rate
-                else:
-                    abs_delta = abs(cash_delta)
-                    cash_state[1] -= abs_delta
-                    cash_state[7] -= abs_delta
-                    cash_state[8] -= abs_delta
-                    cash_state[10] -= abs_delta * fx_rate
-
-        # Tax
-        elif typ == TYPE_TAX:
-            # Tax is usually entered as a positive number representing the cost
-            tax_amt = abs(price) if abs(price) > 1e-9 else abs(comm)
-            current_state[13] += tax_amt  # Track in tax column
-            current_state[3] -= tax_amt  # Subtract from dividends for net return calc
-            current_state[10] += tax_amt * fx_rate  # Add to cost basis (reduces return)
-
-    return state, transfer_costs
+    Runs in Rust: investa_core.process_core, a line-for-line port of the Numba
+    kernel that used to live here (frozen in tests/reference/). Returns
+    (state[num_syms, num_accs, 14], transfer_costs[num_tx]). The 14 state
+    fields, in order: qty, total_cost_local, realized_gain_local,
+    dividends_local, commissions_local, short_proceeds_local,
+    short_original_qty, total_cost_invested_local, cumulative_investment_local,
+    total_buy_cost_local, total_cost_display_historical_fx, local_curr_id (as
+    float, -1 = untouched), realized_gain_display, taxes_local. transfer_costs
+    holds the unit cost a transfer carried, NaN elsewhere.
+    """
+    i64 = lambda a: np.ascontiguousarray(a, dtype=np.int64)  # noqa: E731
+    f64 = lambda a: np.ascontiguousarray(a, dtype=np.float64)  # noqa: E731
+    return investa_core.process_core(
+        i64(sym_ids),
+        i64(acc_ids),
+        i64(type_ids),
+        f64(qtys),
+        f64(prices),
+        f64(comms),
+        f64(totals),
+        f64(split_ratios),
+        i64(to_acc_ids),
+        i64(local_curr_ids),
+        f64(fx_rates_hist),
+        i64(list(shortable_sym_ids)),
+        float(stock_qty_tol),
+        int(cash_sym_id),
+        int(num_tx),
+        int(num_syms),
+        int(num_accs),
+        i64(acc_cash_modes),
+    )
 
 
 @profile
@@ -942,14 +499,7 @@ def _process_transactions_to_holdings(
         if s in sym_map:
             shortable_sym_ids_set.add(sym_map[s])
 
-    # Numba List for shortable symbols (Set caused import issues)
-    from numba.typed import List as NumbaList
-
-    # Initialize with dummy int64 to enforce type, then clear
-    nb_shortable = NumbaList([int64(0)])
-    nb_shortable.clear()
-    for sid in shortable_sym_ids_set:
-        nb_shortable.append(sid)
+    nb_shortable = np.array(sorted(shortable_sym_ids_set), dtype=np.int64)
 
     cash_sym_id = sym_map.get(CASH_SYMBOL_CSV, -1)
 

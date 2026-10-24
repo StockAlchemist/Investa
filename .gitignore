@@ -33,3 +33,6 @@ sp500_recalc.log
 
 # py-spy profiler output
 profiles/
+
+# Rust build output (rust/investa_core)
+rust/investa_core/target/

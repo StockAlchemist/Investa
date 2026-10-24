@@ -32,4 +32,19 @@ def _get_self_hash():
         return "UNKNOWN"
 
 
-CURRENT_HIST_VERSION = f"v2.0_AUTO_{_get_self_hash()}"
+def _rust_core_hash():
+    """The Rust kernels' source hash, baked into the module when it was built.
+
+    Part of the version for the same reason the Python files are: a kernel
+    change must invalidate cached histories. Read from the compiled module, not
+    from rust/investa_core/src, because a deployed image ships only the former.
+    """
+    try:
+        import investa_core
+
+        return investa_core.SOURCE_HASH[:8]
+    except Exception:
+        return "NORUST"
+
+
+CURRENT_HIST_VERSION = f"v2.0_AUTO_{_get_self_hash()}_{_rust_core_hash()}"
