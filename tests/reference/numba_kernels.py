@@ -8,6 +8,14 @@ for bit; tests/test_rust_kernels_parity.py holds it to that.
 
 Never edit these to follow a change in Rust. A deliberate behaviour change
 lands in both, with the parity test updated in the same commit.
+
+Deliberate changes since the freeze:
+- 2026-10-24, _process_numba_core: removed the trailing `elif typ ==
+  TYPE_TAX` block. It was the original tax branch (Apr 2026), stranded when
+  taxes moved into the Fees/Tax branch (May 2026) and the Auto-cash block was
+  inserted above it, which made it an `elif` of that block. Every tax row the
+  Auto-cash block skips (Manual-mode accounts, and rows on $CASH) was then
+  booked twice: taxes again, dividends reduced by it, historical-FX cost raised.
 """
 
 # ruff: noqa
@@ -1215,12 +1223,5 @@ def _process_numba_core(
                     cash_state[8] -= abs_delta
                     cash_state[10] -= abs_delta * fx_rate
 
-        # Tax
-        elif typ == TYPE_TAX:
-            # Tax is usually entered as a positive number representing the cost
-            tax_amt = abs(price) if abs(price) > 1e-9 else abs(comm)
-            current_state[13] += tax_amt  # Track in tax column
-            current_state[3] -= tax_amt  # Subtract from dividends for net return calc
-            current_state[10] += tax_amt * fx_rate  # Add to cost basis (reduces return)
 
     return state, transfer_costs

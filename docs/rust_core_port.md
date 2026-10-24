@@ -70,8 +70,16 @@ The crate builds in four places:
 
 End-to-end differences are 10–75 ms in both directions, which is noise. The real gain is cold start: the 5-second JIT compile on each edit or deploy is gone.
 
-## Found while porting (not changed)
+## Found while porting
 
-- **Manual-mode tax rows count twice** in the analyzer's tax bucket (`portfolio_analyzer`, state field 13). The final `elif typ == TYPE_TAX` hangs off the Auto-cash `if`, so a Manual-mode tax row adds to field 13 in the Fees/Tax branch and again there. The port reproduces this. Fixing it changes reported numbers, so it needs its own decision.
+- **Fixed 24 Oct 2026: tax rows were booked twice whenever the Auto-cash block skipped them.** That covered every Manual-mode tax row and every tax row on `$CASH`.
+  - **Cause:** the original tax branch (Apr 2026) was stranded when taxes moved into the Fees/Tax branch (May 2026). Once the Auto-cash block was inserted above it, it became an `elif` of that block.
+  - **Effect:** such a row added its amount to taxes a second time (falling back to Commission when Price/Share was zero), took it off dividends, and raised the historical-FX cost basis. Total gain therefore lost the tax twice.
+  - **The fix:** delete the stranded block in Rust and in the reference, so every tax row books the way an Auto-mode stock tax row always did.
+  - **Measured on real data:**
+    - atchamatan: taxes 42,946 → 25,943 USD and total gain +17,003, so total return goes from 39.58% to 39.97%. All of it is the `$CASH` @ E*Trade position, whose dividends had shown −16,747 instead of +256.
+    - dheematan: taxes −2 USD.
+    - kitmatan: unchanged.
+  - **Test:** `test_a_tax_row_is_booked_once` fails on three of its four cases without the fix.
 - **The single-date holdings kernel is off the request path.** It sits behind `HISTORICAL_CALC_METHOD = "numba"`, while the default is `numba_chrono`.
 - **The kernel functions keep their `_numba` names** because callers import them by those names. Renaming is a later cleanup.

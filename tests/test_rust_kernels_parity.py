@@ -216,3 +216,36 @@ def test_negative_indices_wrap_like_numpy():
         portfolio_analyzer._process_numba_core(*args), ref._process_numba_core(*args)
     ):
         _same(got, want)
+
+
+def _one_tax_row(sym, acc_mode, cash_sym_id):
+    """Replay a single 25.00 tax row (Price/Share 0.40, Commission 1.00)."""
+    i64 = lambda *v: np.array(v, dtype=np.int64)  # noqa: E731
+    f64 = lambda *v: np.array(v, dtype=np.float64)  # noqa: E731
+    state, _ = portfolio_analyzer._process_numba_core(
+        i64(sym), i64(0), i64(portfolio_analyzer.TYPE_TAX),
+        f64(0.0), f64(0.40), f64(1.00), f64(25.0), f64(0.0),
+        i64(-1), i64(0), f64(1.0),
+        np.array([], dtype=np.int64), 1e-6, cash_sym_id, 1, 2, 1, i64(acc_mode),
+    )  # fmt: skip
+    return state[sym, 0]
+
+
+@pytest.mark.parametrize(
+    "case, sym, acc_mode",
+    [
+        ("manual-mode stock", 0, 0),
+        ("auto-mode stock", 0, 1),
+        ("manual-mode $CASH", 1, 0),
+        ("auto-mode $CASH", 1, 1),
+    ],
+)
+def test_a_tax_row_is_booked_once(case, sym, acc_mode):
+    """The original tax branch survived as an `elif` of the Auto-cash block and
+    booked every row that block skips a second time: taxes again, dividends
+    reduced by it, historical-FX cost raised. Every case now books exactly what
+    the Fees/Tax branch does, the same as an Auto-mode stock row always did."""
+    pos = _one_tax_row(sym, acc_mode, cash_sym_id=1)
+    assert pos[13] == 25.0, f"{case}: taxes booked {pos[13]}, expected 25.0"
+    assert pos[3] == 0.0, f"{case}: dividends moved by {pos[3]}"
+    assert pos[10] == 25.0, f"{case}: historical-FX cost {pos[10]}, expected 25.0"

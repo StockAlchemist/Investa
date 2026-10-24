@@ -523,18 +523,6 @@ pub fn process_core(
                     st[cash + COST_DISPLAY_HIST_FX] -= abs_delta * fx_rate;
                 }
             }
-        } else if typ == TAX {
-            // Reached whenever the Auto-cash branch above is not, which
-            // includes every Manual-mode tax row: those are booked to the tax
-            // bucket a second time here. Preserved as the Python engine has it.
-            let tax_amt = if price.abs() > 1e-9 {
-                price.abs()
-            } else {
-                comm.abs()
-            };
-            st[cs + TAXES] += tax_amt;
-            st[cs + DIVIDENDS] -= tax_amt;
-            st[cs + COST_DISPLAY_HIST_FX] += tax_amt * fx_rate;
         }
     }
 
