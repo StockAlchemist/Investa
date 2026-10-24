@@ -78,13 +78,13 @@ End-to-end differences are 10–75 ms in both directions, which is noise. The re
   - NumPy's `isclose`.
   - CPython 3.12's compensated `sum()`. The IRR's total-loss check uses it, and the result depends on whether each flow is an exact `float` or a NumPy scalar. Real ledgers pass both.
 - All of `risk_metrics`, on exact ports of NumPy's pairwise sum and pandas' NaN-skipping mean, variance, min and cummax.
-- What stayed Python: index alignment, `dropna`, and `infer_periods_per_year`, which works on a pandas `DatetimeIndex`.
+- What stayed Python: index alignment, `dropna`, `infer_periods_per_year` (which works on a pandas `DatetimeIndex`), and beta's covariance.
 
 **Parity**
 - Fuzz: IRR, NPV and every risk metric are bitwise equal to the frozen originals.
 - Root finders compared directly with SciPy: 20,000 random brackets and iteration caps, every converge, raise and NaN case matching bit for bit.
-- Real data (kitmatan, dheematan, atchamatan in USD and THB): every summary figure and every holdings cell is bitwise equal, including both IRR columns. Max Drawdown, Volatility, Sharpe, Sortino and the benchmark scoreboard are bitwise equal too.
-- **Beta and Alpha agree to 1.8 × 10⁻¹⁶ relative**, not to the bit. The original covariance went through `np.cov`, whose BLAS dot product (Accelerate here) sums in an order of its own. It matched neither sequential nor pairwise summation in 79% of trials, so no port can reproduce it.
+- Real data (kitmatan, dheematan, atchamatan in USD and THB): every summary figure and every holdings cell is bitwise equal, including both IRR columns. All risk metrics and the benchmark scoreboard are bitwise equal too.
+- **Rule adopted: BLAS/LAPACK-backed NumPy calls stay NumPy calls.** `np.cov`'s dot product (Accelerate here) sums in an order of its own; it matched neither sequential nor pairwise summation in 79% of trials. So `calculate_beta` keeps pandas' covariance and takes only its variance from Rust, and Beta and Alpha stay bitwise equal. The same rule covers `np.polyfit` (LAPACK) and `np.convolve` (BLAS `ddot`) in Phase 3.
 - Full suite: 1,172 tests pass.
 
 **SciPy fuses three operations on arm64.** The first `brentq` comparison was off by 1 ulp. The disassembly of SciPy's `_zeros.cpython-312-darwin.so` shows clang fused exactly three multiply-adds (`fmadd`/`fnmsub`):

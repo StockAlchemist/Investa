@@ -8,10 +8,9 @@
 //!   copy with NaN replaced by 0, then divide by the non-NaN count.
 //! * `np.minimum` returns -0.0 for a {0.0, -0.0} pair in either order.
 //!
-//! The one thing that cannot be reproduced is `np.cov`'s BLAS dot product
-//! (Accelerate on macOS, OpenBLAS on Linux: their summation order is theirs),
-//! so [`pd_cov`] is a pairwise sum of products and agrees to rounding, not to
-//! the bit. It feeds `calculate_beta` and, through it, alpha.
+//! `np.cov`'s BLAS dot product cannot be reproduced (Accelerate on macOS,
+//! OpenBLAS on Linux: the summation order is theirs), so `calculate_beta`
+//! keeps pandas' covariance and only its variance comes from here.
 
 /// NumPy's `pairwise_sum` for a contiguous float64 array — what
 /// `np.add.reduce`, `ndarray.sum()` and `ndarray.mean()` add with.
@@ -154,26 +153,6 @@ pub fn pd_min(a: &[f64]) -> f64 {
     }
 }
 
-/// `Series.cov(other)` on aligned, NaN-free values, ddof=1. np.cov centres
-/// each row, takes `dot(X, X.T)` and multiplies by `1 / (n - ddof)`; the dot
-/// product is BLAS's and is approximated here by a pairwise sum. Agrees to
-/// rounding, not to the bit.
-pub fn pd_cov(a: &[f64], b: &[f64]) -> f64 {
-    let n = a.len().min(b.len());
-    if n < 1 {
-        return f64::NAN;
-    }
-    let (a, b) = (&a[..n], &b[..n]);
-    let (ma, mb) = (np_mean(a), np_mean(b));
-    let prods: Vec<f64> = a
-        .iter()
-        .zip(b)
-        .map(|(&x, &y)| (x - ma) * (y - mb))
-        .collect();
-    let fact = n as f64 - 1.0;
-    np_sum(&prods) * (1.0 / fact)
-}
-
 /// `calculate_drawdown_series`: `(s - s.cummax()) / s.cummax()`, with pandas'
 /// skipna cummax (NaN counts as -inf in the running max and stays NaN out).
 pub fn drawdown_series(values: &[f64]) -> Vec<f64> {
@@ -265,20 +244,6 @@ pub fn sortino_ratio(
     }
     let sortino_daily = mean_excess_return / downside_deviation;
     sortino_daily * periods_per_year.sqrt()
-}
-
-/// `calculate_beta` on aligned, NaN-free return pairs: 1.0 when fewer than
-/// two pairs or no benchmark variance.
-pub fn beta(returns: &[f64], benchmark: &[f64]) -> f64 {
-    if returns.len() < 2 {
-        return 1.0;
-    }
-    let cov = pd_cov(returns, benchmark);
-    let var = pd_var(benchmark, 1);
-    if var == 0.0 {
-        return 1.0;
-    }
-    cov / var
 }
 
 /// `pct_change(fill_method=None).replace([inf, -inf], nan)`: NaN first, and

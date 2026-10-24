@@ -562,12 +562,6 @@ pub fn sortino_ratio(
     )
 }
 
-/// `risk_metrics.calculate_beta` on aligned, NaN-free return pairs.
-#[pyfunction]
-pub fn beta(returns: PyReadonlyArray1<'_, f64>, benchmark: PyReadonlyArray1<'_, f64>) -> f64 {
-    crate::stats::beta(&view(&returns), &view(&benchmark))
-}
-
 /// One `calculate_benchmark_scoreboard` row from aligned returns: (alpha,
 /// beta, r2, tracking_error, information_ratio).
 #[pyfunction]

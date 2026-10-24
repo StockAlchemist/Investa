@@ -22,8 +22,9 @@ from finutils import infer_periods_per_year
 
 # The arithmetic runs in Rust (rust/investa_core/src/stats.rs), reproducing
 # pandas' reductions bit for bit; this module keeps the pandas side — index
-# alignment, dropping NaN, inferring the period from the dates. The originals
-# are frozen in tests/reference/risk_metrics.py.
+# alignment, dropping NaN, inferring the period from the dates — and the one
+# BLAS-backed call, the covariance in calculate_beta. The originals are frozen
+# in tests/reference/risk_metrics.py.
 
 
 def _values(series: pd.Series) -> np.ndarray:
@@ -160,11 +161,13 @@ def calculate_beta(returns_series: pd.Series, benchmark_returns: pd.Series) -> f
     aligned = pd.concat([returns_series, benchmark_returns], axis=1).dropna()
     if len(aligned) < 2:
         return 1.0
-    return float(
-        investa_core.beta(
-            _values(aligned.iloc[:, 0]), _values(aligned.iloc[:, 1])
-        )
-    )
+    # The covariance stays pandas' (np.cov): its BLAS dot product sums in the
+    # BLAS's own order, which no port can reproduce. The variance is Rust.
+    cov = aligned.iloc[:, 0].cov(aligned.iloc[:, 1])
+    var = investa_core.pd_var(_values(aligned.iloc[:, 1]), 1)
+    if var == 0:
+        return 1.0
+    return float(cov / var)
 
 
 def calculate_alpha(

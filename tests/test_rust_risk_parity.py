@@ -1,8 +1,7 @@
-"""risk_metrics (Rust arithmetic) against the frozen original.
+"""risk_metrics (Rust arithmetic) against the frozen original: bitwise.
 
-Bitwise equality everywhere except Beta and Alpha: the original's covariance
-went through np.cov, whose BLAS dot product (Accelerate/OpenBLAS) sums in an
-order of its own, so those two are held to 1e-12 relative instead.
+calculate_beta keeps pandas' covariance (np.cov's BLAS dot product cannot be
+reproduced), so Beta and Alpha are bitwise equal too.
 """
 
 import os
@@ -20,19 +19,11 @@ import investa_core  # noqa: E402
 import risk_metrics as new  # noqa: E402
 from reference import risk_metrics as ref  # noqa: E402
 
-BLAS_TOLERANT = {"Beta", "Alpha"}
 
 
 def _same(a, b):
     a, b = float(a), float(b)
     return (np.isnan(a) and np.isnan(b)) or struct.pack("<d", a) == struct.pack("<d", b)
-
-
-def _close(a, b, rel=1e-12):
-    a, b = float(a), float(b)
-    if np.isnan(a) or np.isnan(b):
-        return np.isnan(a) and np.isnan(b)
-    return abs(a - b) <= rel * max(1.0, abs(b))
 
 
 def _series(rng, n=None, start="2015-01-01"):
@@ -69,8 +60,7 @@ def test_all_risk_metrics_match_reference(seed):
         got = new.calculate_all_risk_metrics(port, rf, ppy, bench)
         assert set(got) == set(want)
         for key in want:
-            check = _close if key in BLAS_TOLERANT else _same
-            assert check(got[key], want[key]), (key, got[key], want[key])
+            assert _same(got[key], want[key]), (key, got[key], want[key])
 
 
 @pytest.mark.parametrize("seed", range(2))

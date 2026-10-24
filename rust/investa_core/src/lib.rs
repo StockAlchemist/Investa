@@ -47,7 +47,6 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::volatility, m)?)?;
     m.add_function(wrap_pyfunction!(py::sharpe_ratio, m)?)?;
     m.add_function(wrap_pyfunction!(py::sortino_ratio, m)?)?;
-    m.add_function(wrap_pyfunction!(py::beta, m)?)?;
     m.add_function(wrap_pyfunction!(py::scoreboard_stats, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
