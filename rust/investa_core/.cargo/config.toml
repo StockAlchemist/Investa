@@ -1,0 +1,8 @@
+# The Xcode 27 linker can emit a misaligned LINKEDIT string pool that the
+# macOS 27 loader rejects; the wrapper links with `cc` and realigns it. See
+# build-support/macos_linker.py. Linux builds (CI, Docker) are unaffected.
+[target.aarch64-apple-darwin]
+linker = "build-support/macos_linker.py"
+
+[target.x86_64-apple-darwin]
+linker = "build-support/macos_linker.py"

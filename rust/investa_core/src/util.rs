@@ -83,6 +83,96 @@ pub fn wrap(what: &'static str, index: i64, len: usize) -> Result<usize, IndexOu
     }
 }
 
+/// What a Python number was, which decides how `sum()` adds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PyNum {
+    /// An exact `float`: summed with Neumaier compensation.
+    Float,
+    /// An `int` (or `bool`).
+    Int,
+    /// Any other float type, e.g. `numpy.float64`: drops the sum out of the
+    /// compensated fast path into plain sequential addition.
+    Other,
+}
+
+impl PyNum {
+    pub fn from_code(code: u8) -> Self {
+        match code {
+            0 => PyNum::Float,
+            1 => PyNum::Int,
+            _ => PyNum::Other,
+        }
+    }
+}
+
+/// CPython 3.12's built-in `sum(items)` with the default start of `0`, for
+/// items that are all small ints or floats (Python/bltinmodule.c,
+/// builtin_sum_impl). Returns `None` for an empty input, where Python returns
+/// the int `0`.
+///
+/// While the running total and every item are exact floats it uses Neumaier
+/// compensated summation; the first non-exact float folds the compensation in
+/// and continues with plain addition, as CPython does.
+pub fn py_sum(items: &[(f64, PyNum)]) -> Option<f64> {
+    enum State {
+        Int,
+        Float { f: f64, c: f64 },
+        Plain(f64),
+    }
+    if items.is_empty() {
+        return None;
+    }
+    let mut state = State::Int;
+    let mut int_total = 0.0_f64;
+    for &(x, kind) in items {
+        state = match state {
+            // int + int stays int; int + float becomes 0.0 + x in that type.
+            State::Int => match kind {
+                PyNum::Int => {
+                    int_total += x;
+                    State::Int
+                }
+                PyNum::Float => State::Float {
+                    f: int_total + x,
+                    c: 0.0,
+                },
+                PyNum::Other => State::Plain(int_total + x),
+            },
+            State::Float { f, c } => match kind {
+                PyNum::Float => {
+                    let t = f + x;
+                    let c = if f.abs() >= x.abs() {
+                        c + ((f - t) + x)
+                    } else {
+                        c + ((x - t) + f)
+                    };
+                    State::Float { f: t, c }
+                }
+                PyNum::Int => State::Float { f: f + x, c },
+                PyNum::Other => {
+                    let mut f = f;
+                    if c != 0.0 && c.is_finite() {
+                        f += c;
+                    }
+                    State::Plain(f + x)
+                }
+            },
+            State::Plain(g) => State::Plain(g + x),
+        };
+    }
+    Some(match state {
+        State::Int => int_total,
+        State::Float { f, c } => {
+            if c != 0.0 && c.is_finite() {
+                f + c
+            } else {
+                f
+            }
+        }
+        State::Plain(g) => g,
+    })
+}
+
 /// Python's two-argument `min`: the first argument unless the second is
 /// strictly smaller. `f64::min` differs when either side is NaN.
 #[inline]

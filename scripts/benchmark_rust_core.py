@@ -10,7 +10,8 @@ Three measurements, all on a real user's ledger:
 2. Cold start: the first call in a fresh process, which for Numba includes JIT
    compilation with an empty cache (what every edit or fresh deploy pays).
 3. End to end: the cache-bypassing /history and /summary computations, with
-   the Rust kernels and then the Numba ones swapped in, same process. Market
+   every ported function swapped between Rust and its original (Numba kernels,
+   Python IRR), same process. Market
    data is fetched once and replayed, so these time computation, not network.
 
 Usage: cd src && python ../scripts/benchmark_rust_core.py [username ...]
@@ -45,6 +46,9 @@ import portfolio_logic as PL  # noqa: E402
 import portfolio_valuation_kernels as K  # noqa: E402
 from portfolio_logic import calculate_portfolio_summary  # noqa: E402
 from reference import numba_kernels as ref  # noqa: E402
+from reference import finance as ref_finance  # noqa: E402
+from reference import risk_metrics as ref_risk  # noqa: E402
+import risk_metrics as RM  # noqa: E402
 from server.api import _calculate_historical_performance_internal  # noqa: E402
 from server.auth import User  # noqa: E402
 from server.dependencies import get_transaction_data  # noqa: E402
@@ -75,6 +79,7 @@ RUST = {
     "holdings": K._calculate_holdings_numba,
     "daily": H._calculate_daily_holdings_chronological_numba,
     "core": PA._process_numba_core,
+    "irr": PA.calculate_irr,
 }
 PLAIN = {
     "holdings": ref._calculate_holdings_numba,
@@ -102,6 +107,7 @@ def jit_reference():
         "holdings": fast(mod._calculate_holdings_numba),
         "daily": fast(mod._calculate_daily_holdings_chronological_numba),
         "core": numba.jit(nopython=True, cache=False)(mod._process_numba_core),
+        "irr": ref_finance.calculate_irr,
     }
 
 
@@ -110,6 +116,7 @@ def install(impl):
     H._calculate_daily_holdings_chronological_numba = impl["daily"]
     PL._calculate_daily_holdings_chronological_numba = impl["daily"]
     PA._process_numba_core = impl["core"]
+    PA.calculate_irr = impl["irr"]
 
 
 def user_data(username):
@@ -168,15 +175,23 @@ def capture(data):
 
         return wrapped
 
+    irr_calls = seen.setdefault("irr_calls", [])
+    rust_irr = PA.calculate_irr
+
+    def irr_recorder(dates, flows):
+        irr_calls.append((list(dates), list(flows)))
+        return rust_irr(dates, flows)
+
     install(
         {
             "holdings": recorder("holdings", RUST["holdings"], lambda a: len(a[1])),
             "daily": recorder("daily", RUST["daily"], lambda a: len(a[0]) * len(a[1])),
             "core": recorder("core", RUST["core"], lambda a: len(a[0])),
+            "irr": irr_recorder,
         }
     )
     run_summary(data)
-    run_history(data)
+    seen["history"] = run_history(data)
     install(RUST)
     return seen
 
@@ -308,11 +323,40 @@ def main():
                 f"rust/numba x{numba_t / rust_t:,.2f}  python/rust x{plain_t / rust_t:,.0f}"
             )
 
+        print(f"== {username}: Phase 2 — IRR and risk metrics (median) ==")
+        calls = args["irr_calls"]
+
+        def all_irr(fn):
+            for d, f in calls:
+                fn(list(d), list(f))
+
+        import logging
+
+        logging.disable(logging.WARNING)
+        irr_py = statistics.median([timed(all_irr, (ref_finance.calculate_irr,), 1) for _ in range(3)])
+        irr_rs = statistics.median([timed(all_irr, (PA.calculate_irr,), 1) for _ in range(5)])
+        logging.disable(logging.NOTSET)
+        u["irr"] = {"calls": len(calls), "python": irr_py, "rust": irr_rs}
+        print(
+            f"  IRR       {len(calls):,} calls in one summary          rust {fmt(irr_rs):>9s}  "
+            f"python {fmt(irr_py):>9s}  python/rust x{irr_py / irr_rs:,.0f}"
+        )
+        hist = args["history"]
+        series = hist.set_index("date")["value"] if "value" in hist.columns else None
+        if series is not None and len(series) > 5:
+            risk_py = timed(ref_risk.calculate_all_risk_metrics, (series,), 20)
+            risk_rs = timed(RM.calculate_all_risk_metrics, (series,), 20)
+            u["risk"] = {"days": len(series), "python": risk_py, "rust": risk_rs}
+            print(
+                f"  risk      {len(series):,}-day value series              rust {fmt(risk_rs):>9s}  "
+                f"python {fmt(risk_py):>9s}  python/rust x{risk_py / risk_rs:,.1f}"
+            )
+
         rounds = 5
         print(
             f"== {username}: end to end ({rounds} interleaved rounds, caches bypassed) =="
         )
-        impls = {"rust": RUST, "numba": numba_impl}
+        impls = {"rust": RUST, "original": numba_impl}
         for label, fn in (("summary", run_summary), ("history", run_history)):
             for impl in impls.values():  # warm both: data replayed, imports done
                 install(impl)
@@ -330,12 +374,12 @@ def main():
                 for name, v in samples.items()
             }
             u["end_to_end"][label] = res
-            rm, nm = res["rust"]["median"], res["numba"]["median"]
+            rm, nm = res["rust"]["median"], res["original"]["median"]
             print(
                 f"  {label:9s} rust {fmt(rm):>9s} (min {fmt(res['rust']['min'])})  "
-                f"numba {fmt(nm):>9s} (min {fmt(res['numba']['min'])})  "
+                f"original {fmt(nm):>9s} (min {fmt(res['original']['min'])})  "
                 f"median difference {fmt(abs(nm - rm))} "
-                f"({'rust' if rm < nm else 'numba'} faster)"
+                f"({'rust' if rm < nm else 'original'} faster)"
             )
 
         cold = cold_start({k: args[k] for k in KERNELS if k in args})

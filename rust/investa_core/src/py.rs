@@ -367,3 +367,214 @@ pub fn process_core<'py>(
 pub fn dividend_amount(qty: f64, price: f64, total_amount: f64) -> f64 {
     holdings::dividend_amount(qty, price, total_amount)
 }
+
+/// `calculate_npv`: returns (npv, index of the first flow dated before the
+/// first one, or -1). `days[i]` is `(dates[i] - dates[0]).days`.
+#[pyfunction]
+pub fn npv(
+    rate: f64,
+    days: PyReadonlyArray1<'_, i64>,
+    flows: PyReadonlyArray1<'_, f64>,
+) -> PyResult<(f64, i64)> {
+    let (d, f) = (view(&days), view(&flows));
+    if d.len() != f.len() {
+        return Err(PyValueError::new_err(
+            "The lengths of dates and cash_flows do not match.",
+        ));
+    }
+    let out = crate::irr::npv(rate, &d, &f);
+    Ok((out.value, out.negative_delta_at.map_or(-1, |i| i as i64)))
+}
+
+/// `calculate_irr`: returns (rate, status, first, last, scaled,
+/// saw_negative_delta). `ticks` are the dates in microseconds; `kinds` code
+/// each flow's Python type for `sum()` (0 float, 1 int, 2 other).
+#[pyfunction]
+pub fn calculate_irr(
+    py: Python<'_>,
+    ticks: PyReadonlyArray1<'_, i64>,
+    flows: PyReadonlyArray1<'_, f64>,
+    kinds: PyReadonlyArray1<'_, u8>,
+) -> PyResult<(f64, u8, usize, usize, bool, bool)> {
+    let (t, f, k) = (view(&ticks), view(&flows), view(&kinds));
+    let kinds: Vec<_> = k
+        .iter()
+        .map(|&c| crate::util::PyNum::from_code(c))
+        .collect();
+    let out = py.detach(|| crate::irr::calculate_irr(&t, &f, &kinds));
+    Ok((
+        out.rate,
+        out.status as u8,
+        out.first,
+        out.last,
+        out.scaled,
+        out.saw_negative_delta,
+    ))
+}
+
+/// The IRR scan grid as floats, for the test that recomputes it with NumPy.
+#[pyfunction]
+pub fn irr_scan_grid() -> Vec<f64> {
+    crate::irr_grid::SCAN_GRID_BITS
+        .iter()
+        .map(|&b| f64::from_bits(b))
+        .collect()
+}
+
+/// CPython 3.12 `sum()` over (value, kind) pairs, exposed for its parity test.
+#[pyfunction]
+pub fn py_sum(values: Vec<f64>, kinds: Vec<u8>) -> PyResult<Option<f64>> {
+    if values.len() != kinds.len() {
+        return Err(PyValueError::new_err("values and kinds differ in length"));
+    }
+    let items: Vec<_> = values
+        .into_iter()
+        .zip(kinds)
+        .map(|(v, k)| (v, crate::util::PyNum::from_code(k)))
+        .collect();
+    Ok(crate::util::py_sum(&items))
+}
+
+/// Test hook: Rust `brentq` on `npv(rate, days, flows)`; `None` where SciPy
+/// raises.
+#[pyfunction]
+pub fn brentq_npv(
+    days: Vec<i64>,
+    flows: Vec<f64>,
+    a: f64,
+    b: f64,
+    xtol: f64,
+    rtol: f64,
+    maxiter: usize,
+) -> Option<f64> {
+    crate::irr::brentq(
+        |r| crate::irr::npv(r, &days, &flows).value,
+        a,
+        b,
+        xtol,
+        rtol,
+        maxiter,
+    )
+}
+
+/// Test hook: Rust `newton_secant` on `npv(rate, days, flows)`; `None` where
+/// SciPy raises.
+#[pyfunction]
+pub fn newton_npv(
+    days: Vec<i64>,
+    flows: Vec<f64>,
+    x0: f64,
+    tol: f64,
+    maxiter: usize,
+) -> Option<f64> {
+    crate::irr::newton_secant(
+        |r| crate::irr::npv(r, &days, &flows).value,
+        x0,
+        tol,
+        maxiter,
+    )
+}
+
+// --- stats.rs: NumPy/pandas reductions and risk metrics -------------------
+
+macro_rules! array_to_f64 {
+    ($name:ident, $doc:literal, $f:path) => {
+        #[doc = $doc]
+        #[pyfunction]
+        pub fn $name(values: PyReadonlyArray1<'_, f64>) -> f64 {
+            $f(&view(&values))
+        }
+    };
+}
+
+array_to_f64!(
+    np_sum,
+    "NumPy's pairwise sum (`np.add.reduce`).",
+    crate::stats::np_sum
+);
+array_to_f64!(pd_mean, "`Series.mean()` (skipna).", crate::stats::pd_mean);
+array_to_f64!(pd_min, "`Series.min()` (skipna).", crate::stats::pd_min);
+array_to_f64!(
+    max_drawdown,
+    "`risk_metrics.calculate_max_drawdown` on the values.",
+    crate::stats::max_drawdown
+);
+
+/// `Series.var(ddof=ddof)` (skipna).
+#[pyfunction]
+pub fn pd_var(values: PyReadonlyArray1<'_, f64>, ddof: usize) -> f64 {
+    crate::stats::pd_var(&view(&values), ddof)
+}
+
+/// `Series.std(ddof=ddof)` (skipna).
+#[pyfunction]
+pub fn pd_std(values: PyReadonlyArray1<'_, f64>, ddof: usize) -> f64 {
+    crate::stats::pd_std(&view(&values), ddof)
+}
+
+/// `risk_metrics.calculate_drawdown_series` on the values.
+#[pyfunction]
+pub fn drawdown_series<'py>(
+    py: Python<'py>,
+    values: PyReadonlyArray1<'py, f64>,
+) -> Bound<'py, PyArray1<f64>> {
+    Array1::from_vec(crate::stats::drawdown_series(&view(&values))).into_pyarray(py)
+}
+
+/// `pct_change(fill_method=None).replace([inf, -inf], nan)` on the values.
+#[pyfunction]
+pub fn pct_change<'py>(
+    py: Python<'py>,
+    values: PyReadonlyArray1<'py, f64>,
+) -> Bound<'py, PyArray1<f64>> {
+    Array1::from_vec(crate::stats::pct_change(&view(&values))).into_pyarray(py)
+}
+
+/// `risk_metrics.calculate_volatility`.
+#[pyfunction]
+pub fn volatility(returns: PyReadonlyArray1<'_, f64>, periods_per_year: f64) -> f64 {
+    crate::stats::volatility(&view(&returns), periods_per_year)
+}
+
+/// `risk_metrics.calculate_sharpe_ratio`.
+#[pyfunction]
+pub fn sharpe_ratio(
+    returns: PyReadonlyArray1<'_, f64>,
+    risk_free_rate: f64,
+    periods_per_year: f64,
+) -> f64 {
+    crate::stats::sharpe_ratio(&view(&returns), risk_free_rate, periods_per_year)
+}
+
+/// `risk_metrics.calculate_sortino_ratio`.
+#[pyfunction]
+pub fn sortino_ratio(
+    returns: PyReadonlyArray1<'_, f64>,
+    risk_free_rate: f64,
+    periods_per_year: f64,
+    target_return: f64,
+) -> f64 {
+    crate::stats::sortino_ratio(
+        &view(&returns),
+        risk_free_rate,
+        periods_per_year,
+        target_return,
+    )
+}
+
+/// `risk_metrics.calculate_beta` on aligned, NaN-free return pairs.
+#[pyfunction]
+pub fn beta(returns: PyReadonlyArray1<'_, f64>, benchmark: PyReadonlyArray1<'_, f64>) -> f64 {
+    crate::stats::beta(&view(&returns), &view(&benchmark))
+}
+
+/// One `calculate_benchmark_scoreboard` row from aligned returns: (alpha,
+/// beta, r2, tracking_error, information_ratio).
+#[pyfunction]
+pub fn scoreboard_stats(
+    rp: PyReadonlyArray1<'_, f64>,
+    rb: PyReadonlyArray1<'_, f64>,
+    ppy: f64,
+) -> (f64, f64, f64, f64, f64) {
+    crate::stats::scoreboard_stats(&view(&rp), &view(&rb), ppy)
+}

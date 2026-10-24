@@ -7,7 +7,10 @@
 
 pub mod analyzer;
 pub mod holdings;
+pub mod irr;
+mod irr_grid;
 mod py;
+pub mod stats;
 pub mod util;
 
 use pyo3::prelude::*;
@@ -27,6 +30,25 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(py::process_core, m)?)?;
     m.add_function(wrap_pyfunction!(py::dividend_amount, m)?)?;
+    m.add_function(wrap_pyfunction!(py::npv, m)?)?;
+    m.add_function(wrap_pyfunction!(py::calculate_irr, m)?)?;
+    m.add_function(wrap_pyfunction!(py::irr_scan_grid, m)?)?;
+    m.add_function(wrap_pyfunction!(py::py_sum, m)?)?;
+    m.add_function(wrap_pyfunction!(py::brentq_npv, m)?)?;
+    m.add_function(wrap_pyfunction!(py::newton_npv, m)?)?;
+    m.add_function(wrap_pyfunction!(py::np_sum, m)?)?;
+    m.add_function(wrap_pyfunction!(py::pd_mean, m)?)?;
+    m.add_function(wrap_pyfunction!(py::pd_min, m)?)?;
+    m.add_function(wrap_pyfunction!(py::pd_var, m)?)?;
+    m.add_function(wrap_pyfunction!(py::pd_std, m)?)?;
+    m.add_function(wrap_pyfunction!(py::max_drawdown, m)?)?;
+    m.add_function(wrap_pyfunction!(py::drawdown_series, m)?)?;
+    m.add_function(wrap_pyfunction!(py::pct_change, m)?)?;
+    m.add_function(wrap_pyfunction!(py::volatility, m)?)?;
+    m.add_function(wrap_pyfunction!(py::sharpe_ratio, m)?)?;
+    m.add_function(wrap_pyfunction!(py::sortino_ratio, m)?)?;
+    m.add_function(wrap_pyfunction!(py::beta, m)?)?;
+    m.add_function(wrap_pyfunction!(py::scoreboard_stats, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;

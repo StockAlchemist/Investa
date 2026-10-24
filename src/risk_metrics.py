@@ -17,7 +17,17 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Optional
 
+import investa_core
 from finutils import infer_periods_per_year
+
+# The arithmetic runs in Rust (rust/investa_core/src/stats.rs), reproducing
+# pandas' reductions bit for bit; this module keeps the pandas side — index
+# alignment, dropping NaN, inferring the period from the dates. The originals
+# are frozen in tests/reference/risk_metrics.py.
+
+
+def _values(series: pd.Series) -> np.ndarray:
+    return np.ascontiguousarray(series.to_numpy(dtype=np.float64, na_value=np.nan))
 
 
 def calculate_drawdown_series(series: pd.Series) -> pd.Series:
@@ -33,10 +43,9 @@ def calculate_drawdown_series(series: pd.Series) -> pd.Series:
     """
     if series.empty:
         return pd.Series(dtype=float)
-
-    cumulative_max = series.cummax()
-    drawdown = (series - cumulative_max) / cumulative_max
-    return drawdown
+    return pd.Series(
+        investa_core.drawdown_series(_values(series)), index=series.index, name=series.name
+    )
 
 
 def calculate_max_drawdown(series: pd.Series) -> float:
@@ -48,15 +57,10 @@ def calculate_max_drawdown(series: pd.Series) -> float:
         series (pd.Series): Time series of portfolio values or cumulative returns.
 
     Returns:
-        float: The maximum drawdown as a positive percentage (e.g., 0.20 for 20% drawdown).
-               Returns 0.0 if the series is strictly increasing or empty.
+        float: The maximum drawdown as a negative fraction (e.g., -0.20 for a 20% drawdown).
+               Returns 0.0 if the series never falls, or is empty.
     """
-    drawdown = calculate_drawdown_series(series)
-    if drawdown.empty:
-        return 0.0
-
-    mdd = drawdown.min()
-    return float(mdd) if pd.notna(mdd) else 0.0
+    return float(investa_core.max_drawdown(_values(series)))
 
 
 def calculate_volatility(
@@ -74,10 +78,7 @@ def calculate_volatility(
     """
     if returns_series.empty or len(returns_series) < 2:
         return 0.0
-
-    std_dev = returns_series.std()
-    annualized_vol = std_dev * np.sqrt(periods_per_year)
-    return float(annualized_vol)
+    return float(investa_core.volatility(_values(returns_series), float(periods_per_year)))
 
 
 def calculate_sharpe_ratio(
@@ -85,7 +86,8 @@ def calculate_sharpe_ratio(
 ) -> float:
     """
     Calculates the Sharpe Ratio.
-    Sharpe = (Mean Return - Risk Free Rate) / Volatility
+    Sharpe = (Mean Return - Risk Free Rate) / Volatility, annualized by sqrt(periods).
+    The risk-free rate is spread evenly over the periods (rf / periods_per_year).
 
     Args:
         returns_series (pd.Series): Time series of periodic returns.
@@ -97,24 +99,11 @@ def calculate_sharpe_ratio(
     """
     if returns_series.empty or len(returns_series) < 2:
         return 0.0
-
-    # Convert annualized risk-free rate to periodic
-    # Simple approximation: rf_daily = rf_annual / periods
-    rf_periodic = risk_free_rate / periods_per_year
-
-    excess_returns = returns_series - rf_periodic
-    mean_excess_return = excess_returns.mean()
-    std_dev_returns = returns_series.std()
-
-    if std_dev_returns == 0:
-        return 0.0
-
-    # Annualize the ratio
-    # Sharpe_annual = Sharpe_daily * sqrt(periods)
-    sharpe_daily = mean_excess_return / std_dev_returns
-    sharpe_annual = sharpe_daily * np.sqrt(periods_per_year)
-
-    return float(sharpe_annual)
+    return float(
+        investa_core.sharpe_ratio(
+            _values(returns_series), float(risk_free_rate), float(periods_per_year)
+        )
+    )
 
 
 def calculate_sortino_ratio(
@@ -125,7 +114,8 @@ def calculate_sortino_ratio(
 ) -> float:
     """
     Calculates the Sortino Ratio.
-    Sortino = (Mean Return - Risk Free Rate) / Downside Deviation
+    Sortino = (Mean Return - Risk Free Rate) / Downside Deviation, where the
+    downside deviation is sqrt(mean(min(0, r - target)^2)) over all periods.
 
     Args:
         returns_series (pd.Series): Time series of periodic returns.
@@ -135,52 +125,33 @@ def calculate_sortino_ratio(
                                Usually 0 or risk_free_rate. We use 0 by default for "loss".
 
     Returns:
-        float: Sortino Ratio.
+        float: Sortino Ratio; infinite when no period fell short of the target
+               and the mean excess return is positive.
     """
     if returns_series.empty or len(returns_series) < 2:
         return 0.0
-
-    rf_periodic = risk_free_rate / periods_per_year
-    excess_returns = returns_series - rf_periodic
-    mean_excess_return = excess_returns.mean()
-
-    # Downside deviation: Standard deviation of negative returns (relative to target)
-    # Usually target is 0 for "losing money"
-    downside_returns = returns_series[returns_series < target_return]
-
-    if downside_returns.empty:
-        return float("inf") if mean_excess_return > 0 else 0.0
-
-    # Calculate downside deviation (using 0 as the target for deviation calculation usually,
-    # or the mean of downside? Standard is root mean squared of deviations below target)
-    # Formula: sqrt( sum( min(0, r - target)^2 ) / N )
-
-    # Let's use the standard definition where we penalize returns below target_return
-    underperformance = returns_series - target_return
-    underperformance[underperformance > 0] = 0
-    squared_underperformance = underperformance**2
-    downside_deviation = np.sqrt(squared_underperformance.mean())
-
-    if downside_deviation == 0:
-        return float("inf") if mean_excess_return > 0 else 0.0
-
-    sortino_daily = mean_excess_return / downside_deviation
-    sortino_annual = sortino_daily * np.sqrt(periods_per_year)
-
-    return float(sortino_annual)
+    return float(
+        investa_core.sortino_ratio(
+            _values(returns_series),
+            float(risk_free_rate),
+            float(periods_per_year),
+            float(target_return),
+        )
+    )
 
 
 def calculate_beta(returns_series: pd.Series, benchmark_returns: pd.Series) -> float:
     """
     Calculates the Beta of the portfolio relative to a benchmark.
-    Beta = Cov(Rp, Rm) / Var(Rm)
+    Beta = Cov(Rp, Rm) / Var(Rm), over the dates both series share.
 
     Args:
         returns_series (pd.Series): Portfolio periodic returns.
         benchmark_returns (pd.Series): Benchmark periodic returns.
 
     Returns:
-        float: Portfolio Beta.
+        float: Portfolio Beta; 1.0 when there is too little overlap or the
+               benchmark never moves.
     """
     if returns_series.empty or benchmark_returns.empty:
         return 1.0
@@ -189,14 +160,11 @@ def calculate_beta(returns_series: pd.Series, benchmark_returns: pd.Series) -> f
     aligned = pd.concat([returns_series, benchmark_returns], axis=1).dropna()
     if len(aligned) < 2:
         return 1.0
-
-    cov = aligned.iloc[:, 0].cov(aligned.iloc[:, 1])
-    var = aligned.iloc[:, 1].var()
-
-    if var == 0:
-        return 1.0
-
-    return float(cov / var)
+    return float(
+        investa_core.beta(
+            _values(aligned.iloc[:, 0]), _values(aligned.iloc[:, 1])
+        )
+    )
 
 
 def calculate_alpha(
@@ -223,6 +191,12 @@ def calculate_alpha(
     return float(alpha)
 
 
+def _returns(values: pd.Series) -> pd.Series:
+    """`pct_change(fill_method=None)` with infinities dropped as NaN, then dropna."""
+    r = pd.Series(investa_core.pct_change(_values(values)), index=values.index)
+    return r.dropna()
+
+
 def calculate_all_risk_metrics(
     portfolio_values: pd.Series,
     risk_free_rate: float = 0.02,
@@ -235,7 +209,8 @@ def calculate_all_risk_metrics(
     Args:
         portfolio_values (pd.Series): Time series of portfolio total value.
         risk_free_rate (float): Annualized risk-free rate.
-        periods_per_year (int): Periods per year.
+        periods_per_year (int): Periods per year; inferred from the dates when
+            omitted (calendar-daily series have ~365 a year, not 252).
         benchmark_values (pd.Series, optional): Time series of benchmark values (e.g. S&P 500).
 
     Returns:
@@ -244,28 +219,17 @@ def calculate_all_risk_metrics(
     if portfolio_values.empty:
         return {}
 
-    # Calculate returns
-    returns = (
-        portfolio_values.pct_change(fill_method=None)
-        .replace([np.inf, -np.inf], np.nan)
-        .dropna()
-    )
+    returns = _returns(portfolio_values)
 
-    # --- ROBUSTNESS: Handle extreme outliers that ruin metrics ---
-    # Daily returns > 1000% or < -95% are almost always data artifacts (missing flows, splits, etc.)
-    # especially for diversified portfolios. We clip them to prevent infinity/extreme volatility.
+    # Daily returns > 100% or < -90% are almost always data artifacts (missing
+    # flows, splits), so they are clipped to keep them from ruining the metrics.
     if not returns.empty:
-        # Check for suspected artifacts
-        outliers = returns[(returns > 1.0) | (returns < -0.90)]
-        if not outliers.empty:
-            # We clip while keeping the sign
-            returns = returns.clip(lower=-0.90, upper=1.0)
+        returns = returns.clip(lower=-0.90, upper=1.0)
 
     # MDD ignores returns and works on value series (more robust)
     mdd = calculate_max_drawdown(portfolio_values)
 
-    # If we have very few data points, metrics like Vol/Sharpe are statistically meaningless
-    # and highly subject to initialization bias.
+    # With very few points, Vol/Sharpe are statistically meaningless.
     if len(returns) < 5:
         return {
             "Max Drawdown": mdd,
@@ -275,40 +239,28 @@ def calculate_all_risk_metrics(
             "insufficient_data": True,
         }
 
-    # Calendar-daily portfolio series have ~365 obs/yr, not 252 — infer from the
-    # dates so vol/Sharpe/Sortino/Alpha aren't under-annualized by ~365/252
-    # (keeps the risk card consistent with the projection model). An explicit
-    # periods_per_year still overrides.
     ppy = (
         periods_per_year
         if periods_per_year is not None
         else infer_periods_per_year(returns.index)
     )
 
-    vol = calculate_volatility(returns, ppy)
-    sharpe = calculate_sharpe_ratio(returns, risk_free_rate, ppy)
-    sortino = calculate_sortino_ratio(returns, risk_free_rate, ppy)
-
     metrics = {
         "Max Drawdown": mdd,
-        "Volatility (Ann.)": vol,
-        "Sharpe Ratio": sharpe,
-        "Sortino Ratio": sortino,
+        "Volatility (Ann.)": calculate_volatility(returns, ppy),
+        "Sharpe Ratio": calculate_sharpe_ratio(returns, risk_free_rate, ppy),
+        "Sortino Ratio": calculate_sortino_ratio(returns, risk_free_rate, ppy),
     }
 
     # Add Alpha & Beta if benchmark provided
     if benchmark_values is not None and not benchmark_values.empty:
-        bench_returns = (
-            benchmark_values.pct_change(fill_method=None)
-            .replace([np.inf, -np.inf], np.nan)
-            .dropna()
-        )
+        bench_returns = _returns(benchmark_values)
         if not bench_returns.empty:
             beta = calculate_beta(returns, bench_returns)
 
             # Annualized returns for Alpha
-            port_ann_ret = returns.mean() * ppy
-            bench_ann_ret = bench_returns.mean() * ppy
+            port_ann_ret = investa_core.pd_mean(_values(returns)) * ppy
+            bench_ann_ret = investa_core.pd_mean(_values(bench_returns)) * ppy
 
             alpha = calculate_alpha(port_ann_ret, bench_ann_ret, beta, risk_free_rate)
 
@@ -335,40 +287,25 @@ def calculate_benchmark_scoreboard(
     if portfolio_values is None or portfolio_values.empty:
         return out
 
-    def _returns(s: pd.Series) -> pd.Series:
-        return (
-            s.pct_change(fill_method=None)
-            .replace([np.inf, -np.inf], np.nan)
-            .dropna()
-            .clip(lower=-0.90, upper=1.0)
-        )
+    def _clipped_returns(s: pd.Series) -> pd.Series:
+        return _returns(s).clip(lower=-0.90, upper=1.0)
 
-    port_ret = _returns(portfolio_values)
+    port_ret = _clipped_returns(portfolio_values)
     if len(port_ret) < 20:
         return out
     ppy = infer_periods_per_year(port_ret.index)
-    sqrt_ppy = np.sqrt(ppy)
 
     for name, bvals in benchmark_values.items():
         if bvals is None or bvals.empty:
             continue
-        aligned = pd.concat([port_ret, _returns(bvals)], axis=1, join="inner").dropna()
+        aligned = pd.concat(
+            [port_ret, _clipped_returns(bvals)], axis=1, join="inner"
+        ).dropna()
         if len(aligned) < 20:
             continue
-        rp = aligned.iloc[:, 0].to_numpy()
-        rb = aligned.iloc[:, 1].to_numpy()
-        mp, mb = rp.mean(), rb.mean()
-        cov = ((rp - mp) * (rb - mb)).mean()
-        var_b = ((rb - mb) ** 2).mean()
-        var_p = ((rp - mp) ** 2).mean()
-        beta = cov / var_b if var_b > 0 else 0.0
-        alpha = (mp - beta * mb) * ppy * 100.0
-        corr = cov / np.sqrt(var_p * var_b) if var_p > 0 and var_b > 0 else 0.0
-        diffs = rp - rb
-        m_diff = diffs.mean()
-        te_daily = np.sqrt(((diffs - m_diff) ** 2).mean())
-        te = te_daily * sqrt_ppy * 100.0
-        ir = (m_diff * ppy) / (te_daily * sqrt_ppy) if te_daily > 0 else 0.0
+        alpha, beta, r2, te, ir = investa_core.scoreboard_stats(
+            _values(aligned.iloc[:, 0]), _values(aligned.iloc[:, 1]), float(ppy)
+        )
         port_total = (
             float(portfolio_values.iloc[-1]) / float(portfolio_values.iloc[0]) - 1.0
         ) * 100.0
@@ -378,7 +315,7 @@ def calculate_benchmark_scoreboard(
                 "name": name,
                 "alpha": float(alpha),
                 "beta": float(beta),
-                "r2": float(corr * corr),
+                "r2": float(r2),
                 "tracking_error": float(te),
                 "information_ratio": float(ir),
                 "excess_return": float(port_total - bench_total),

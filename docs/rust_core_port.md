@@ -1,6 +1,6 @@
 # Rust Calculation Core: Port Plan and Status
 
-**Status:** Phase 1 done (the Numba kernels). Phases 2–6 to do.
+**Status:** Phases 1–2 done (the Numba kernels; IRR/NPV and risk metrics). Phases 3–6 to do.
 **Branch:** `feat/rust-core`. One long-lived branch, merged to `main` when the whole port is verified.
 **Started:** 24 Oct 2026
 **Scope:** every calculation module in `src/` moves into one Rust crate, `rust/investa_core`. Python calls it through PyO3. These stay Python:
@@ -42,9 +42,9 @@ The crate builds in four places:
 | Phase | Modules | Status |
 |---|---|---|
 | 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. | **Done** |
-| 2 | Financial math: `finutils` NPV/IRR, `risk_metrics`, `buffett_metrics` helpers | To do |
+| 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
 | 3 | Intrinsic-value Monte Carlo models in `financial_ratios` (random draws stay NumPy-generated, so outputs stay identical) | To do |
-| 4 | Buffett ranking: `buffett_metrics`, `buffett_value`, `buffett_rank` | To do |
+| 4 | Buffett ranking: `buffett_metrics` (including its helpers), `buffett_value`, `buffett_rank` | To do |
 | 5 | `projections`, `valuation_history`, `strategies` math | To do |
 | 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
 
@@ -69,6 +69,37 @@ The crate builds in four places:
 | Full history request | 4.2 s / 6.3 s | 4.1 s / 6.4 s | n/a |
 
 End-to-end differences are 10–75 ms in both directions, which is noise. The real gain is cold start: the 5-second JIT compile on each edit or deploy is gone.
+
+## Phase 2 results (24 Oct 2026)
+
+**What moved:**
+- `finutils.calculate_npv` and `calculate_irr`, ported line for line together with what they relied on:
+  - SciPy 1.16's secant `newton` and C `brentq`, including the wrapper rule that a NaN function value aborts the search.
+  - NumPy's `isclose`.
+  - CPython 3.12's compensated `sum()`. The IRR's total-loss check uses it, and the result depends on whether each flow is an exact `float` or a NumPy scalar. Real ledgers pass both.
+- All of `risk_metrics`, on exact ports of NumPy's pairwise sum and pandas' NaN-skipping mean, variance, min and cummax.
+- What stayed Python: index alignment, `dropna`, and `infer_periods_per_year`, which works on a pandas `DatetimeIndex`.
+
+**Parity**
+- Fuzz: IRR, NPV and every risk metric are bitwise equal to the frozen originals.
+- Root finders compared directly with SciPy: 20,000 random brackets and iteration caps, every converge, raise and NaN case matching bit for bit.
+- Real data (kitmatan, dheematan, atchamatan in USD and THB): every summary figure and every holdings cell is bitwise equal, including both IRR columns. Max Drawdown, Volatility, Sharpe, Sortino and the benchmark scoreboard are bitwise equal too.
+- **Beta and Alpha agree to 1.8 × 10⁻¹⁶ relative**, not to the bit. The original covariance went through `np.cov`, whose BLAS dot product (Accelerate here) sums in an order of its own. It matched neither sequential nor pairwise summation in 79% of trials, so no port can reproduce it.
+- Full suite: 1,172 tests pass.
+
+**SciPy fuses three operations on arm64.** The first `brentq` comparison was off by 1 ulp. The disassembly of SciPy's `_zeros.cpython-312-darwin.so` shows clang fused exactly three multiply-adds (`fmadd`/`fnmsub`):
+- `delta`
+- the extrapolation numerator
+- the step bound `3|sbis| - delta`
+
+The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are built for baseline x86-64, which has no FMA, so nothing is fused there. On any other target, recheck it against the disassembly.
+
+**Speed:** the IRR over the 772 per-holding calls one round of summaries makes (three users, two currencies) takes 886 ms in Python and 13 ms in Rust, 68× faster. That is about 148 ms → 2 ms per summary request, roughly 7% of one.
+
+**Build fix: Xcode 27 linker.** `ld-27037` puts LINKEDIT's string pool directly after the indirect-symbol table, without padding. An odd number of 4-byte entries leaves the pool 4 bytes off an 8-byte boundary, and the macOS 27 loader rejects the binary ("mis-aligned LINKEDIT string pool"). The layout shifts as code changes, so earlier builds loaded by luck.
+- No alternative linker works: `-ld_classic` is gone, and rust-lld cannot read the macOS 27 SDK's `.tbd` stubs.
+- `rust/investa_core/.cargo/config.toml` routes macOS links through `build-support/macos_linker.py`. It links with `cc`, then, only when the pool is misaligned, drops the signature, inserts the missing padding, shifts the affected offsets, and ad-hoc signs again.
+- The release profile sets `strip = false`, because rustc's post-link `strip -S` re-lays-out LINKEDIT and undoes the fix.
 
 ## Found while porting
 
