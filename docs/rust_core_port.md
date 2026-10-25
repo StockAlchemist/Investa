@@ -51,7 +51,7 @@ The crate builds in four places:
 | 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
 | 9 | The summary's per-holding and per-account filters, selected once (Python) | **Done** |
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
-| 11 | Storage modules: (a) `db_utils` **done**; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store | In progress |
+| 11 | Storage modules: (a) `db_utils` **done**; (b) `market_db` **done**; (c) `buffett_store`; (d) the EDGAR fact store | In progress |
 | 12 | Import: `data_loader` and CSV cleaning | Planned |
 | 13 | Summary engine: the rest of `portfolio_analyzer`, the computational parts of `portfolio_logic`, `corporate_actions` | Planned |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
@@ -552,6 +552,28 @@ The storage modules keep their `sqlite3.Connection` objects: connection caching,
 - The migration leaves copies of all five user databases identical.
 - All 1,376 tests pass.
 
+## Phase 11b (25–26 Oct 2026): `market_db`
+
+`market_db.py` went from 1,528 lines to 611. Every `MarketDatabase` method except `__init__` and `_get_connection` is now Rust (`mdb.rs`), and so are the module helpers `_iso_days`, `_rust_reader_bound` and `_read_daily_frames`. Each method takes the object as `slf`, so its connection, write lock, column cache and sibling methods are reached through it, as in the original.
+
+- **Native:**
+  - the ISO day strings (years 1–9999; NumPy's own formatting otherwise);
+  - the split factors, reproducing NumPy's stable argsort, reversed cumprod, right-sided searchsorted and `allclose(1.0)`;
+  - the dividend factors;
+  - the read-time multiplies;
+  - the value cleaning of the upserts (NaN as None, volumes truncated, an infinite or 64-bit-overflowing volume through Python's `int()` so it raises or grows as there).
+- **The same pandas calls:** `to_numeric`, `groupby`, `merge`, `to_datetime`, and every column assignment through `pyhelp::setitem`.
+- **`with a, b:`** enters `a` before it evaluates `b`, so the write lock is taken before the connection is fetched, as in the original.
+- **Python's own messages:** tuple unpacking (`for day, rate in rows`) raises Python's exact errors, and `symbols + [...]` uses Python's `+` inside the connection's `with`.
+- **Kept as NumPy fallbacks:** the NumPy originals of the two factor helpers stay in `market_db.py` (`_future_split_factors_numpy`, `_dividend_factors_numpy`), for inputs NumPy answers in its own way: a NaN day among the dates, an unsorted index (where its binary search is implementation-specific), closes that are not a float64 array.
+- **Ported as found:** `get_share_counts` and `check_integrity`'s fallback still use `date.today()`, against the market-time rule.
+
+**Parity** (against `tests/reference/market_db.py`):
+- **Method sequences:** 700 random calls on twin archives, including a legacy archive without the provenance columns, agree on every return value (frames bitwise with their index), table, log record and warning.
+- **Helpers:** 240 random indexes (ns/us/s, 1599–10000, NaT, tz-aware, unsorted) give the same `_iso_days`, split factors and dividend factors.
+- **Real data:** the live 3.2 GB archive reads identically for every symbol at the split basis; for 250 symbols with corporate actions under all three adjustments; for single-symbol reads; and for FX, latest closes (now and as of a date), share counts, bases, actions, data quality, fund NAVs, first and last dates and sync stamps. 95 integrity checks on real frames, half of them perturbed, match. The archive holds no raw-basis symbols yet, so the raw-to-split conversion is covered by the fuzz alone.
+- All 1,390 tests pass.
+
 ## Found while porting
 
 - **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
@@ -559,6 +581,7 @@ The storage modules keep their `sqlite3.Connection` objects: connection caching,
   - An account name with parentheses, like `IBKR (1)`, is a regex group: pandas warns about it, and `(1)` matches a bare `1`.
   - The ledger keeps the original's expression, so the behaviour is unchanged. Fixing it needs `regex=False`, a deliberate change with its own before-and-after check.
 - **Fixed 25 Oct 2026: the summary's account rows came out in a different order in every server process.** Account ids were assigned in the iteration order of a set of account names, and Python seeds string hashing per process, so two runs of the same book disagreed on row order and on the holdings dict's order; the values were the same. `_process_transactions_to_holdings` now sorts the accounts by name, the order the account picker already uses. All three books' summaries are identical under different seeds and, once aligned, identical to before. `tests/test_account_order.py` runs four seeds in separate interpreters and fails without the fix.
+- **`market_db` reads dates off the server's clock in two places** (not changed). `get_share_counts` ages entries with `date.today()`, and `check_integrity` falls back to it if `utils_time` fails. Both predate the market-time rule. The share-count cutoff can therefore be a day ahead of the US market on the Bangkok host.
 - **Known type corner, not reached by real data:** in an MWR transfer into the scope, `-(abs(qty) * price)` stays a NumPy *integer* when both cells were text holding integers, such as "3" and "5". The port makes it a NumPy float with the same value. The loader never produces text-typed numeric columns.
 - **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.
 

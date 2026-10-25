@@ -17,6 +17,7 @@ pub mod holdings;
 pub mod irr;
 mod irr_grid;
 pub mod mc;
+pub mod mdb;
 pub mod projection;
 mod py;
 pub mod pyconn;
@@ -218,5 +219,38 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         db_screener::db_update_intrinsic_value_in_cache,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_iso_days, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_future_split_factors, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_dividend_factors, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_adjust_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_upsert_ohlcv, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_upsert_actions, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_set_price_basis, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_upsert_fx, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_upsert_fx_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_has_column, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_upsert_fund_nav, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_upsert_share_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_upsert_intraday, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_rust_reader_bound, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_read_daily_frames, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_actions, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_price_basis, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_ohlcv, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_ohlcv_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_intraday, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_data_quality, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_fx, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_fund_nav, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_latest_fund_navs, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_fund_nav_coverage, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_share_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_latest_closes, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_last_date, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_last_dates, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_first_dates, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_get_sync_metadata_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_check_integrity, m)?)?;
+    m.add_function(wrap_pyfunction!(mdb::mdb_init_db, m)?)?;
     Ok(())
 }
