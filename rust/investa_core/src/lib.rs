@@ -8,6 +8,7 @@
 pub mod analyzer;
 pub mod buffett;
 pub mod fifo;
+pub mod history;
 pub mod holdings;
 pub mod irr;
 mod irr_grid;
@@ -89,6 +90,10 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::trend_sma, m)?)?;
     m.add_function(wrap_pyfunction!(py::stress_window, m)?)?;
     m.add_function(wrap_pyfunction!(py::fifo_lots, m)?)?;
+    m.add_function(wrap_pyfunction!(py::value_holdings_grid, m)?)?;
+    m.add_function(wrap_pyfunction!(py::portfolio_twr, m)?)?;
+    m.add_function(wrap_pyfunction!(py::benchmark_accumulated, m)?)?;
+    m.add_function(wrap_pyfunction!(py::money_weighted, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;

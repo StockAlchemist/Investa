@@ -4,7 +4,9 @@
 use std::borrow::Cow;
 
 use numpy::ndarray::{Array1, Array2, Array3};
-use numpy::{Element, IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray1};
+use numpy::{
+    Element, IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyUntypedArrayMethods,
+};
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 
@@ -1357,4 +1359,123 @@ pub fn fifo_lots(
         offsets.push(qty.len());
     }
     Ok((sales, (keys, offsets, qty, cps, source)))
+}
+
+// --- history.rs: the daily portfolio history ------------------------------
+
+/// A C-ordered buffer of `a`: borrowed when it already is one.
+fn standard<'a, D: numpy::ndarray::Dimension>(
+    a: &'a numpy::PyReadonlyArray<'_, f64, D>,
+) -> Cow<'a, [f64]> {
+    match a.as_slice() {
+        Ok(s) => Cow::Borrowed(s),
+        Err(_) => Cow::Owned(a.as_array().iter().copied().collect()),
+    }
+}
+
+/// `_value_daily_holdings_vectorized`'s valuation: each day's stocks
+/// (qty × price × FX, last trade price where the market's is NaN) plus cash,
+/// with empty and excluded cells at zero.
+#[pyfunction]
+#[pyo3(signature = (qty, last_prices, prices, fx, cash, included))]
+pub fn value_holdings_grid<'py>(
+    py: Python<'py>,
+    qty: numpy::PyReadonlyArray3<'py, f64>,
+    last_prices: Option<numpy::PyReadonlyArray3<'py, f64>>,
+    prices: numpy::PyReadonlyArray2<'py, f64>,
+    fx: numpy::PyReadonlyArray2<'py, f64>,
+    cash: numpy::PyReadonlyArray2<'py, f64>,
+    included: Vec<bool>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let shape = qty.shape();
+    let g = crate::history::Grid {
+        days: shape[0],
+        symbols: shape[1],
+        accounts: shape[2],
+    };
+    let bad = |what: &str, got: &[usize], want: &[usize]| {
+        PyValueError::new_err(format!(
+            "value_holdings_grid: {what} has shape {got:?}, expected {want:?}"
+        ))
+    };
+    if let Some(l) = &last_prices
+        && l.shape() != shape
+    {
+        return Err(bad("last_prices", l.shape(), shape));
+    }
+    if prices.shape() != [g.days, g.symbols] {
+        return Err(bad("prices", prices.shape(), &[g.days, g.symbols]));
+    }
+    for (what, arr) in [("fx", &fx), ("cash", &cash)] {
+        if arr.shape() != [g.days, g.accounts] {
+            return Err(bad(what, arr.shape(), &[g.days, g.accounts]));
+        }
+    }
+    if included.len() != g.accounts {
+        return Err(PyValueError::new_err(
+            "value_holdings_grid: included needs one flag per account",
+        ));
+    }
+    let (q, p, f, c) = (
+        standard(&qty),
+        standard(&prices),
+        standard(&fx),
+        standard(&cash),
+    );
+    let l = last_prices.as_ref().map(standard);
+    let out = py.detach(|| crate::history::value_grid(g, &q, l.as_deref(), &p, &f, &c, &included));
+    Ok(Array1::from_vec(out).into_pyarray(py))
+}
+
+/// `_calculate_accumulated_gains_and_resample`'s portfolio scan: (gain
+/// factors, accumulated gain, drawdown %).
+#[pyfunction]
+pub fn portfolio_twr<'py>(
+    py: Python<'py>,
+    daily_return: PyReadonlyArray1<'py, f64>,
+) -> TripleOut<'py> {
+    let (g, a, d) = crate::history::portfolio_twr(&view(&daily_return));
+    triple(py, g, a, d)
+}
+
+/// A benchmark's accumulated gain from its price column, or None when it has
+/// no prices.
+#[pyfunction]
+pub fn benchmark_accumulated<'py>(
+    py: Python<'py>,
+    prices: PyReadonlyArray1<'py, f64>,
+) -> Option<Bound<'py, PyArray1<f64>>> {
+    crate::history::benchmark_accumulated(&view(&prices))
+        .map(|v| Array1::from_vec(v).into_pyarray(py))
+}
+
+/// The money-weighted columns: (cumulative net flow, absolute gain, ROI %).
+#[pyfunction]
+pub fn money_weighted<'py>(
+    py: Python<'py>,
+    value: PyReadonlyArray1<'py, f64>,
+    net_flow: PyReadonlyArray1<'py, f64>,
+) -> PyResult<TripleOut<'py>> {
+    let (v, f) = (view(&value), view(&net_flow));
+    if v.len() != f.len() {
+        return Err(PyValueError::new_err(
+            "money_weighted: value and net_flow differ in length",
+        ));
+    }
+    let (c, g, r) = crate::history::money_weighted(&v, &f);
+    Ok(triple(py, c, g, r))
+}
+
+type TripleOut<'py> = (
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+);
+
+fn triple(py: Python<'_>, a: Vec<f64>, b: Vec<f64>, c: Vec<f64>) -> TripleOut<'_> {
+    (
+        Array1::from_vec(a).into_pyarray(py),
+        Array1::from_vec(b).into_pyarray(py),
+        Array1::from_vec(c).into_pyarray(py),
+    )
 }

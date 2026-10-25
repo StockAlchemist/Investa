@@ -16,6 +16,7 @@ from datetime import datetime, date, timedelta
 from functools import partial
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import investa_core
 import numpy as np
 import pandas as pd
 
@@ -1340,67 +1341,37 @@ def _value_daily_holdings_vectorized(
         daily_fx_aligned[:, acc_id] = rates
         currency_fx_series_cache[local_curr] = rates
 
-    # 4. Calculate Market Value (Stocks)
-    # Broadcast Arrays to (Days, Syms, Accs)
-    # P_3d = (D, S, 1)
-    P_3d = daily_prices_aligned[:, :, np.newaxis]
-
-    # Handle Price Fallback in 3D
-    if daily_last_prices_np is not None:
-        # P_full = (D, S, A)
-        P_full = np.broadcast_to(P_3d, daily_holdings_qty_np.shape).copy()
-        mask_nan = np.isnan(P_full)
-
-        # --- NEW: Identify and Log symbols that are missing market data ---
-        if mask_nan.any():
-            nan_indices = np.where(mask_nan)
-            # Just log once per symbol if it has significant gaps
-            unique_nan_sym_ids = np.unique(nan_indices[1])
-            for s_id in unique_nan_sym_ids:
-                sym_name = id_to_symbol.get(s_id, "Unknown")
-                if sym_name != CASH_SYMBOL_CSV:
-                    logging.debug(
-                        f"Valuation: Symbol '{sym_name}' missing market data. Using fallback."
-                    )
-
-        P_full[mask_nan] = daily_last_prices_np[mask_nan]
-
-        # --- NEW: Final fallback for symbols with NO market data and NO transaction price ---
-        # (Though buy transactions should always have a price)
-        # If still NaN, we might have a transfer or split with missing price.
-        # Use 1.0 as a catastrophic fallback to avoid total value NaN if possible,
-        # but only if quantity > 0. Actually, better to let it be NaN and ffill later.
-
-        V_stocks = daily_holdings_qty_np * P_full * daily_fx_aligned[:, np.newaxis, :]
-    else:
-        V_stocks = daily_holdings_qty_np * P_3d * daily_fx_aligned[:, np.newaxis, :]
-
-    # --- CRITICAL FIX: Prevent 0.0 * NaN = NaN ---
-    # Ensure zero quantity always results in zero value, regardless of Price or FX NaNs
-    V_stocks[daily_holdings_qty_np == 0] = 0.0
-
-    # Mask out excluded accounts
+    # 4–6. Value every (day, symbol, account) cell at qty × price × FX —
+    # the last transaction price where the market has none, zero where the
+    # holding is empty (so 0 × NaN cannot poison a day) or the account is
+    # excluded — add the cash, and sum each day. One pass in Rust instead of
+    # four grid-sized temporaries.
     acc_mask = np.zeros(num_accounts, dtype=bool)
     for acc_id in account_ids_to_include_set:
         acc_mask[acc_id] = True
 
-    # Zeros for excluded
-    V_stocks[:, :, ~acc_mask] = 0.0
+    if (
+        daily_last_prices_np is not None
+        and num_accounts
+        and logging.getLogger().isEnabledFor(logging.DEBUG)
+    ):
+        for s_id in np.flatnonzero(np.isnan(daily_prices_aligned).any(axis=0)):
+            sym_name = id_to_symbol.get(s_id, "Unknown")
+            if sym_name != CASH_SYMBOL_CSV:
+                logging.debug(
+                    f"Valuation: Symbol '{sym_name}' missing market data. Using fallback."
+                )
 
-    # Sum over Symbols and Accounts
-    total_stock_value = np.sum(V_stocks, axis=(1, 2))
-
-    # 5. Calculate Cash Value
-    V_cash = daily_cash_balances_np * daily_fx_aligned
-    # --- CRITICAL FIX: Prevent 0.0 * NaN = NaN for Cash ---
-    V_cash[daily_cash_balances_np == 0] = 0.0
-
-    V_cash[:, ~acc_mask] = 0.0
-
-    total_cash_value = np.sum(V_cash, axis=1)
-
-    # 6. Total
-    total_value = total_stock_value + total_cash_value
+    total_value = investa_core.value_holdings_grid(
+        np.asarray(daily_holdings_qty_np, dtype=np.float64),
+        None
+        if daily_last_prices_np is None
+        else np.asarray(daily_last_prices_np, dtype=np.float64),
+        daily_prices_aligned,
+        daily_fx_aligned,
+        np.asarray(daily_cash_balances_np, dtype=np.float64),
+        acc_mask.tolist(),
+    )
 
     daily_value_series = pd.Series(total_value, index=date_range)
 
@@ -2929,25 +2900,20 @@ def _calculate_accumulated_gains_and_resample(
     logging.debug(
         f"[_calculate_accumulated_gains_and_resample] Input daily_df shape: {results_df.shape}"
     )
-    logging.debug(f"Input daily_df tail:\n{results_df.tail().to_string()}")
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        logging.debug(f"Input daily_df tail:\n{results_df.tail().to_string()}")
 
     try:
-        gain_factors_portfolio = 1 + results_df["daily_return"].fillna(0.0)
-        # --- FIX: Prevent TWR "Death" by Zero ---
-        # If any daily return is -1.0 (-100%), the factor becomes 0.0.
-        # This causes the cumprod to stay 0.0 forever, ruining the graph for all future dates.
-        # We replace factors near 0.0 with 1.0 (neutral 0% return) to bridge these data gaps/errors.
-        zero_factor_mask = gain_factors_portfolio < 1e-6
-        if zero_factor_mask.any():
-            gain_factors_portfolio[zero_factor_mask] = 1.0
-
-        results_df["Portfolio Accumulated Gain Daily"] = (
-            gain_factors_portfolio.cumprod()
+        # Gain factors 1 + r (a -100% day bridged at 1.0, so the product does
+        # not stay at zero forever), their running product, and the drawdown
+        # from it: one scan in investa_core.portfolio_twr.
+        factors, accumulated, drawdown = investa_core.portfolio_twr(
+            np.asarray(results_df["daily_return"], dtype=np.float64)
         )
-        if not results_df.empty and pd.isna(results_df["daily_return"].iloc[0]):
-            results_df.iloc[
-                0, results_df.columns.get_loc("Portfolio Accumulated Gain Daily")
-            ] = np.nan
+        gain_factors_portfolio = pd.Series(
+            factors, index=results_df.index, name="daily_return"
+        )
+        results_df["Portfolio Accumulated Gain Daily"] = accumulated
 
         # --- MODIFIED: Calculate final_twr_factor ONLY for the requested range ---
         if not results_df.empty:
@@ -2972,23 +2938,19 @@ def _calculate_accumulated_gains_and_resample(
             price_col = f"{bm_symbol} Price"
             accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
             if price_col in results_df.columns:
-                bench_prices_no_na = results_df[price_col].dropna()
-                if not bench_prices_no_na.empty:
-                    bench_daily_returns = (
-                        bench_prices_no_na.pct_change(fill_method=None)
-                        .reindex(results_df.index)
-                        .ffill()
-                        .fillna(0.0)
+                bench_prices = results_df[price_col]
+                if not bench_prices.dropna().index.is_unique:
+                    # The original reindexes the returns by date, which
+                    # refuses duplicate dates; fail the same way.
+                    bench_prices.dropna().pct_change(fill_method=None).reindex(
+                        results_df.index
                     )
-                    gain_factors_bench = 1 + bench_daily_returns
-                    accum_gains_bench = gain_factors_bench.cumprod()
-                    results_df[accum_col_daily] = accum_gains_bench
-                    if not results_df.empty:
-                        results_df.iloc[
-                            0, results_df.columns.get_loc(accum_col_daily)
-                        ] = np.nan
-                else:
-                    results_df[accum_col_daily] = np.nan
+                accum_gains_bench = investa_core.benchmark_accumulated(
+                    np.asarray(bench_prices, dtype=np.float64)
+                )
+                results_df[accum_col_daily] = (
+                    np.nan if accum_gains_bench is None else accum_gains_bench
+                )
             else:
                 results_df[accum_col_daily] = np.nan
         status_update += " Daily accum gain calc complete."
@@ -2996,34 +2958,19 @@ def _calculate_accumulated_gains_and_resample(
         # --- NEW: Calculate Absolute Gain / ROI on Daily Basis ---
         # This provides a money-weighted perspective for all views.
         if "value" in results_df.columns and "net_flow" in results_df.columns:
-            results_df["Cumulative Net Flow"] = (
-                results_df["net_flow"].fillna(0.0).cumsum()
+            # ROI is NaN where the cumulative flow (the cost basis) is <= 0, to
+            # avoid massive misleading spikes or an infinite return.
+            cumulative_flow, absolute_gain, roi = investa_core.money_weighted(
+                np.asarray(results_df["value"], dtype=np.float64),
+                np.asarray(results_df["net_flow"], dtype=np.float64),
             )
-            results_df["Absolute Gain ($)"] = (
-                results_df["value"] - results_df["Cumulative Net Flow"]
-            )
-            denom_roi = results_df["Cumulative Net Flow"]
-            # Set ROI to NaN if Cost Basis is <= 0 to avoid massive misleading spikes
-            # or undefined math (infinite return).
-            roi_series = (results_df["Absolute Gain ($)"] / denom_roi) * 100.0
-            roi_series[denom_roi <= 0] = np.nan
-            results_df["Absolute ROI (%)"] = roi_series
+            results_df["Cumulative Net Flow"] = cumulative_flow
+            results_df["Absolute Gain ($)"] = absolute_gain
+            results_df["Absolute ROI (%)"] = roi
 
-        # --- NEW: Calculate Drawdown from Portfolio Accumulated Gain Daily ---
-        if "Portfolio Accumulated Gain Daily" in results_df.columns:
-            # 1. Calculate Running Max
-            running_max = results_df["Portfolio Accumulated Gain Daily"].cummax()
-            # 2. Drawdown = (Current / Running Max) - 1
-            # Handle potential NaNs or zeros if needed (though cummax usually safe)
-            results_df["drawdown"] = (
-                results_df["Portfolio Accumulated Gain Daily"] / running_max
-            ) - 1
-            # 3. Convert to percentage? Frontend expects percentage number (e.g. -5.5 for -5.5%)?
-            # Looking at PerformanceGraph.tsx, it renders `dataPoint.drawdown.toFixed(2) + '%'`.
-            # If the value is -0.05 (for -5%), then * 100
-            results_df["drawdown"] = results_df["drawdown"] * 100.0
-            # Fill NaNs with 0.0
-            results_df["drawdown"] = results_df["drawdown"].fillna(0.0)
+        # Drawdown in percent (the frontend renders -5.5 as -5.5%), 0 where
+        # the accumulated gain is NaN.
+        results_df["drawdown"] = drawdown
 
         if interval in ["D", "1d"]:
             final_df_resampled = results_df
@@ -3184,9 +3131,10 @@ def _calculate_accumulated_gains_and_resample(
         logging.debug(
             f"[_calculate_accumulated_gains_and_resample] Final final_df_output shape: {final_df_output.shape}"
         )
-        logging.debug(
-            f"Final final_df_output tail:\n{final_df_output.tail().to_string()}"
-        )
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logging.debug(
+                f"Final final_df_output tail:\n{final_df_output.tail().to_string()}"
+            )
         if interval != "D" and "daily_return" in final_df_output.columns:
             final_df_output.drop(columns=["daily_return"], inplace=True)
 

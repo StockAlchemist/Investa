@@ -46,7 +46,7 @@ The crate builds in four places:
 | 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
 | 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
 | 5 | `projections`; the aggregations in `valuation_history`, `strategies` and `track_record` | **Done** |
-| 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | (a) **Done**; (b), (c) to do |
+| 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | **Done** |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -254,6 +254,39 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 - Fuzz: 1,500 random ledgers (about 2,000 sales and 3,400 lots, plus 460 holdings left empty) match bitwise, type for type. The gains frame's columns, dtypes and index order match too. The ledgers include NaN, zero and negative quantities, missing prices, all four kinds of FX answer (float, NumPy float, NaN, None), repeated splits, and same-day lots with shuffled ids.
 - Real data: kitmatan (5,024 rows, 207 sales) and dheematan (3,914 rows, 210 sales), in USD and THB. The FIFO output and the whole portfolio summary are identical; the only difference is the `calculated_at` timestamp.
 - **Speed:** 150–180 ms per call against 340–510 ms for the original.
+
+## Phase 6b–c (25 Oct 2026): daily valuation and TWR accumulation
+
+**What moved** (`history.rs`):
+- **6b, the valuation step of `_value_daily_holdings_vectorized`.** Each (day, symbol, account) cell is valued at qty × price × FX, using the last trade price where the market has none. Empty and excluded cells are zero. Cash is added and each day is summed.
+  - The original built four temporaries the size of the whole grid. On kitmatan that grid is 8,883 days × 89 symbols × 18 accounts, so 14M cells and 115 MB per array.
+  - It also ran `np.unique` over a 14M-element mask just to feed a debug log. The log now reads the (day, symbol) price matrix instead, and only when debug logging is on.
+- **6c, the daily scans of `_calculate_accumulated_gains_and_resample`:**
+  - the time-weighted gain, with its bridge over −100% days;
+  - each benchmark's accumulated gain;
+  - the cumulative flow, absolute gain and ROI;
+  - the drawdown.
+  - Two debug f-strings rendered `tail().to_string()` on every call even with debug off; they are now guarded.
+
+**What stays Python:**
+- Aligning prices and FX onto the grid: `reindex`, forward fill, interpolation, and the pair and orientation rules.
+- The fund-NAV and manual-override fallbacks.
+- Resampling, the 16:00 New York index shift, and the range filter with its t−1 baseline normalisation.
+- The requested period's `prod()` of the gain factors.
+
+**Reproduced:**
+- `np.sum(V, axis=(1, 2))` sums each day's contiguous (symbol, account) block as a single run, buffered in 8,192 elements like a 1-D sum.
+- pandas `cumsum`/`cumprod`/`cummax` are NumPy accumulations that start from the first element; `cummax` skips NaN and prefers 0.0 over −0.0.
+- A benchmark with duplicate dates fails the whole calculation exactly when the original's `reindex` refuses it, which is not when the indexes are identical. The shim runs the same pandas expression to decide.
+
+**Parity:**
+- 6b fuzz: 360 random grids match bitwise (series, error flag, status). They include market feeds in each price column, published NAVs, manual overrides, gaps with and without last-trade fallbacks, NaN and negative quantities, excluded accounts, missing FX pairs, and three grids wider than one reduction buffer per day.
+- 6c fuzz: 480 random daily frames match bitwise (frame, TWR factor, status) across D, 1d, W, M, ME and an unknown interval. They include NaN, −100%, −0.0 and doubling days, gappy, empty and missing benchmarks, negative cost bases and random ranges.
+- Real data: the recorded valuation and accumulation calls for kitmatan and dheematan in USD and THB are identical. So is the accumulation over D/W/M/ME × three ranges (48 combinations).
+  - The whole `/history` result (6,119 points for kitmatan) is identical with each function swapped on its own and with both swapped at once.
+- **Speed:**
+  - Valuation: 58–75 ms against 173–201 ms.
+  - Accumulation: 11 ms against 14 ms. The arithmetic was always under 1 ms; the gain is the debug guards.
 
 ## Found while porting
 
