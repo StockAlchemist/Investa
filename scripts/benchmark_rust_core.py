@@ -152,7 +152,7 @@ def run_history(data):
     return asyncio.run(
         _calculate_historical_performance_internal(
             currency="THB",
-            period="max",
+            period="all",
             accounts=None,
             benchmarks=[],
             data=data,

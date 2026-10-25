@@ -66,7 +66,9 @@ The crate builds in four places:
 | Single-date holdings | 37–39 µs | 33–37 µs | 7.2 ms |
 | First call after an edit or fresh deploy | 46–64 ms | 5.0 s (JIT compile) | n/a |
 | Full summary request | 2.05 s | 2.05–2.08 s | n/a |
-| Full history request | 4.2 s / 6.3 s | 4.1 s / 6.4 s | n/a |
+| History request, default one-year window* | 4.2 s / 6.3 s | 4.1 s / 6.4 s | n/a |
+
+\* The script asked for `period="max"`, which the service does not know, so it answered with its default one-year window. It now asks for `"all"`; the full-history numbers are in the final benchmark below.
 
 End-to-end differences are 10–75 ms in both directions, which is noise. The real gain is cold start: the 5-second JIT compile on each edit or deploy is gone.
 
@@ -287,6 +289,49 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 - **Speed:**
   - Valuation: 58–75 ms against 173–201 ms.
   - Accumulation: 11 ms against 14 ms. The arithmetic was always under 1 ms; the gain is the debug guards.
+
+## Final benchmark (25 Oct 2026): the whole port against the Python it replaced
+
+`scripts/benchmark_rust_full.py`, on real data, with market data recorded once and replayed so only computation is timed. Each row is an interleaved median, Rust against the frozen original in `tests/reference/`. The three replay kernels are compared with warm Numba, which they replaced. "End to end" swaps every ported function at once: the kernels, IRR, FIFO, the valuation, the accumulation and the risk metrics. Raw numbers are in `profiles/benchmark_rust_full.json` (git-ignored).
+
+**Per portfolio** (kitmatan / dheematan; full history of 8,883 days, 89–94 symbols, 18 accounts):
+
+| Area | Rust | Original | Speed-up |
+|---|---|---|---|
+| Daily holdings replay (8,885 days × 5,024 / 3,914 tx) | 20.5 / 20.6 ms | 26.5 / 26.2 ms (Numba) | 1.3× |
+| Analyzer replay | 73 / 58 µs | 121 / 83 µs (Numba) | 1.4–1.7× |
+| Single-date holdings | 40 / 39 µs | 35 / 37 µs (Numba) | 0.9× |
+| IRR, every holding in one summary (144 / 149) | 2.6 / 2.9 ms | 128 / 260 ms | 49–89× |
+| Risk metrics, 8,883-day series | 0.47 / 0.42 ms | 1.4 / 0.96 ms | 2.3–2.9× |
+| FIFO lots and realized gains | 158 / 169 ms | 334 / 330 ms | 2.0–2.1× |
+| Daily holdings valuation | 54 / 68 ms | 182 / 165 ms | 2.4–3.4× |
+| TWR accumulation | 7.3 / 7.7 ms | 9.6 / 10.0 ms | 1.3× |
+| Projection backtest | 8.1 / 8.2 ms | 167 / 170 ms | 21× |
+| Projection cone | 0.52 / 0.53 ms | 0.59 / 0.60 ms | 1.1× |
+| **`/summary` computation** | **1.68 / 1.60 s** | **1.96 / 2.03 s** | **1.2–1.3×** |
+| **`/history` computation, full history** | **1.01 / 1.14 s** | **1.12 / 1.32 s** | **1.1–1.2×** |
+| **First call in a fresh process** | **47 / 48 ms** | **4.9 / 5.4 s (JIT)** | **~110×** |
+
+**Market-wide:**
+
+| Area | Rust | Original | Speed-up |
+|---|---|---|---|
+| Intrinsic value, 12 companies, all models | 1.74 s | 1.75 s | 1.0× |
+| Buffett metrics arithmetic, 306 filers | 36 ms | 38 ms | 1.1× |
+| Ranking: value scoring, 1,221 companies | 1.4 ms | 6.6 ms | 4.7× |
+| Ranking: quality scoring, 5,561 filers | 43 ms | 80 ms | 1.9× |
+| Valuation bands, 60 companies | 1.00 s | 1.02 s | 1.0× |
+| Track record, 60 companies | 2.98 s | 2.95 s | 1.0× |
+| Trend signal, SPY | 0.53 ms | 1.0 ms | 2.0× |
+
+**What this says:**
+- **Requests got 10–25% faster:** about 0.3–0.4 s per summary and 0.1–0.2 s per full history. The summary saving is mostly IRR and FIFO; the history saving is the valuation grid.
+  - Much of the summary's remaining 1.6 s is the pandas and data plumbing the port deliberately left in Python.
+- **The big multiples are on what was slow Python arithmetic:** IRR (50–90×), the projection backtest (21×), the value scoring (4.7×). They are small in absolute terms per request.
+- **Cold start is the largest single win.** The 5-second Numba JIT compile on every edit, restart or deploy is now under 50 ms.
+- **The per-company views (intrinsic value, bands, track record, Buffett metrics) are unchanged.** Their time is EDGAR and statement loading, which stayed Python.
+- **Against Numba the kernels are 1.3–1.7× faster,** except the single-date holdings kernel. It is about 10% slower, but at 40 µs and off the request path.
+- **Nothing changed in the numbers:** every area is bitwise identical to the original on fuzzed and real inputs.
 
 ## Found while porting
 
