@@ -627,6 +627,59 @@ def _process_transactions_to_holdings(
 
 
 # --- REVISED: _build_summary_rows (uses MarketDataProvider) ---
+class _HoldingRows:
+    """
+    The transaction rows `_build_summary_rows` filters for every holding,
+    selected once per summary.
+
+    Each holding used to mask the whole ledger by symbol, account and date: the
+    same-day flows asked for the rows on the report date, and the last-trade
+    price fallback for priced rows up to it, converting every row's date
+    (`.dt.date`) each time. Filtering by date and price first and by symbol and
+    account second selects the same rows, in the same order, with the same
+    labels. A failure here is kept and raised again inside each holding's own
+    handler, so those handlers log what they logged before.
+    """
+
+    def __init__(self, transactions_df: pd.DataFrame, report_date: date):
+        self.df = transactions_df
+        self.report_date = report_date
+        self._memo: Dict[str, Tuple[bool, Any]] = {}
+
+    def _once(self, key: str, build):
+        if key not in self._memo:
+            try:
+                self._memo[key] = (True, build())
+            except Exception as exc:
+                self._memo[key] = (False, exc)
+        ok, value = self._memo[key]
+        if not ok:
+            raise value
+        return value
+
+    def _days(self) -> pd.Series:
+        return self._once("days", lambda: self.df["Date"].dt.date)
+
+    def on_report_date(self) -> pd.DataFrame:
+        """`df[df["Date"].dt.date == report_date]`"""
+        return self._once(
+            "on_report_date", lambda: self.df[self._days() == self.report_date]
+        )
+
+    def priced_by_report_date(self) -> pd.DataFrame:
+        """Rows with a positive Price/Share dated on or before the report date."""
+
+        def build():
+            df = self.df
+            return df[
+                (df["Price/Share"].notna())
+                & (pd.to_numeric(df["Price/Share"], errors="coerce") > 1e-9)
+                & (self._days() <= self.report_date)
+            ]
+
+        return self._once("priced_by_report_date", build)
+
+
 @profile
 def _build_summary_rows(
     holdings: Dict[Tuple[str, str], Dict],
@@ -698,6 +751,7 @@ def _build_summary_rows(
 
     # Every holding's IRR flows come from one read of the ledger.
     cash_flow_ledger = CashFlowLedger(transactions_df)
+    holding_rows = _HoldingRows(transactions_df, report_date)
 
     for holding_key, data in stock_holdings.items():
         symbol, account = holding_key
@@ -836,22 +890,12 @@ def _build_summary_rows(
                     # Match either side of a transfer: shares may have arrived
                     # via a Transfer row where the priced leg is on the source
                     # account (Account=src, "To Account"=account).
-                    account_mask = transactions_df["Account"] == account
+                    priced = holding_rows.priced_by_report_date()
+                    account_mask = priced["Account"] == account
                     if "To Account" in transactions_df.columns:
-                        account_mask = account_mask | (
-                            transactions_df["To Account"] == account
-                        )
-                    fallback_tx = transactions_df[
-                        (transactions_df["Symbol"] == symbol)
-                        & account_mask
-                        & (transactions_df["Price/Share"].notna())
-                        & (
-                            pd.to_numeric(
-                                transactions_df["Price/Share"], errors="coerce"
-                            )
-                            > 1e-9
-                        )
-                        & (transactions_df["Date"].dt.date <= report_date)
+                        account_mask = account_mask | (priced["To Account"] == account)
+                    fallback_tx = priced[
+                        (priced["Symbol"] == symbol) & account_mask
                     ].copy()
                     if not fallback_tx.empty:
                         fallback_tx.sort_values(
@@ -1026,20 +1070,20 @@ def _build_summary_rows(
                 # Filter transactions for this specific holding on the report date
                 # report_date is a datetime.date
                 # MODIFIED: Include 'To Account' in filter for incoming transfers
-                if "To Account" in transactions_df.columns:
-                    tx_today = transactions_df[
-                        (transactions_df["Symbol"] == symbol)
+                today = holding_rows.on_report_date()
+                if today.empty:
+                    tx_today = today
+                elif "To Account" in transactions_df.columns:
+                    tx_today = today[
+                        (today["Symbol"] == symbol)
                         & (
-                            (transactions_df["Account"] == account)
-                            | (transactions_df["To Account"] == account)
+                            (today["Account"] == account)
+                            | (today["To Account"] == account)
                         )
-                        & (transactions_df["Date"].dt.date == report_date)
                     ]
                 else:
-                    tx_today = transactions_df[
-                        (transactions_df["Symbol"] == symbol)
-                        & (transactions_df["Account"] == account)
-                        & (transactions_df["Date"].dt.date == report_date)
+                    tx_today = today[
+                        (today["Symbol"] == symbol) & (today["Account"] == account)
                     ]
 
                 if not tx_today.empty:
@@ -2253,6 +2297,24 @@ def _calculate_aggregate_metrics(
     ):
         # We need to calculate MWR for each account in account_level_metrics
         # Note: account_level_metrics keys are account names.
+        # The normalised account columns are the same for every account:
+        # built once (a failure is kept and raised in each account's handler).
+        normalised: Dict[str, Any] = {}
+
+        def upper_column(name: str) -> pd.Series:
+            if name not in normalised:
+                try:
+                    normalised[name] = (
+                        True,
+                        transactions_df[name].astype(str).str.strip().str.upper(),
+                    )
+                except Exception as exc:
+                    normalised[name] = (False, exc)
+            ok, value = normalised[name]
+            if not ok:
+                raise value
+            return value
+
         for account in account_level_metrics:
             try:
                 # Filter transactions for this specific account
@@ -2260,18 +2322,10 @@ def _calculate_aggregate_metrics(
                 # Case-insensitive match
                 account_upper = str(account).strip().upper()
 
-                acc_series_sub = (
-                    transactions_df["Account"].astype(str).str.strip().str.upper()
-                )
+                acc_series_sub = upper_column("Account")
                 to_acc_series_sub = pd.Series(False, index=transactions_df.index)
                 if "To Account" in transactions_df.columns:
-                    to_acc_series_sub = (
-                        transactions_df["To Account"]
-                        .astype(str)
-                        .str.strip()
-                        .str.upper()
-                        == account_upper
-                    )
+                    to_acc_series_sub = upper_column("To Account") == account_upper
 
                 account_tx = transactions_df[
                     (acc_series_sub == account_upper) | to_acc_series_sub

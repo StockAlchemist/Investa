@@ -399,7 +399,12 @@ def _irr_date_ticks(dates):
     in Rust exactly as Python takes it (datetimes keep their time of day, and
     the day count floors). None when Python could not subtract them either."""
     if all(type(d) is date for d in dates):
-        return np.fromiter((d.toordinal() for d in dates), dtype=np.int64, count=len(dates)) * _DAY_US
+        return (
+            np.fromiter(
+                (d.toordinal() for d in dates), dtype=np.int64, count=len(dates)
+            )
+            * _DAY_US
+        )
     try:
         d0 = dates[0]
         return np.array([(d - d0) // _ONE_US for d in dates], dtype=np.int64)
@@ -471,7 +476,10 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         return np.nan
     flows = np.asarray(cash_flows, dtype=np.float64)
     kinds = np.fromiter(
-        (0 if type(cf) is float else 1 if isinstance(cf, int) else 2 for cf in cash_flows),
+        (
+            0 if type(cf) is float else 1 if isinstance(cf, int) else 2
+            for cf in cash_flows
+        ),
         dtype=np.uint8,
         count=len(cash_flows),
     )
@@ -502,11 +510,15 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
         logging.warning(
             f"Extreme IRR detected ({rate * 100:.1f}%). Investigating flows..."
         )
-        top_flows = sorted(zip(used_dates, used), key=lambda x: abs(x[1]), reverse=True)[:10]
+        top_flows = sorted(
+            zip(used_dates, used), key=lambda x: abs(x[1]), reverse=True
+        )[:10]
         readable_top = [f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in top_flows]
         logging.warning(f"Top Flows contributing to IRR: [{', '.join(readable_top)}]")
     elif status != _IRR_OK:
-        logging.debug(f"DEBUG IRR: no IRR (status {status}) for {len(cash_flows)} flows")
+        logging.debug(
+            f"DEBUG IRR: no IRR (status {status}) for {len(cash_flows)} flows"
+        )
     return rate
 
 
@@ -543,7 +555,10 @@ def _numeric_column(df: pd.DataFrame, name: str, with_types: bool = False):
     if name not in df.columns:
         values, numpy_typed = np.full(n, np.nan), np.zeros(n, dtype=bool)
     elif isinstance(df[name].dtype, np.dtype) and df[name].dtype.kind in "fiu":
-        values, numpy_typed = df[name].to_numpy(dtype=np.float64), np.zeros(n, dtype=bool)
+        values, numpy_typed = (
+            df[name].to_numpy(dtype=np.float64),
+            np.zeros(n, dtype=bool),
+        )
     else:
         values, numpy_typed = np.empty(n, dtype=np.float64), np.zeros(n, dtype=bool)
         for i, v in enumerate(df[name].tolist()):
@@ -583,6 +598,8 @@ class CashFlowLedger:
         self._by_symbol: Optional[Dict[str, List[int]]] = None
         self._account_masks: Dict[Any, np.ndarray] = {}
         self._parsed = None
+        self._is_transfer: Optional[Tuple[bool, Any]] = None
+        self._ids: Optional[list] = None
 
     def _symbol_positions(self, symbol: Any) -> List[int]:
         if not isinstance(symbol, str):
@@ -606,12 +623,25 @@ class CashFlowLedger:
         # Legacy transfers whose Account column is misaligned name the account
         # in the Note. str.contains reads the account name as a regex.
         if "Note" in df.columns:
-            mask |= df["Note"].str.contains(account, case=False, na=False) & (
-                df["Type"].str.lower() == "transfer"
+            mask |= (
+                df["Note"].str.contains(account, case=False, na=False)
+                & self._transfer_rows()
             )
         mask = mask.to_numpy(dtype=bool)
         self._account_masks[account] = mask
         return mask
+
+    def _transfer_rows(self) -> pd.Series:
+        """`df["Type"].str.lower() == "transfer"`, the same for every account."""
+        if self._is_transfer is None:
+            try:
+                self._is_transfer = (True, self.df["Type"].str.lower() == "transfer")
+            except Exception as exc:  # raised again for every account, as before
+                self._is_transfer = (False, exc)
+        ok, value = self._is_transfer
+        if not ok:
+            raise value
+        return value
 
     def _rows(self):
         if self._parsed is None:
@@ -624,7 +654,10 @@ class CashFlowLedger:
             types = texts("Type")
             self._parsed = {
                 "kind": np.array(
-                    [_FLOW_KINDS.get(_cell_text(types, i).lower().strip(), 0) for i in range(len(df))],
+                    [
+                        _FLOW_KINDS.get(_cell_text(types, i).lower().strip(), 0)
+                        for i in range(len(df))
+                    ],
                     dtype=np.uint8,
                 ),
                 "qty": _numeric_column(df, "Quantity"),
@@ -644,11 +677,13 @@ class CashFlowLedger:
         if "original_index" not in self.df.columns:
             raise KeyError("original_index")
         dates = self._rows()["date"]
-        ids = self.df["original_index"]
-        id_values = ids.tolist()
-        clean = all(isinstance(dates[p], pd.Timestamp) and dates[p] is not pd.NaT for p in positions) and all(
-            isinstance(id_values[p], (int, np.integer)) for p in positions
-        )
+        if self._ids is None:
+            self._ids = self.df["original_index"].tolist()
+        id_values = self._ids
+        clean = all(
+            isinstance(dates[p], pd.Timestamp) and dates[p] is not pd.NaT
+            for p in positions
+        ) and all(isinstance(id_values[p], (int, np.integer)) for p in positions)
         if clean:
             return sorted(positions, key=lambda p: (dates[p], id_values[p]))
         keys = self.df.iloc[positions][["Date", "original_index"]].copy()
@@ -724,9 +759,7 @@ class CashFlowLedger:
         )
         if final_market_value_abs > 1e-9 and isinstance(report_date, date):
             if not final_dates:
-                first_tx_date_for_holding = (
-                    self.df["Date"].iloc[order].min().date()
-                )
+                first_tx_date_for_holding = self.df["Date"].iloc[order].min().date()
                 if report_date >= first_tx_date_for_holding:
                     final_dates.append(report_date)
                     final_flows.append(final_market_value_abs)
@@ -848,7 +881,9 @@ def get_cash_flows_for_mwr(
         local_currencies = acc_tx["Local Currency"].tolist()
 
     accounts = acc_tx["Account"].tolist() if "Account" in acc_tx.columns else None
-    to_accounts = acc_tx["To Account"].tolist() if "To Account" in acc_tx.columns else None
+    to_accounts = (
+        acc_tx["To Account"].tolist() if "To Account" in acc_tx.columns else None
+    )
     kind = np.array([_FLOW_KINDS.get(types[i], 0) for i in kept], dtype=np.uint8)
     # A transfer crossing the scope: leaving it is money out (+), entering it
     # money in (-); within it, or outside it entirely, no flow.
@@ -880,7 +915,9 @@ def get_cash_flows_for_mwr(
     dates_flows = defaultdict(float)
     for i, (cash_flow_local, uses) in zip(kept, flows):
         if uses and (
-            (uses & 1 and qty_np[i]) or (uses & 2 and price_np[i]) or (uses & 4 and total_np[i])
+            (uses & 1 and qty_np[i])
+            or (uses & 2 and price_np[i])
+            or (uses & 4 and total_np[i])
         ):
             cash_flow_local = np.float64(cash_flow_local)
         tx_date = tx_dates[i]

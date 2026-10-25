@@ -49,6 +49,7 @@ The crate builds in four places:
 | 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | **Done** |
 | 7 | What the final benchmark left on the request path: (a) the historical FX lookup and the IRR/MWR cash flows; (b) statement assembly and the ratio history | **Done** |
 | 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
+| 9 | The summary's per-holding and per-account filters, selected once (Python) | **Done** |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -446,6 +447,36 @@ One item is a Rust port; the other three were cheaper to fix in Python.
 | Ranking metrics, 5,561 filers (`collect_metrics`) | 47.0 s | **29.6 s** |
 | Statements, 5,561 filers | 28.2 s | 20.0 s |
 | Whole price archive read | 33.1 s | 9.5 s |
+
+## Phase 9 (25 Oct 2026): the summary's per-holding filters
+
+After Phase 8 the summary's remaining cost was pandas filtering, not arithmetic. Python fixes only; no Rust.
+
+- **Same-day flows and last-trade price** (`_build_summary_rows`). For every holding the summary masked the whole ledger by symbol, account and date, and converted every row's date (`.dt.date`) each time. It did this once for the day's flows, and again for the last-trade price fallback on holdings with no market price.
+  - `_HoldingRows` selects the report-date rows, and the priced rows up to the report date, once per summary. Each holding then filters only those by symbol and account. That is the same rows, in the same order, with the same labels.
+  - When nothing traded on the report date, a holding skips the filter entirely.
+  - A failure in the shared step is kept and raised again inside each holding's own handler, so the same messages are logged.
+- **Per-account MWR** (`_calculate_aggregate_metrics`): the normalised `Account` and `To Account` columns (`astype(str).str.strip().str.upper()`) were rebuilt for every account. They are now built once, and a failure is replayed the same way.
+- **`CashFlowLedger`:** the `Type == "transfer"` mask, which every account's Note match used, is built once, and `original_index` is read into a list once instead of once per holding.
+
+**Parity:**
+- **Fuzz:** 72 random books through the real holdings pass match the frozen originals (`tests/reference/summary_rows.py`) bitwise and type for type: rows, account currencies, flags, account-level and overall metrics, and every warning and error logged.
+  - The books cover holdings without a market price, trades and transfers on the report date, days with none, text and zero prices, a text `Date` column (so the shared filters fail and every holding's handler must fail as before), no `To Account` column, and an account filter.
+  - Across them the report-date filter returned rows 576 times, nothing 205 times and failed 174 times; the priced filter returned rows 380 times and failed 76 times.
+- **Ledger:** the existing parity test against the original per-holding function passes unchanged.
+- **Real data, against the previous commit (eee1987e):** the summary for all three books in USD and THB and both history windows are identical, in four old/new pairings (`PYTHONHASHSEED=0`).
+
+**Speed**, computation with market data replayed (median of ten over two alternating rounds):
+
+| `/summary` | Before | After | |
+|---|---|---|---|
+| kitmatan USD / THB | 0.507 / 0.489 s | **0.288 / 0.261 s** | 43–47% faster |
+| dheematan USD / THB | 0.427 / 0.435 s | **0.222 / 0.222 s** | 48–49% faster |
+| atchamatan USD / THB | 0.135 / 0.192 s | **0.082 / 0.122 s** | 36–39% faster |
+
+History is unchanged (within ±3%), as expected: it does not run these functions.
+
+**What remains** (dheematan, profiled): the account and overall totals (0.10 s, MWR flows and `safe_sum`), the dividend history (0.10 s, an `iterrows` pass over about 1,200 dividends) and the FIFO setup (0.10 s, about 15,600 single-value `pd.to_numeric` calls). All three are per-row Python work.
 
 ## Found while porting
 
