@@ -17,6 +17,7 @@ mod irr_grid;
 pub mod mc;
 pub mod projection;
 mod py;
+pub mod pyconn;
 pub mod rank;
 pub mod ratios;
 pub mod records;
@@ -109,6 +110,9 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::sql_execute, m)?)?;
     m.add_function(wrap_pyfunction!(py::sql_executemany, m)?)?;
     m.add_function(wrap_pyfunction!(py::sql_db_filename, m)?)?;
+    m.add_function(wrap_pyfunction!(pyconn::conn_execute, m)?)?;
+    m.add_function(wrap_pyfunction!(pyconn::conn_executemany, m)?)?;
+    m.add_class::<pyconn::SqlRows>()?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;

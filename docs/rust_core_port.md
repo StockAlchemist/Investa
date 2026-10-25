@@ -508,6 +508,11 @@ The storage modules keep their `sqlite3.Connection` objects: connection caching,
 - Text that isn't UTF-8 raises Python's `Could not decode to UTF-8 column` error.
 - `read_frame` builds the frame with pandas' own `_wrap_result`. A failure rolls the connection back and raises pandas' `DatabaseError`, as `read_sql_query` does.
 
+**The connection itself is driven from Rust** (`pyconn.rs`, `PyConn`). It makes the checks above, binds positional and named parameters, runs the statement, and raises each error as Python would; `rust_sql.execute` / `executemany` are thin wrappers over it, and the storage ports use it directly.
+- Named binding follows CPython 3.12 `bind_parameters`: each placeholder's name, less its first character, is looked up in the dict (extra keys ignored). The errors are Python's: `Binding N has no name, but you supplied a dictionary (which has only names).` and `You did not supply a value for binding parameter :name.`
+- A named placeholder bound by position goes to Python, which emits its DeprecationWarning there.
+- `executemany` converts every item before running any, so an item Rust can't bind sends the whole call to Python while nothing has happened yet. A binding error at item *k* is raised after items 0..*k*−1 have run, as in Python. One gap remains: a generator that raises partway is materialised before the implicit BEGIN, where Python would raise after it.
+
 **Left to Python's own call, before anything runs:**
 - a parameter Python would adapt or refuse: an adapter registered on a base type, a date, a NumPy integer, an int beyond 64 bits, a surrogate string, a `bytearray`, a float subclass with `__conform__`;
 - named parameters;
@@ -515,7 +520,7 @@ The storage modules keep their `sqlite3.Connection` objects: connection caching,
 - explicit `autocommit` control;
 - a NUL in the query or an empty statement.
 
-**Parity:** 32 random sequences of 120 operations, on twin databases under every isolation level including autocommit, agree after every step. They compare each outcome (rows, description, rowcount, lastrowid, or the exception's class, message, code and name), `in_transaction`, `total_changes` and every table's contents. Across them, 1,710 statements ran in Rust, 185 raised SQLite errors and 235 programming errors (all matching Python's), and 899 were declined to Python by their parameters. Tests also cover a Rust write rolled back by the caller's `with conn:` block, the thread and closed checks, and the connections Rust must leave alone.
+**Parity:** 32 random sequences of 120 operations (named and positional parameters, `executemany` runs that fail partway), on twin databases under every isolation level including autocommit, agree after every step. They compare each outcome (rows, description, rowcount, lastrowid, or the exception's class, message, code and name), `in_transaction`, `total_changes` and every table's contents. Across them, 1,710 statements ran in Rust, 185 raised SQLite errors and 235 programming errors (all matching Python's), and 899 were declined to Python by their parameters. Tests also cover a Rust write rolled back by the caller's `with conn:` block, the thread and closed checks, and the connections Rust must leave alone.
 
 ## Found while porting
 

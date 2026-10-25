@@ -98,7 +98,41 @@ def _statement(rng):
         return "INSERT INTO t (a, b) VALUES (?, ?)", [v()]  # wrong count
     if pick == 20:
         return "CREATE TABLE IF NOT EXISTS x (q)", []
+    if pick == 21:
+        return _named(rng, lead, case)
     return "SELECT count(*), sum(u), max(c) FROM t", []
+
+
+def _named(rng, lead, case):
+    """Named placeholders bound from a dict: missing keys, extra keys, a bare
+    `?` given a dict, numbered `?1`, a dict subclass Python must bind."""
+    v = lambda: _value(rng)  # noqa: E731
+    pick = int(rng.integers(0, 6))
+    if pick == 0:
+        sql = lead + case("INSERT INTO t (a, b, u) VALUES (:a, :b, :u)")
+        params = {"a": v(), "b": v(), "u": v(), "extra": 1}
+    elif pick == 1:
+        sql = "UPDATE t SET b = $b WHERE id > @lo"
+        params = {"b": v(), "lo": int(rng.integers(0, 5))}
+    elif pick == 2:
+        sql = "SELECT id, a FROM t WHERE id > :lo ORDER BY id"
+        params = {"lo": int(rng.integers(0, 5))}
+    elif pick == 3:
+        sql = "INSERT INTO t (a, b) VALUES (:a, :b)"
+        params = {"a": v()}  # :b missing
+    elif pick == 4:
+        sql = "SELECT ?1, ?2"
+        params = {"1": v(), "2": v()}
+    else:
+        sql = "INSERT INTO t (a) VALUES (?)"
+        params = {"a": v()}  # a bare ? with a dict
+    if rng.random() < 0.1:
+        from collections import OrderedDict
+
+        params = OrderedDict(params)
+    if rng.random() < 0.1:
+        params = list(params.values())  # a named statement bound by position
+    return sql, params
 
 
 def _outcome(fn):
@@ -168,12 +202,21 @@ def test_random_sequences_match(tmp_path, seed):
                             "INSERT INTO s (k, v) VALUES (?, ?)",
                             "/* x */ insert into t (a, u) values (?, ?)",
                             "SELECT ?, ?",
+                            "INSERT INTO t (a, u) VALUES (:a, :u)",
                         ]
                     )
                 )
-                seq = [
-                    [_value(rng), _value(rng)] for _ in range(int(rng.integers(0, 4)))
-                ]
+                seq = []
+                for _ in range(int(rng.integers(0, 5))):
+                    if ":a" in sql:
+                        item = {"a": _value(rng), "u": int(rng.integers(0, 40))}
+                        if rng.random() < 0.15:
+                            del item["u"]  # fails after the earlier items ran
+                        seq.append(item)
+                    elif rng.random() < 0.1:
+                        seq.append([_value(rng)])  # wrong count, mid-run
+                    else:
+                        seq.append([_value(rng), _value(rng)])
                 a = _outcome(lambda: py.executemany(sql, seq))
                 b = _outcome(lambda: rust_sql.executemany(rs, sql, seq))
                 assert a == b, (path, sql, seq, a, b)

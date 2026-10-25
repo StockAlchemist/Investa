@@ -166,6 +166,29 @@ fn bind_all(p: &Prepared<'_>, db: *mut Db, params: &[Value]) -> Result<(), Failu
             params.len()
         )));
     }
+    // A named placeholder given a sequence: CPython 3.12 warns (DeprecationWarning).
+    if param_names(p)
+        .iter()
+        .any(|n| n.as_ref().is_some_and(|n| n.first() != Some(&b'?')))
+    {
+        return Err(Failure::Decline("a named placeholder bound by position"));
+    }
+    bind_values(p, db, params)
+}
+
+/// The names of a statement's placeholders, `None` for a bare `?`.
+fn param_names(p: &Prepared<'_>) -> Vec<Option<Vec<u8>>> {
+    let n = unsafe { (p.api.bind_parameter_count)(p.stmt) };
+    (1..=n)
+        .map(|i| unsafe {
+            let ptr = (p.api.bind_parameter_name)(p.stmt, i);
+            (!ptr.is_null()).then(|| CStr::from_ptr(ptr).to_bytes().to_vec())
+        })
+        .collect()
+}
+
+fn bind_values(p: &Prepared<'_>, db: *mut Db, params: &[Value]) -> Result<(), Failure> {
+    let api = p.api;
     for (k, v) in params.iter().enumerate() {
         let i = (k + 1) as c_int;
         let rc = unsafe {
@@ -353,6 +376,136 @@ pub fn db_filename(db: usize) -> Option<String> {
         return None;
     }
     Some(unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
+}
+
+/// One prepared statement, driven a step at a time by the PyO3 layer
+/// (`pyconn.rs`), which looks named parameters up in a Python dict between
+/// `prepare` and `bind`.
+pub struct Statement {
+    api: &'static Api,
+    db: *mut Db,
+    stmt: *mut Stmt,
+    dml: bool,
+}
+
+// The handle and statement are used only while the caller's Python call is
+// running, as CPython's own module does when it releases the GIL.
+unsafe impl Send for Statement {}
+unsafe impl Sync for Statement {}
+
+impl Drop for Statement {
+    fn drop(&mut self) {
+        unsafe { (self.api.finalize)(self.stmt) };
+    }
+}
+
+impl Statement {
+    pub fn prepare(db: usize, sql: &str) -> Result<Statement, Failure> {
+        let (api, db) = handle(db)?;
+        let p = prepare(api, db, sql)?;
+        let stmt = p.stmt;
+        std::mem::forget(p); // ownership moves to Statement
+        Ok(Statement {
+            api,
+            db,
+            stmt,
+            dml: is_dml(sql.as_bytes()),
+        })
+    }
+
+    fn prepared(&self) -> std::mem::ManuallyDrop<Prepared<'static>> {
+        std::mem::ManuallyDrop::new(Prepared {
+            api: self.api,
+            stmt: self.stmt,
+        })
+    }
+
+    pub fn is_dml(&self) -> bool {
+        self.dml
+    }
+
+    pub fn param_names(&self) -> Vec<Option<Vec<u8>>> {
+        param_names(&self.prepared())
+    }
+
+    /// Python's implicit BEGIN, before any binding.
+    pub fn begin(&self, begin: Option<&str>) -> Result<(), Failure> {
+        let Some(begin) = begin else {
+            return Ok(());
+        };
+        if !self.dml || unsafe { (self.api.get_autocommit)(self.db) } == 0 {
+            return Ok(());
+        }
+        let p = prepare(self.api, self.db, begin)?;
+        match unsafe { (self.api.step)(p.stmt) } {
+            SQLITE_DONE | SQLITE_ROW => Ok(()),
+            _ => Err(sqlite_failure(self.api, self.db)),
+        }
+    }
+
+    /// A sequence of parameters, with Python's count check.
+    pub fn bind_positional(&self, params: &[Value]) -> Result<(), Failure> {
+        bind_all(&self.prepared(), self.db, params)
+    }
+
+    /// Values already matched to the placeholders by name.
+    pub fn bind_in_order(&self, params: &[Value]) -> Result<(), Failure> {
+        bind_values(&self.prepared(), self.db, params)
+    }
+
+    /// Step to the end, collecting rows.
+    pub fn run(&self) -> Result<Outcome, Failure> {
+        let p = self.prepared();
+        let n = unsafe { (self.api.column_count)(self.stmt) };
+        let columns = if n > 0 {
+            column_names(&p, n)
+        } else {
+            Vec::new()
+        };
+        let mut rows = Vec::new();
+        loop {
+            match unsafe { (self.api.step)(self.stmt) } {
+                SQLITE_ROW => rows.push(read_row(&p, n)),
+                SQLITE_DONE => break,
+                _ => return Err(sqlite_failure(self.api, self.db)),
+            }
+        }
+        let rowcount = if self.dml {
+            unsafe { (self.api.changes64)(self.db) }
+        } else {
+            -1
+        };
+        Ok(Outcome {
+            columns,
+            rows,
+            rowcount,
+            lastrowid: unsafe { (self.api.last_insert_rowid)(self.db) },
+        })
+    }
+
+    /// One `executemany` round: reset, bind, step once; the changes it made.
+    pub fn run_once(&self, params: &[Value], named: bool) -> Result<i64, Failure> {
+        unsafe {
+            (self.api.reset)(self.stmt);
+            (self.api.clear_bindings)(self.stmt);
+        }
+        if named {
+            self.bind_in_order(params)?;
+        } else {
+            self.bind_positional(params)?;
+        }
+        match unsafe { (self.api.step)(self.stmt) } {
+            SQLITE_DONE => Ok(unsafe { (self.api.changes64)(self.db) }),
+            SQLITE_ROW => Err(Failure::Programming(
+                "executemany() can only execute DML statements.".into(),
+            )),
+            _ => Err(sqlite_failure(self.api, self.db)),
+        }
+    }
+
+    pub fn last_insert_rowid(&self) -> i64 {
+        unsafe { (self.api.last_insert_rowid)(self.db) }
+    }
 }
 
 #[cfg(test)]
