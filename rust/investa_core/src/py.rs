@@ -815,3 +815,157 @@ pub fn mc_stats<'py>(
         )
     })
 }
+
+// --- valuation.rs: deterministic valuation arithmetic ----------------------
+
+/// `np.median(values)`.
+#[pyfunction]
+pub fn np_median(values: Vec<f64>) -> f64 {
+    crate::valuation::np_median(&values)
+}
+
+/// `np.mean(values)` of a list.
+#[pyfunction]
+pub fn np_mean(values: Vec<f64>) -> f64 {
+    crate::stats::np_mean(&values)
+}
+
+/// The models' scalar faded projection: (pv list, sum(pv), last flow,
+/// discounted terminal value).
+#[pyfunction]
+pub fn scalar_projection(
+    base: f64,
+    applied_growth: f64,
+    discount_rate: f64,
+    projection_years: i64,
+    terminal_growth_rate: f64,
+    numpy_terms: bool,
+) -> (Vec<f64>, f64, f64, f64) {
+    let p = crate::valuation::scalar_projection(
+        base,
+        applied_growth,
+        discount_rate,
+        projection_years,
+        terminal_growth_rate,
+        numpy_terms,
+    );
+    (p.pv, p.sum_pv, p.last, p.pv_terminal)
+}
+
+/// (wacc, cost_of_equity, cost_of_debt, tax_rate, beta, size_premium, weights).
+type WaccOut = (f64, f64, f64, f64, f64, f64, Option<(f64, f64)>);
+
+/// `calculate_wacc` once its inputs are read: (wacc, cost_of_equity,
+/// cost_of_debt, tax_rate, beta, size_premium, weights or None).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn wacc(
+    raw_beta: Option<f64>,
+    risk_free_rate: f64,
+    market_return: f64,
+    default_tax_rate: f64,
+    market_cap: Option<f64>,
+    total_debt: Option<f64>,
+    have_statements: bool,
+    interest_expense: Option<f64>,
+    income_tax_expense: Option<f64>,
+    pretax_income: Option<f64>,
+    operating_income: Option<f64>,
+    max_cost_of_debt: f64,
+    min_discount: f64,
+    max_discount: f64,
+    size_bands: Vec<(f64, f64)>,
+) -> WaccOut {
+    let w = crate::valuation::wacc(
+        &crate::valuation::WaccInputs {
+            raw_beta,
+            risk_free_rate,
+            market_return,
+            default_tax_rate,
+            market_cap,
+            total_debt,
+            have_statements,
+            interest_expense,
+            income_tax_expense,
+            pretax_income,
+            operating_income,
+            max_cost_of_debt,
+            min_discount,
+            max_discount,
+        },
+        &size_bands,
+    );
+    (
+        w.wacc,
+        w.cost_of_equity,
+        w.cost_of_debt,
+        w.tax_rate,
+        w.beta,
+        w.size_premium,
+        w.weights,
+    )
+}
+
+/// `blended_growth_estimate`'s arithmetic: (clamped, raw), or None.
+#[pyfunction]
+pub fn blend_growth(
+    regression: Option<f64>,
+    cagr: Option<f64>,
+    analyst: Option<f64>,
+    shrink_weight: f64,
+    base_rate: f64,
+    min_growth: f64,
+    max_growth: f64,
+) -> Option<(f64, f64)> {
+    crate::valuation::blend_growth(
+        regression,
+        cagr,
+        analyst,
+        shrink_weight,
+        base_rate,
+        min_growth,
+        max_growth,
+    )
+}
+
+/// The plausible FCF margins over (revenue, fcf) periods.
+#[pyfunction]
+pub fn plausible_margins(revenue: Vec<Option<f64>>, fcf: Vec<Option<f64>>) -> PyResult<Vec<f64>> {
+    if revenue.len() != fcf.len() {
+        return Err(PyValueError::new_err("revenue and fcf differ in length"));
+    }
+    Ok(crate::valuation::plausible_margins(&revenue, &fcf))
+}
+
+/// `_model_reliability` on bear/base/bull.
+#[pyfunction]
+pub fn model_reliability(bear: f64, base: f64, bull: f64, cv_ref: f64, floor: f64) -> f64 {
+    crate::valuation::model_reliability(bear, base, bull, cv_ref, floor)
+}
+
+/// `blend_intrinsic_values`' arithmetic: (value, weights, spread_pct,
+/// confidence).
+#[pyfunction]
+pub fn blend(
+    values: Vec<f64>,
+    priors: Vec<f64>,
+    reliabilities: Vec<f64>,
+) -> PyResult<(f64, Vec<f64>, Option<f64>, f64)> {
+    if values.is_empty() || values.len() != priors.len() || values.len() != reliabilities.len() {
+        return Err(PyValueError::new_err("blend needs equal, non-empty inputs"));
+    }
+    let b = crate::valuation::blend(&values, &priors, &reliabilities);
+    Ok((b.value, b.weights, b.spread_pct, b.confidence))
+}
+
+/// `np.percentile(values, q)` (linear) of NaN-free values.
+#[pyfunction]
+pub fn np_percentile(mut values: Vec<f64>, q: f64) -> PyResult<f64> {
+    if values.is_empty() || values.iter().any(|v| v.is_nan()) {
+        return Err(PyValueError::new_err(
+            "np_percentile needs non-empty, NaN-free values",
+        ));
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
+    Ok(crate::mc::np_percentile_sorted(&values, q))
+}

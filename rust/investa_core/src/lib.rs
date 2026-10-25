@@ -13,6 +13,7 @@ pub mod mc;
 mod py;
 pub mod stats;
 pub mod util;
+pub mod valuation;
 
 use pyo3::prelude::*;
 
@@ -58,6 +59,15 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::mc_epv, m)?)?;
     m.add_function(wrap_pyfunction!(py::mc_lynch, m)?)?;
     m.add_function(wrap_pyfunction!(py::mc_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(py::np_median, m)?)?;
+    m.add_function(wrap_pyfunction!(py::np_mean, m)?)?;
+    m.add_function(wrap_pyfunction!(py::scalar_projection, m)?)?;
+    m.add_function(wrap_pyfunction!(py::wacc, m)?)?;
+    m.add_function(wrap_pyfunction!(py::blend_growth, m)?)?;
+    m.add_function(wrap_pyfunction!(py::plausible_margins, m)?)?;
+    m.add_function(wrap_pyfunction!(py::model_reliability, m)?)?;
+    m.add_function(wrap_pyfunction!(py::blend, m)?)?;
+    m.add_function(wrap_pyfunction!(py::np_percentile, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;

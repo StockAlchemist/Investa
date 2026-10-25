@@ -18,6 +18,7 @@ import hashlib
 
 import pandas as pd
 import investa_core
+import operator
 import numpy as np
 import logging
 from typing import Dict, Optional, List, Any, Tuple
@@ -416,6 +417,48 @@ def _price_on_or_before(prices_data: Any, dt: Any) -> Optional[float]:
     except Exception as e:
         logging.debug(f"_price_on_or_before error: {e}")
         return None
+
+
+def _opt_number(value: Any) -> Optional[float]:
+    """A statement or profile number for Rust: None stays None; ints, floats,
+    bools and NumPy numbers convert; anything else raises TypeError, as the
+    Python arithmetic it replaces would have."""
+    if value is None:
+        return None
+    if isinstance(value, (bool, int, float, np.number)):
+        return float(value)
+    raise TypeError(f"not a number: {value!r}")
+
+
+def _scalar_projection(
+    base: Any,
+    applied_growth: Any,
+    discount_rate: Any,
+    projection_years: Any,
+    terminal_growth_rate: Any,
+) -> Tuple[Any, Any, Any]:
+    """The models' faded projection with mid-year discounting and a Gordon
+    terminal value: (sum of discounted flows, last flow, discounted terminal).
+
+    Computed in Rust (investa_core.scalar_projection) with Python's scalar
+    semantics. When any input is a NumPy scalar the original's terms were NumPy
+    scalars too, which changes how sum() adds them and what type comes back,
+    so both are mirrored.
+    """
+    years = operator.index(projection_years)
+    inputs = (base, applied_growth, discount_rate, terminal_growth_rate)
+    numpy_terms = any(type(v) not in (float, int, bool) for v in inputs)
+    _pv, total, last, pv_terminal = investa_core.scalar_projection(
+        float(base),
+        float(applied_growth),
+        float(discount_rate),
+        years,
+        float(terminal_growth_rate),
+        numpy_terms,
+    )
+    if numpy_terms:
+        return np.float64(total), np.float64(last), np.float64(pv_terminal)
+    return total, last, pv_terminal
 
 
 def calculate_key_ratios_timeseries(
@@ -915,11 +958,11 @@ def historical_mean_multiples(
         periods = [str(p)[:4] for p in usable.index]
         span = f"{min(periods)}-{max(periods)}" if periods else ""
         out[key] = {
-            "value": float(np.median(usable.values)),
+            "value": investa_core.np_median(usable.values.tolist()),
             "n": int(len(usable)),
             "span": span,
-            "low": float(np.percentile(usable.values, 25)),
-            "high": float(np.percentile(usable.values, 75)),
+            "low": investa_core.np_percentile(usable.values.tolist(), 25.0),
+            "high": investa_core.np_percentile(usable.values.tolist(), 75.0),
             "dropped": int(len(series) - len(usable)),
         }
     return out
@@ -1014,32 +1057,17 @@ def calculate_wacc(
 ) -> Dict[str, Any]:
     """
     Calculates the Weighted Average Cost of Capital (WACC).
+
+    Cost of equity is CAPM with a Blume-adjusted beta plus a size premium; cost
+    of debt is interest / debt, or a coverage-based synthetic spread; weights
+    are at market value. The inputs are read here and the arithmetic runs in
+    Rust (investa_core.wacc).
     """
     try:
-        # 1. Cost of Equity (CAPM with Blume Beta Adjustment)
         raw_beta = ticker_info.get("beta")
         if raw_beta is None or pd.isna(raw_beta):
-            beta = 1.0  # Default to market beta
             logging.debug(f"Beta missing for {ticker_info.get('symbol')}, using 1.0")
-        else:
-            # Blume technique adjusts beta toward market mean (1.0)
-            beta = float(np.clip(0.67 * raw_beta + 0.33 * 1.0, 0.3, 3.0))
-
-        cost_of_equity = risk_free_rate + beta * (market_return - risk_free_rate)
-
-        # Small company financing and liquidity risk premium
-        market_cap_for_size = ticker_info.get("marketCap")
-        size_premium = 0.0
-        if market_cap_for_size:
-            for threshold, premium in SIZE_PREMIUM_BANDS:
-                if market_cap_for_size < threshold:
-                    size_premium = premium
-                    break
-        cost_of_equity += size_premium
-
-        # 2. Cost of Debt
-        cost_of_debt = risk_free_rate + 0.015  # Default baseline credit spread
-        tax_rate = default_tax_rate
+            raw_beta = None
 
         total_debt = ticker_info.get("totalDebt")
         if (
@@ -1051,11 +1079,10 @@ def calculate_wacc(
                 balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
             )
 
-        interest_expense = None
-        income_tax_expense = None
-        pretax_income = None
-
-        if financials_df is not None and not financials_df.empty:
+        interest_expense = income_tax_expense = pretax_income = None
+        operating_income = None
+        have_statements = financials_df is not None and not financials_df.empty
+        if have_statements:
             latest_period = financials_df.columns[0]
             interest_expense = _get_statement_value(
                 financials_df, "Interest Expense", latest_period
@@ -1070,51 +1097,35 @@ def calculate_wacc(
                 financials_df, "Operating Income", latest_period
             )
 
-            if interest_expense and total_debt and total_debt > 0:
-                implied = abs(interest_expense) / total_debt
-                cost_of_debt = float(np.clip(implied, risk_free_rate, MAX_COST_OF_DEBT))
-            elif operating_income and interest_expense and abs(interest_expense) > 0:
-                # Synthetic credit spread based on interest coverage ratio (ICR)
-                icr = operating_income / abs(interest_expense)
-                if icr > 8.5:
-                    spread = 0.010
-                elif icr > 6.5:
-                    spread = 0.0125
-                elif icr > 4.0:
-                    spread = 0.0175
-                elif icr > 3.0:
-                    spread = 0.025
-                elif icr > 1.5:
-                    spread = 0.035
-                else:
-                    spread = 0.055
-                cost_of_debt = risk_free_rate + spread
+        (wacc, cost_of_equity, cost_of_debt, tax_rate, beta, size_premium, weights) = (
+            investa_core.wacc(
+                _opt_number(raw_beta),
+                float(risk_free_rate),
+                float(market_return),
+                float(default_tax_rate),
+                _opt_number(ticker_info.get("marketCap")),
+                _opt_number(total_debt),
+                have_statements,
+                _opt_number(interest_expense),
+                _opt_number(income_tax_expense),
+                _opt_number(pretax_income),
+                _opt_number(operating_income),
+                MAX_COST_OF_DEBT,
+                MIN_DISCOUNT_RATE,
+                MAX_DISCOUNT_RATE,
+                [(float(t), float(p)) for t, p in SIZE_PREMIUM_BANDS],
+            )
+        )
 
-            if income_tax_expense and pretax_income and pretax_income > 0:
-                tax_rate = float(np.clip(income_tax_expense / pretax_income, 0.0, 0.5))
-
-        # 3. Weights
-        market_cap = ticker_info.get("marketCap")
-        if not market_cap:
+        if weights is None:
             return {
-                "wacc": float(
-                    np.clip(cost_of_equity, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
-                ),
+                "wacc": wacc,
                 "cost_of_equity": cost_of_equity,
                 "beta": beta,
                 "size_premium": size_premium,
                 "method": "Cost of Equity (No Market Cap)",
             }
-
-        total_value = market_cap + (total_debt or 0)
-        weight_equity = market_cap / total_value
-        weight_debt = (total_debt or 0) / total_value
-
-        wacc = (weight_equity * cost_of_equity) + (
-            weight_debt * cost_of_debt * (1 - tax_rate)
-        )
-        wacc = float(np.clip(wacc, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE))
-
+        weight_equity, weight_debt = weights
         return {
             "wacc": wacc,
             "cost_of_equity": cost_of_equity,
@@ -1289,7 +1300,7 @@ def blended_growth_estimate(
                 except (ValueError, TypeError):
                     pass
         if analyst_rates:
-            signals["analyst"] = float(np.mean(analyst_rates))
+            signals["analyst"] = investa_core.np_mean(analyst_rates)
 
     regression = _historical_growth_regression(financials_df, item_name=item_name)
     if regression is not None:
@@ -1313,18 +1324,17 @@ def blended_growth_estimate(
     # so a plain median over all three signals gave history two votes to the
     # analysts' one and the middle value was almost always historical — the
     # forward-looking estimate was silently discarded. Collapse history to one
-    # view first, then let history and expectations weigh equally.
-    historical = [signals[k] for k in ("regression", "cagr") if k in signals]
-    views: List[float] = []
-    if historical:
-        views.append(float(np.median(historical)))
-    if "analyst" in signals:
-        views.append(signals["analyst"])
-
-    raw = float(np.mean(views))
-
-    shrunk = GROWTH_SHRINK_WEIGHT * raw + (1 - GROWTH_SHRINK_WEIGHT) * BASE_RATE_GROWTH
-    clamped = float(np.clip(shrunk, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH))
+    # view first, then let history and expectations weigh equally. (The
+    # median, mean, shrink and clamp run in Rust: investa_core.blend_growth.)
+    clamped, raw = investa_core.blend_growth(
+        signals.get("regression"),
+        signals.get("cagr"),
+        signals.get("analyst"),
+        GROWTH_SHRINK_WEIGHT,
+        BASE_RATE_GROWTH,
+        MIN_PROJECTED_GROWTH,
+        MAX_PROJECTED_GROWTH,
+    )
 
     return {
         "growth": clamped,
@@ -1468,20 +1478,16 @@ def estimate_fcf_margin(
             key=lambda x: pd.to_datetime(x, errors="coerce"),
         )
 
-        margins = []
+        revenues, fcfs = [], []
         for col in common_cols[-years:]:  # Look at last N years
-            rev = _get_statement_value(financials_df, "Total Revenue", col)
-            fcf = _extract_fcf_from_statement(cashflow_df, col)
+            revenues.append(_opt_number(_get_statement_value(financials_df, "Total Revenue", col)))
+            fcfs.append(_opt_number(_extract_fcf_from_statement(cashflow_df, col)))
 
-            if rev and rev > 0 and fcf is not None:
-                margin = fcf / rev
-                # Keep loss-making years. Only implausible magnitudes are excluded.
-                if -1.0 < margin < 0.6:
-                    margins.append(margin)
-
+        # Loss-making years are kept; only implausible magnitudes are excluded.
+        margins = investa_core.plausible_margins(revenues, fcfs)
         if margins:
             # Use median for better robustness against outliers
-            return float(np.median(margins))
+            return investa_core.np_median(margins)
 
     except Exception as e:
         logging.warning(f"Failed to estimate FCF margin: {e}")
@@ -1518,7 +1524,8 @@ def through_cycle_fcf_margin(
     four of ten years on the six that worked, which is the single most
     upward-biased thing a normalizer can do.
     """
-    margins: List[float] = []
+    revenues: List[Optional[float]] = []
+    fcfs: List[Optional[float]] = []
     try:
         if financials_df is not None and cashflow_df is not None:
             common = sorted(
@@ -1526,21 +1533,19 @@ def through_cycle_fcf_margin(
                 key=lambda c: pd.to_datetime(c, errors="coerce"),
             )
             for col in common[-years:]:
-                revenue = _get_statement_value(financials_df, "Total Revenue", col)
-                fcf = _extract_fcf_from_statement(cashflow_df, col)
-                if not revenue or revenue <= 0 or fcf is None:
-                    continue
-                margin = fcf / revenue
-                # The same plausibility band `estimate_fcf_margin` uses: outside
-                # it the statement mapping is wrong, not the business remarkable.
-                if -1.0 < margin < 0.6:
-                    margins.append(margin)
+                revenue = _opt_number(_get_statement_value(financials_df, "Total Revenue", col))
+                fcf = _opt_number(_extract_fcf_from_statement(cashflow_df, col))
+                revenues.append(revenue)
+                fcfs.append(fcf)
     except Exception as exc:
         logging.debug(f"Through-cycle margin extraction failed: {exc}")
 
+    # The same plausibility band `estimate_fcf_margin` uses: outside it the
+    # statement mapping is wrong, not the business remarkable.
+    margins = investa_core.plausible_margins(revenues, fcfs)
     if len(margins) < MIN_CYCLE_OBSERVATIONS:
         return {"margin": None, "observations": len(margins)}
-    return {"margin": float(np.median(margins)), "observations": len(margins)}
+    return {"margin": investa_core.np_median(margins), "observations": len(margins)}
 
 
 def normalized_base_fcf(
@@ -1620,7 +1625,7 @@ def normalized_base_fcf(
             }
 
     if len(history) >= 3:
-        median_fcf = float(np.median(history))
+        median_fcf = investa_core.np_median([float(f) for f in history])
         if median_fcf > 0:
             return {
                 "fcf": median_fcf,
@@ -2149,33 +2154,14 @@ def calculate_intrinsic_value_dcf(
             np.clip(growth_rate, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH)
         )
 
-        projected_fcf = []
-        pv_fcf = []
-        current_fcf = fcf
-
-        for y in range(1, projection_years + 1):
-            fade_factor = (
-                (y - 1) / (projection_years - 1) if projection_years > 1 else 0
-            )
-            yearly_growth = (
-                applied_growth - (applied_growth - terminal_growth_rate) * fade_factor
-            )
-
-            next_fcf = current_fcf * (1 + yearly_growth)
-            projected_fcf.append(next_fcf)
-            # Mid-year discounting convention: cash flows arrive continuously across the year
-            pv_fcf.append(next_fcf / ((1 + discount_rate) ** (y - 0.5)))
-            current_fcf = next_fcf
-
-        # 5. Terminal Value
-        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
-        terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (
-            safe_discount - terminal_growth_rate
+        # 4-5. Linear growth fade with mid-year discounting (cash flows arrive
+        # continuously across the year), then a Gordon terminal value.
+        sum_pv_fcf, _last_fcf, pv_terminal_value = _scalar_projection(
+            fcf, applied_growth, discount_rate, projection_years, terminal_growth_rate
         )
-        pv_terminal_value = terminal_value / ((1 + discount_rate) ** projection_years)
 
         # 6. Enterprise Value to Equity Value
-        enterprise_value = sum(pv_fcf) + pv_terminal_value
+        enterprise_value = sum_pv_fcf + pv_terminal_value
         cash = ticker_info.get("totalCash")
         if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
             cash = _get_statement_value(
@@ -2467,33 +2453,16 @@ def calculate_intrinsic_value_ddm(
             np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
         )
 
-        # 4. Projections with Mid-Year Discounting
-        projected_divs = []
-        pv_divs = []
-        current_div = base_dividend
-
-        for y in range(1, projection_years + 1):
-            fade_factor = (
-                (y - 1) / (projection_years - 1) if projection_years > 1 else 0
-            )
-            yearly_growth = (
-                applied_growth - (applied_growth - terminal_growth_rate) * fade_factor
-            )
-
-            next_div = current_div * (1 + yearly_growth)
-            projected_divs.append(next_div)
-            # Mid-year discounting convention
-            pv_divs.append(next_div / ((1 + discount_rate) ** (y - 0.5)))
-            current_div = next_div
-
-        # 5. Terminal Value (Gordon Growth Model)
-        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
-        terminal_price = (current_div * (1 + terminal_growth_rate)) / (
-            safe_discount - terminal_growth_rate
+        # 4-5. Projections with mid-year discounting, Gordon terminal value
+        sum_pv_divs, _last_div, pv_terminal_value = _scalar_projection(
+            base_dividend,
+            applied_growth,
+            discount_rate,
+            projection_years,
+            terminal_growth_rate,
         )
-        pv_terminal_value = terminal_price / ((1 + discount_rate) ** projection_years)
 
-        intrinsic_value = sum(pv_divs) + pv_terminal_value
+        intrinsic_value = sum_pv_divs + pv_terminal_value
 
         if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
             return {"error": "DDM produced non-positive value"}
@@ -2627,7 +2596,7 @@ def calculate_earnings_power_value(
         if not ebit_history:
             return {"error": "No operating income history for earnings power"}
 
-        normalized_ebit = float(np.median(ebit_history))
+        normalized_ebit = investa_core.np_median([float(e) for e in ebit_history])
         if normalized_ebit <= 0:
             return {
                 "error": "No positive normalized operating income",
@@ -2761,24 +2730,14 @@ def calculate_intrinsic_value_dcfo(
             np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
         )
 
-        # Project 10 years of CFO with mid-year discounting
-        projected_cfos = []
-        pv_cfos = []
-        current_cfo = cfo_per_share
-
-        for y in range(1, projection_years + 1):
-            fade = (y - 1) / (projection_years - 1) if projection_years > 1 else 0
-            yearly_g = applied_growth - (applied_growth - terminal_growth_rate) * fade
-            next_cfo = current_cfo * (1 + yearly_g)
-            projected_cfos.append(next_cfo)
-            pv_cfos.append(next_cfo / ((1 + discount_rate) ** (y - 0.5)))
-            current_cfo = next_cfo
-
-        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
-        terminal_cfo = (current_cfo * (1 + terminal_growth_rate)) / (
-            safe_discount - terminal_growth_rate
+        # Project CFO with mid-year discounting, Gordon terminal value
+        sum_pv_cfos, _last_cfo, pv_terminal = _scalar_projection(
+            cfo_per_share,
+            applied_growth,
+            discount_rate,
+            projection_years,
+            terminal_growth_rate,
         )
-        pv_terminal = terminal_cfo / ((1 + discount_rate) ** projection_years)
 
         cash = ticker_info.get("totalCash")
         if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
@@ -2795,7 +2754,7 @@ def calculate_intrinsic_value_dcfo(
         debt = debt or 0
 
         net_cash_per_share = (cash - debt) / shares
-        intrinsic_value = sum(pv_cfos) + pv_terminal + net_cash_per_share
+        intrinsic_value = sum_pv_cfos + pv_terminal + net_cash_per_share
 
         if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
             return {"error": "Discounted CFO produced non-positive value"}
@@ -2873,25 +2832,15 @@ def calculate_intrinsic_value_dni(
             np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
         )
 
-        projected_eps = []
-        pv_eps = []
-        current_eps = base_eps
-
-        for y in range(1, projection_years + 1):
-            fade = (y - 1) / (projection_years - 1) if projection_years > 1 else 0
-            yearly_g = applied_growth - (applied_growth - terminal_growth_rate) * fade
-            next_eps = current_eps * (1 + yearly_g)
-            projected_eps.append(next_eps)
-            pv_eps.append(next_eps / ((1 + discount_rate) ** (y - 0.5)))
-            current_eps = next_eps
-
-        safe_discount = max(discount_rate, terminal_growth_rate + 0.01)
-        terminal_val = (current_eps * (1 + terminal_growth_rate)) / (
-            safe_discount - terminal_growth_rate
+        sum_pv_eps, _last_eps, pv_terminal = _scalar_projection(
+            base_eps,
+            applied_growth,
+            discount_rate,
+            projection_years,
+            terminal_growth_rate,
         )
-        pv_terminal = terminal_val / ((1 + discount_rate) ** projection_years)
 
-        intrinsic_value = sum(pv_eps) + pv_terminal
+        intrinsic_value = sum_pv_eps + pv_terminal
 
         if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
             return {"error": "Discounted Net Income produced non-positive value"}
@@ -3576,13 +3525,8 @@ def _model_reliability(model_res: Optional[Dict[str, Any]]) -> float:
         bear, base, bull = float(bear), float(base), float(bull)
     except (TypeError, ValueError):
         return 1.0
-    if not np.isfinite(base) or base <= 0 or not np.isfinite(bull - bear):
-        return 1.0
-    cv = (bull - bear) / (2.0 * base)
-    if not np.isfinite(cv) or cv < 0:
-        return 1.0
-    return float(
-        np.clip(1.0 / (1.0 + (cv / RELIABILITY_CV_REF) ** 2), RELIABILITY_FLOOR, 1.0)
+    return investa_core.model_reliability(
+        bear, base, bull, RELIABILITY_CV_REF, RELIABILITY_FLOOR
     )
 
 
@@ -3654,26 +3598,16 @@ def blend_intrinsic_values(
             "excluded": excluded,
         }
 
-    total_weight = sum(c["weight"] for c in contributions)
-    value = sum(c["value"] * c["weight"] for c in contributions) / total_weight
-    weights = {c["key"]: c["weight"] / total_weight for c in contributions}
-
-    values = [c["value"] for c in contributions]
-    spread_pct = (
-        (max(values) - min(values)) / value * 100.0
-        if len(values) > 1 and value > 0
-        else None
+    # Weighted arithmetic mean, max-min spread, and a confidence that is
+    # continuous, not a cliff: how tightly the models pinned their own answers,
+    # how far apart they landed, and how many of them there were. Computed in
+    # Rust (investa_core.blend).
+    value, norm_weights, spread_pct, confidence = investa_core.blend(
+        [c["value"] for c in contributions],
+        [c["prior"] for c in contributions],
+        [c["reliability"] for c in contributions],
     )
-
-    # Confidence is continuous, not a cliff: how tightly the models pinned their
-    # own answers, how far apart they landed, and how many of them there were.
-    mean_reliability = float(np.mean([c["reliability"] for c in contributions]))
-    spread_frac = (spread_pct or 0.0) / 100.0
-    dispersion_factor = 1.0 / (1.0 + (spread_frac / 0.75) ** 2)
-    breadth_factor = {1: 0.75, 2: 0.90}.get(len(contributions), 1.0)
-    confidence = float(
-        np.clip(mean_reliability * dispersion_factor * breadth_factor, 0.0, 1.0)
-    )
+    weights = {c["key"]: w for c, w in zip(contributions, norm_weights)}
 
     return {
         "value": float(value),

@@ -1,6 +1,6 @@
 # Rust Calculation Core: Port Plan and Status
 
-**Status:** Phases 1–2 done (the Numba kernels; IRR/NPV and risk metrics). Phases 3–6 to do.
+**Status:** Phases 1–3 done (the Numba kernels; IRR/NPV and risk metrics; the intrinsic-value models). Phases 4–6 to do.
 **Branch:** `feat/rust-core`. One long-lived branch, merged to `main` when the whole port is verified.
 **Started:** 24 Oct 2026
 **Scope:** every calculation module in `src/` moves into one Rust crate, `rust/investa_core`. Python calls it through PyO3. These stay Python:
@@ -43,7 +43,7 @@ The crate builds in four places:
 |---|---|---|
 | 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. | **Done** |
 | 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
-| 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics, **done**; (b) WACC, growth estimation, FCF normalization, the deterministic models and the blend, to do | In progress |
+| 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
 | 4 | Buffett ranking: `buffett_metrics` (including its helpers), `buffett_value`, `buffett_rank` | To do |
 | 5 | `projections`, `valuation_history`, `strategies` math | To do |
 | 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
@@ -118,6 +118,35 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 - Seeded fuzz over all twelve models: projection lengths -1 to 10, negative EPS, missing or zero shares, NaN inputs, and 10 to 10,000 iterations. Results are bitwise equal, *and NumPy's generator ends in the same state*.
 - Real data: a full intrinsic-value run for AAPL, KO, JPM, NVDA, MSFT, XOM, O and BRK-B has zero differences in the complete result, every model's Monte Carlo statistics, histogram and the blend included.
 - Full suite: 1,180 tests pass.
+
+## Phase 3b (25 Oct 2026): deterministic valuation arithmetic
+
+**What moved** (`valuation.rs`):
+- the scalar faded projection that DCF, DDM, D-CFO and D-NI share;
+- `calculate_wacc`'s arithmetic;
+- `blended_growth_estimate`'s median, mean, shrink and clamp;
+- the plausible-margin filter and median of `estimate_fcf_margin` and `through_cycle_fcf_margin`;
+- the medians in `normalized_base_fcf`, the EPV and `historical_mean_multiples` (with its percentiles);
+- `_model_reliability`;
+- `blend_intrinsic_values`' weighted mean, spread and confidence.
+
+**The boundary.** Loops and aggregations moved. What stays Python:
+- reading the statements and the company profile;
+- choosing between methods, the result dictionaries and their notes;
+- one-expression formulas such as Graham's `eps * (8.5 + 2g) * 4.4 / y` or Lynch's `eps * multiplier`. Moving a single expression behind a call adds an FFI hop and moves no logic;
+- `calculate_key_ratios_timeseries`, which is per-period single divisions assembled into a DataFrame, with no aggregation to port;
+- the log-linear growth regression, under the LAPACK rule (`np.polyfit`).
+
+**Python scalar semantics reproduced:**
+- `float ** x` and `np.float64 ** x` are always the C library's `pow`. NumPy *scalars* never take the array fast paths: 100,000 of 100,000 matched `pow`.
+- `sum(list)` is CPython's compensated sum. A projection's terms are NumPy scalars exactly when one of its inputs was, which changes both how `sum` adds them and the type that comes back; the shim mirrors both.
+- `max(a, b)` keeps `a` unless `b > a`.
+- Truthiness is reproduced: `None` and `0` are false, NaN is true.
+- Statement values pass through a strict converter, so a non-number still raises `TypeError` as the original arithmetic did.
+
+**Parity:** random statements and profiles drive every ported function against the module as it was before Phase 3b. The statements are multi-year with NaN gaps, FCF reported or derived, with dividends and debt; the profiles have missing fields, NaN beta and analyst estimates. Results are bitwise and type-for-type equal. 65–83% of cases produce a valuation rather than an early error, and more than half pass NumPy-scalar arguments.
+
+**Real data:** complete intrinsic-value results for AAPL, KO, JPM, NVDA, MSFT, XOM, O, BRK-B, BAC, TRV, PLD and DUK are identical to the pre-3b module, with zero differences. That set covers operating companies, banks, an insurer, REITs and a utility, with 10–12 of 12 models valued each. Full suite: 1,193 tests pass.
 
 ## Found while porting
 
