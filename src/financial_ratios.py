@@ -461,7 +461,7 @@ def _scalar_projection(
     return total, last, pv_terminal
 
 
-def calculate_key_ratios_timeseries(
+def _key_ratios_python(
     financials_df: Optional[pd.DataFrame],
     balance_sheet_df: Optional[pd.DataFrame],
     cashflow_df: Optional[pd.DataFrame] = None,
@@ -903,6 +903,222 @@ def calculate_key_ratios_timeseries(
 
     if not ratios_data_list:
         return pd.DataFrame()
+
+    ratios_df = pd.DataFrame(ratios_data_list).set_index("Period")
+    return ratios_df.sort_index(ascending=False)
+
+
+# Statement lookups the ratio history makes, by investa_core.key_ratios slot:
+# (statement, label, period). "fin"/"bs"/"cf" read this period's column,
+# "prev_fin"/"prev_bs" the column a year earlier.
+_RATIO_LOOKUPS = [
+    ("fin", "Total Revenue"), ("fin", "Cost Of Revenue"), ("fin", "Gross Profit"),
+    ("fin", "Operating Income"), ("fin", "Operating Revenue Or Loss"), ("fin", "Ebit"),
+    ("fin", "Net Income"), ("fin", "Net Income From Continuing Ops"), ("fin", "Interest Expense"),
+    ("fin", "Pretax Income"), ("fin", "Tax Provision"), ("fin", "Diluted Average Shares"),
+    ("fin", "Diluted EPS"), ("fin", "EBITDA"), ("fin", "Ebitda"), ("fin", "Normalized EBITDA"),
+    ("fin", "Reconciled Depreciation"), ("fin", "Depreciation And Amortization"),
+    ("bs", "Stockholders Equity"), ("bs", "Total Stockholder Equity"),
+    ("bs", "Total Equity Gross Minority Interest"), ("bs", "Total Assets"),
+    ("bs", "Current Assets"), ("bs", "Total Current Assets"), ("bs", "Current Liabilities"),
+    ("bs", "Total Current Liabilities"), ("bs", "Inventory"),
+    ("bs", "Total Liabilities Net Minority Interest"), ("bs", "Total Liab"),
+    ("bs", "Total Liabilities"), ("bs", "Long Term Debt"),
+    ("bs", "Long Term Debt And Capital Lease Obligation"), ("bs", "Long Term Debt Non Current"),
+    ("bs", "Total Debt"), ("bs", "Cash And Cash Equivalents"), ("bs", "Ordinary Shares Number"),
+    ("cf", "Operating Cash Flow"), ("cf", "Capital Expenditure"),
+    ("cf", "Common Stock Dividend Paid"), ("cf", "Cash Dividends Paid"),
+    ("cf", "Depreciation And Amortization"), ("cf", "Depreciation Amortization Depletion"),
+    ("cf", "Depreciation"),
+    ("prev_bs", "Total Stockholder Equity"), ("prev_bs", "Total Assets"),
+    ("prev_fin", "Total Revenue"), ("prev_fin", "Diluted EPS"),
+]  # fmt: skip
+# The fields the original may leave as None (the rest are np.nan when missing).
+_RATIO_OPTIONAL = {"Total Revenue", "Operating Income", "Net Income", "Diluted EPS", "Price"}
+_RATIO_FIELDS = investa_core.key_ratio_fields()
+
+
+def _numeric_statement(df: Optional[pd.DataFrame]) -> bool:
+    """Whether every lookup in `df` can be resolved up front.
+
+    `_get_statement_value` reads one cell at a time, and the original only
+    reads some cells under conditions (a price, a positive share count). When
+    every cell is a number or missing, no read can fail, so reading them all at
+    once is the same as reading them in the original's order. Duplicate labels
+    or columns make `.loc` return a Series, and text cells can make `float()`
+    raise; those frames keep the original code.
+    """
+    if df is None or df.empty:
+        return True
+    if not (df.index.is_unique and df.columns.is_unique):
+        return False
+    for dtype, column in zip(df.dtypes, df.columns):
+        if isinstance(dtype, np.dtype) and dtype.kind in "fiub":
+            continue
+        if not (isinstance(dtype, np.dtype) and dtype.kind == "O"):
+            return False
+        for v in df[column].tolist():
+            if v is None or isinstance(v, (bool, int, float, np.number)) or v is pd.NA:
+                continue
+            return False
+    return True
+
+
+class _StatementLookup:
+    """`_get_statement_value` for one numeric frame, resolved a row at a time:
+    the label's value, else the first of its aliases that has one."""
+
+    def __init__(self, df: pd.DataFrame):
+        self.rows = {label: i for i, label in enumerate(df.index)}
+        self.columns = {label: j for j, label in enumerate(df.columns)}
+        values = df.to_numpy(dtype=object)
+        self.matrix = np.array(
+            [[np.nan if v is None or pd.isna(v) else float(v) for v in row] for row in values],
+            dtype=np.float64,
+        ).reshape(values.shape)
+        self._resolved: Dict[str, np.ndarray] = {}
+
+    def row(self, item: str) -> np.ndarray:
+        if item not in self._resolved:
+            out = np.full(self.matrix.shape[1], np.nan)
+            chain = [item] + [a for a in STATEMENT_ALIASES.get(item, []) if a != item]
+            for label in chain:
+                if label in self.rows:
+                    values = self.matrix[self.rows[label]]
+                    fill = np.isnan(out) & ~np.isnan(values)
+                    out[fill] = values[fill]
+            self._resolved[item] = out
+        return self._resolved[item]
+
+    def get(self, item: str, column: Any) -> float:
+        """The value, NaN for None."""
+        return self.row(item)[self.columns[column]]
+
+
+def _period_columns(df: pd.DataFrame) -> List[Tuple[Any, Any]]:
+    """(parsed date, column) in column order, parsed one column at a time as the
+    original's `pd.to_datetime(col, errors="coerce") == period` does."""
+    return [(pd.to_datetime(col, errors="coerce"), col) for col in df.columns]
+
+
+def _first_column(columns: List[Tuple[Any, Any]], period: Any) -> Any:
+    return next((col for parsed, col in columns if parsed == period), None)
+
+
+def calculate_key_ratios_timeseries(
+    financials_df: Optional[pd.DataFrame],
+    balance_sheet_df: Optional[pd.DataFrame],
+    cashflow_df: Optional[pd.DataFrame] = None,
+    periods_per_year: int = 1,
+    prices_df: Optional[Any] = None,
+) -> pd.DataFrame:
+    """
+    Calculates a timeseries of key financial ratios.
+    Assumes input DataFrames have periods as columns and financial items as index.
+
+    `cashflow_df` adds free-cash-flow margin, operating cashflow and dividend yield.
+    `prices_df` adds point-in-time historical valuation multiples (P/E, P/S, P/B, EV/EBITDA, EV/Sales, P/FCF).
+    `periods_per_year` says how many columns make a year (4 for quarterly TTM, 1 for annual).
+
+    Each statement lookup is resolved once per frame and the per-period
+    arithmetic runs in investa_core.key_ratios; frames with duplicate labels
+    or non-numeric cells take the original code (`_key_ratios_python`).
+    """
+    if not all(_numeric_statement(df) for df in (financials_df, balance_sheet_df, cashflow_df)):
+        return _key_ratios_python(
+            financials_df, balance_sheet_df, cashflow_df, periods_per_year, prices_df
+        )
+    if (
+        financials_df is None
+        or financials_df.empty
+        or balance_sheet_df is None
+        or balance_sheet_df.empty
+    ):
+        logging.warning(
+            "Financials or Balance Sheet data is missing/empty. Cannot calculate historical ratios."
+        )
+        return pd.DataFrame()
+
+    try:
+        fin_periods_dt = pd.to_datetime(financials_df.columns, errors="coerce").dropna()
+        bs_periods_dt = pd.to_datetime(
+            balance_sheet_df.columns, errors="coerce"
+        ).dropna()
+
+        if fin_periods_dt.empty or bs_periods_dt.empty:
+            logging.warning(
+                "No valid period columns found in financial statements for ratio calculation."
+            )
+            return pd.DataFrame()
+
+        common_periods_dt = sorted(
+            list(set(fin_periods_dt).intersection(set(bs_periods_dt)))
+        )
+
+    except Exception as e:
+        logging.error(f"Could not parse period columns for ratio calculation: {e}")
+        return pd.DataFrame()
+
+    if not common_periods_dt:
+        logging.warning(
+            "No common periods found between income statement and balance sheet for ratio calculation."
+        )
+        return pd.DataFrame()
+
+    has_cashflow = cashflow_df is not None and not cashflow_df.empty
+    frames = {
+        "fin": _StatementLookup(financials_df),
+        "bs": _StatementLookup(balance_sheet_df),
+        "cf": _StatementLookup(cashflow_df) if has_cashflow else None,
+    }
+    fin_columns = _period_columns(financials_df)
+    bs_columns = _period_columns(balance_sheet_df)
+    cf_columns = _period_columns(cashflow_df) if has_cashflow else []
+
+    periods, inputs, flags = [], [], []
+    for i, period_dt in enumerate(common_periods_dt):
+        period_str_fin = _first_column(fin_columns, period_dt)
+        period_str_bs = _first_column(bs_columns, period_dt)
+        if not period_str_fin or not period_str_bs:
+            logging.debug(
+                f"Skipping period {period_dt.strftime('%Y-%m-%d')} due to missing original column name match."
+            )
+            continue
+        period_str_cf = _first_column(cf_columns, period_dt) if has_cashflow else None
+        prev_bs = prev_fin = None
+        if i >= periods_per_year:
+            prev_dt = common_periods_dt[i - periods_per_year]
+            prev_bs = _first_column(bs_columns, prev_dt)
+            prev_fin = _first_column(fin_columns, prev_dt)
+        columns = {
+            "fin": period_str_fin,
+            "bs": period_str_bs,
+            "cf": period_str_cf,
+            "prev_bs": prev_bs or None,
+            "prev_fin": prev_fin or None,
+        }
+        row = []
+        for statement, item in _RATIO_LOOKUPS:
+            column = columns[statement]
+            frame = frames[statement.replace("prev_", "")]
+            row.append(np.nan if frame is None or column is None else frame.get(item, column))
+        price = _price_on_or_before(prices_df, period_dt)
+        row.append(np.nan if price is None else float(price))
+        periods.append(period_dt)
+        inputs.append(row)
+        flags.append((columns["prev_bs"] is not None, columns["prev_fin"] is not None, period_str_cf is not None))
+
+    if not periods:
+        return pd.DataFrame()
+
+    ratios_data_list: List[Dict] = []
+    for period_dt, values in zip(periods, investa_core.key_ratios(inputs, flags)):
+        current_ratios: Dict[str, Any] = {"Period": period_dt}
+        for field, value in zip(_RATIO_FIELDS, values):
+            current_ratios[field] = (
+                value if value is not None or field in _RATIO_OPTIONAL else np.nan
+            )
+        ratios_data_list.append(current_ratios)
 
     ratios_df = pd.DataFrame(ratios_data_list).set_index("Period")
     return ratios_df.sort_index(ascending=False)

@@ -1611,3 +1611,51 @@ pub fn mwr_flows(
         portfolio_basis,
     ))
 }
+
+// --- ratios.rs: the ratio history ----------------------------------------
+
+/// `calculate_key_ratios_timeseries`' arithmetic. `inputs` holds 48 lookups
+/// per period (NaN where `_get_statement_value` returned None); `flags` holds
+/// (year-earlier balance sheet, year-earlier income statement, cash flow) per
+/// period. Returns each period's 28 fields, None where the original stores None.
+#[pyfunction]
+pub fn key_ratios(
+    inputs: Vec<Vec<f64>>,
+    flags: Vec<(bool, bool, bool)>,
+) -> PyResult<Vec<Vec<Option<f64>>>> {
+    use crate::ratios::{Flags, period_ratios, slot};
+    if inputs.len() != flags.len() {
+        return Err(PyValueError::new_err(
+            "key_ratios: one flag triple per period",
+        ));
+    }
+    inputs
+        .iter()
+        .zip(flags)
+        .map(|(row, (prev_balance, prev_income, cashflow))| {
+            if row.len() != slot::COUNT {
+                return Err(PyValueError::new_err(format!(
+                    "key_ratios: {} lookups per period, expected {}",
+                    row.len(),
+                    slot::COUNT
+                )));
+            }
+            let mut a = [None; slot::COUNT];
+            for (k, &v) in row.iter().enumerate() {
+                a[k] = if v.is_nan() { None } else { Some(v) };
+            }
+            let f = Flags {
+                prev_balance,
+                prev_income,
+                cashflow,
+            };
+            Ok(period_ratios(&a, f).to_vec())
+        })
+        .collect()
+}
+
+/// The output field names, in order.
+#[pyfunction]
+pub fn key_ratio_fields() -> Vec<&'static str> {
+    crate::ratios::FIELDS.to_vec()
+}

@@ -18,6 +18,7 @@ pub mod mc;
 pub mod projection;
 mod py;
 pub mod rank;
+pub mod ratios;
 pub mod records;
 pub mod stats;
 pub mod util;
@@ -99,6 +100,8 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<py::PyPriceTable>()?;
     m.add_function(wrap_pyfunction!(py::holding_flows, m)?)?;
     m.add_function(wrap_pyfunction!(py::mwr_flows, m)?)?;
+    m.add_function(wrap_pyfunction!(py::key_ratios, m)?)?;
+    m.add_function(wrap_pyfunction!(py::key_ratio_fields, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;

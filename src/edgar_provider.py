@@ -44,6 +44,9 @@ import zipfile
 from datetime import datetime
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
+import re
+
+import numpy as np
 import pandas as pd
 
 import config
@@ -1681,29 +1684,58 @@ def _add_derived_rows(
 
     Kept separate from `_frame_from_concepts` because these are *derivations*,
     not reported facts, and the distinction matters when auditing a score.
+
+    Each line is written once (`_write_row`) rather than one `.loc` cell at a
+    time, each of which could enlarge the frame. That was a fifth of the
+    ranking batch.
     """
+    stamps = _period_stamps(values)
+
+    def stamp_of(period_end: str) -> Any:
+        if period_end not in stamps:
+            stamps[period_end] = pd.to_datetime(period_end, errors="coerce")
+        return stamps[period_end]
+
+    def cells(frame: pd.DataFrame, items) -> list:
+        """(column, value) for the periods the frame has, in the given order."""
+        out = []
+        for period_end, value in items:
+            stamp = stamp_of(period_end)
+            if pd.isna(stamp) or stamp not in frame.columns:
+                continue
+            out.append((stamp, value))
+        return out
+
     # Total Debt is rarely tagged as such; it is short-term plus long-term.
     short_term = values.get("short_term_debt", {})
     long_term = values.get("long_term_debt", {})
     debt_periods = set(short_term) | set(long_term)
     if debt_periods and not balance.empty:
-        for period_end in debt_periods:
-            stamp = pd.to_datetime(period_end, errors="coerce")
-            if pd.isna(stamp) or stamp not in balance.columns:
-                continue
-            total = short_term.get(period_end, 0.0) + long_term.get(period_end, 0.0)
-            balance.loc["Total Debt", stamp] = total
+        _write_row(
+            balance,
+            "Total Debt",
+            cells(
+                balance,
+                (
+                    (p, short_term.get(p, 0.0) + long_term.get(p, 0.0))
+                    for p in debt_periods
+                ),
+            ),
+        )
 
     # EBIT: pretax income plus interest expense is closer to the definition than
     # operating income, which excludes non-operating items inconsistently.
     pretax = values.get("pretax_income", {})
     interest = values.get("interest_expense", {})
     if pretax and not income.empty:
-        for period_end, pretax_value in pretax.items():
-            stamp = pd.to_datetime(period_end, errors="coerce")
-            if pd.isna(stamp) or stamp not in income.columns:
-                continue
-            income.loc["Ebit", stamp] = pretax_value + interest.get(period_end, 0.0)
+        _write_row(
+            income,
+            "Ebit",
+            cells(
+                income,
+                ((p, v + interest.get(p, 0.0)) for p, v in pretax.items()),
+            ),
+        )
 
     # Free cash flow is not a filed concept — no filer tags it — so without this
     # the row would exist only for the handful of periods Yahoo covers while
@@ -1711,14 +1743,15 @@ def _add_derived_rows(
     operating = values.get("operating_cash_flow", {})
     capex = values.get("capex", {})
     if cashflow is not None and not cashflow.empty:
-        for period_end, ocf in operating.items():
-            if period_end not in capex:
-                continue
-            stamp = pd.to_datetime(period_end, errors="coerce")
-            if pd.isna(stamp) or stamp not in cashflow.columns:
-                continue
-            # `capex` is filed as a payment; the frame emits it negated.
-            cashflow.loc["Free Cash Flow", stamp] = ocf - capex[period_end]
+        # `capex` is filed as a payment; the frame emits it negated.
+        _write_row(
+            cashflow,
+            "Free Cash Flow",
+            cells(
+                cashflow,
+                ((p, ocf - capex[p]) for p, ocf in operating.items() if p in capex),
+            ),
+        )
 
     # Some filers omit Liabilities entirely; assets minus equity recovers it.
     assets = values.get("total_assets", {})
@@ -1727,15 +1760,61 @@ def _add_derived_rows(
         not balance.empty
         and "Total Liabilities Net Minority Interest" not in balance.index
     ):
-        for period_end, asset_value in assets.items():
-            if period_end not in equity:
-                continue
-            stamp = pd.to_datetime(period_end, errors="coerce")
-            if pd.isna(stamp) or stamp not in balance.columns:
-                continue
-            balance.loc["Total Liabilities Net Minority Interest", stamp] = (
-                asset_value - equity[period_end]
-            )
+        _write_row(
+            balance,
+            "Total Liabilities Net Minority Interest",
+            cells(
+                balance,
+                ((p, v - equity[p]) for p, v in assets.items() if p in equity),
+            ),
+        )
+
+
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _period_stamps(values: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
+    """`pd.to_datetime(period_end, errors="coerce")` for every ISO-day period
+    end in `values`, parsed together. A single string costs pandas ~0.1 ms of
+    format guessing; for `YYYY-MM-DD` strings the vectorised parse gives the
+    same Timestamp (NaT for an impossible day). Other strings are left to the
+    caller's one-at-a-time parse."""
+    ends = sorted({p for series in values.values() for p in series if type(p) is str and _ISO_DAY.fullmatch(p)})
+    if not ends:
+        return {}
+    parsed = pd.to_datetime(pd.Index(ends), errors="coerce", format="%Y-%m-%d")
+    return dict(zip(ends, parsed))
+
+
+def _write_row(frame: pd.DataFrame, label: str, cells: list) -> None:
+    """`frame.loc[label, column] = value` for each cell in order, in one write.
+
+    A later cell for the same column wins, as it would cell by cell. A new
+    label is appended as one row, NaN where no period has a value. Frames this
+    does not cover exactly (anything but unique float64 columns, or a label
+    already present more than once) are written cell by cell.
+    """
+    if not cells:
+        return
+    simple = (
+        frame.columns.is_unique
+        and all(isinstance(d, np.dtype) and d == np.float64 for d in frame.dtypes)
+        and all(type(v) is float for _c, v in cells)
+        and (label not in frame.index or frame.index.get_indexer_for([label]).size == 1)
+    )
+    if not simple:
+        for column, value in cells:
+            frame.loc[label, column] = value
+        return
+    by_column = dict(cells)
+    if label in frame.index:
+        frame.loc[label, list(by_column)] = list(by_column.values())
+    else:
+        row = np.full(len(frame.columns), np.nan)
+        position = {c: j for j, c in enumerate(frame.columns)}
+        for column, value in by_column.items():
+            row[position[column]] = value
+        frame.loc[label] = row
 
 
 def get_sector_concepts(cik: str, sector_model: str) -> Dict[str, Dict[str, float]]:

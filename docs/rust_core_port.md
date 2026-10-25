@@ -47,7 +47,7 @@ The crate builds in four places:
 | 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
 | 5 | `projections`; the aggregations in `valuation_history`, `strategies` and `track_record` | **Done** |
 | 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | **Done** |
-| 7 | What the final benchmark left on the request path: (a) the historical FX lookup and the IRR/MWR cash flows; (b) statement assembly and the ratio history | (a) **Done**; (b) to do |
+| 7 | What the final benchmark left on the request path: (a) the historical FX lookup and the IRR/MWR cash flows; (b) statement assembly and the ratio history | **Done** |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -358,6 +358,33 @@ The final benchmark's profile put most of a summary's remaining time here, in pa
   - The ledgers include regex-like account names, transfers named only in the Note, a shortable symbol, every row type, NaN, zero and negative amounts, same-day rows with shuffled ids, and integer and text-typed numeric columns.
 - Real data: the full summary for kitmatan, dheematan and atchamatan, in USD and THB, is identical. So is the full history for kitmatan and dheematan.
 - **Speed:** a summary takes 0.49–0.58 s against 1.33–1.67 s on the two large books, and 0.14–0.25 s against 0.34–0.74 s on atchamatan's. That is about 3× faster.
+
+## Phase 7b (25 Oct 2026): the ratio history and the derived statement rows
+
+These dominated the ranking batch, about 27 ms per company, and they are the same code the per-stock pages run.
+
+**The ratio history** (`ratios.rs`): `calculate_key_ratios_timeseries` read statements one cell at a time through `_get_statement_value`, about 330 pandas `.loc` reads per company. It also re-parsed every column's date to find each period's column, which is quadratic in the number of periods.
+- Each frame now resolves a line item once across all its periods: the label's value, else the first alias that has one.
+- Each column's date is parsed once.
+- About 48 lookups per period feed Rust, which does the arithmetic. That covers margins, returns, liquidity, solvency, ROIC, free-cash-flow margin, growth and the multiples at the period's price.
+- Python's truthiness is reproduced exactly. `a or b` returns `a` only when it is a non-zero number, so a filed 0.0 falls through to the next label. The level figures and the price stay `None` where the original stores None, so an all-missing column keeps its object dtype.
+- Resolving lookups up front equals reading them in the original's order only when no read can fail. Frames with duplicate labels or columns, or with non-numeric cells, keep the original code, retained verbatim as `_key_ratios_python`.
+
+**The derived rows** (`edgar_provider._add_derived_rows`) are Total Debt, EBIT, Free Cash Flow and Total Liabilities. There is no arithmetic worth porting here; the cost was one `.loc` write per period, each of which could grow the frame.
+- Each line is now written once, with the same last-write-wins order and the same new row at the end.
+- A company's ISO period ends are parsed together. For `YYYY-MM-DD` strings the vectorised parse gives exactly the single-string result, NaT and time unit included.
+- Frames that aren't unique float64 keep the cell-by-cell write.
+
+**Parity:**
+- Fuzz: 900 random statement sets (5,139 periods) match bitwise and type for type, frame dtypes and index included. They cover every label and alias read, filed zeros, negatives, NaN, integers, object columns with None, partly overlapping periods, a missing or empty cash flow, annual and quarterly spacing, and prices as a frame, a series or none, some too stale to count. 60 frames with text cells or duplicate labels take the original code and match.
+- Derived rows fuzz: 800 random concept sets produce identical frames. They include invalid and out-of-range period ends, labels already present, and object frames.
+- Real data:
+  - Annual statements and ratio histories for all 5,561 filers (49,907 periods) are identical, as are the quarterly ones for the 33 filers that have them.
+  - For AAPL, MSFT, KO, JPM, O, BRK-B, XOM, NVDA, PG, META, COST and V, the stock-detail path is identical three ways: annual with prices, quarterly trailing-twelve-month with prices, and the ranking's unpriced call. No real frame needed the fallback.
+- **Speed:**
+  - Over the universe, statements take 31.7 s against 46.1 s, and the ratio history 5.8 s against 16.7 s.
+  - The ranking's full metrics pass (`collect_metrics`, 5,561 filers) takes **45.8 s against 81 s**.
+  - What remains is mostly SQLite: a new connection per concept read (about 2,900 per 279 filers) and the reads themselves, plus pandas frame construction.
 
 ## Found while porting
 
