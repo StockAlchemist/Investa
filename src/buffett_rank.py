@@ -37,6 +37,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import investa_core
 import numpy as np
 import pandas as pd
 
@@ -284,18 +285,18 @@ def _winsorised_percentile(series: pd.Series, higher_is_better: bool) -> pd.Seri
 
     Winsorising first stops a single absurd outlier — a 10,000% ROE from a
     near-zero equity base — from compressing every other company into a narrow
-    band at the bottom of the scale.
+    band at the bottom of the scale. The quantiles, clip and average-tie rank
+    run in Rust (investa_core.winsorised_percentile), as pandas computes them.
     """
     numeric = pd.to_numeric(series, errors="coerce")
     if numeric.notna().sum() < 2:
         return pd.Series(np.nan, index=series.index)
-
-    lower, upper = numeric.quantile(0.01), numeric.quantile(0.99)
-    clipped = numeric.clip(lower=lower, upper=upper)
-    ranked = clipped.rank(pct=True, na_option="keep")
-    if not higher_is_better:
-        ranked = 1.0 - ranked
-    return ranked * 100.0
+    values = np.ascontiguousarray(numeric.to_numpy(dtype=np.float64, na_value=np.nan))
+    return pd.Series(
+        investa_core.winsorised_percentile(values, bool(higher_is_better)),
+        index=series.index,
+        name=numeric.name,
+    )
 
 
 def _pillar_scores(frame: pd.DataFrame, spec: PillarSpec) -> pd.DataFrame:
@@ -304,10 +305,10 @@ def _pillar_scores(frame: pd.DataFrame, spec: PillarSpec) -> pd.DataFrame:
 
     Averaging only the metrics that resolved — rather than treating a missing
     one as zero — keeps a data gap from masquerading as a bad result. The gap is
-    accounted for once, in the confidence factor, instead of twice.
+    accounted for once, in the confidence factor, instead of twice. The row
+    means run in Rust (investa_core.row_mean).
     """
     scores = pd.DataFrame(index=frame.index)
-
     for pillar, metrics in spec.items():
         columns = []
         for metric, higher_is_better in metrics:
@@ -315,12 +316,11 @@ def _pillar_scores(frame: pd.DataFrame, spec: PillarSpec) -> pd.DataFrame:
                 continue
             percentile = _winsorised_percentile(frame[metric], higher_is_better)
             if percentile.notna().any():
-                columns.append(percentile.rename(metric))
+                columns.append(np.ascontiguousarray(percentile.to_numpy(dtype=np.float64)))
         if columns:
-            scores[pillar] = pd.concat(columns, axis=1).mean(axis=1, skipna=True)
+            scores[pillar] = pd.Series(investa_core.row_mean(columns), index=frame.index)
         else:
             scores[pillar] = np.nan
-
     return scores
 
 
@@ -330,22 +330,22 @@ def _quality_score(pillar_scores: pd.DataFrame) -> pd.Series:
 
     Renormalising matters: a REIT has no gross margin and therefore a thinner
     returns pillar, and it should not be scored as though the missing weight
-    were zeros.
+    were zeros. Computed in Rust (investa_core.weighted_renormalised).
     """
-    total = pd.Series(0.0, index=pillar_scores.index)
-    weight_sum = pd.Series(0.0, index=pillar_scores.index)
-
+    columns, weights = [], []
     for pillar, weight in PILLAR_WEIGHTS.items():
         if pillar not in pillar_scores.columns:
             continue
-        # An all-missing pillar arrives as object dtype; coercing keeps the
-        # arithmetic below numeric instead of silently downcasting.
         values = pd.to_numeric(pillar_scores[pillar], errors="coerce")
-        present = values.notna()
-        total = total.add(values.fillna(0.0) * weight * present, fill_value=0.0)
-        weight_sum = weight_sum.add(weight * present, fill_value=0.0)
-
-    return (total / weight_sum.replace(0.0, np.nan)).astype(float)
+        columns.append(np.ascontiguousarray(values.to_numpy(dtype=np.float64, na_value=np.nan)))
+        weights.append(float(weight))
+    if not columns:
+        return pd.Series(np.nan, index=pillar_scores.index, dtype=float)
+    return pd.Series(
+        investa_core.weighted_renormalised(columns, weights),
+        index=pillar_scores.index,
+        dtype=float,
+    )
 
 
 def confidence_factor(coverage: float, floor: float = 0.5) -> float:

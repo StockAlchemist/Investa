@@ -1,6 +1,6 @@
 # Rust Calculation Core: Port Plan and Status
 
-**Status:** Phases 1–3 done (the Numba kernels; IRR/NPV and risk metrics; the intrinsic-value models). Phases 4–6 to do.
+**Status:** Phases 1–4 done (the Numba kernels; IRR/NPV and risk metrics; the intrinsic-value models; the Buffett ranking). Phases 5–6 to do.
 **Branch:** `feat/rust-core`. One long-lived branch, merged to `main` when the whole port is verified.
 **Started:** 24 Oct 2026
 **Scope:** every calculation module in `src/` moves into one Rust crate, `rust/investa_core`. Python calls it through PyO3. These stay Python:
@@ -44,7 +44,7 @@ The crate builds in four places:
 | 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. | **Done** |
 | 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
 | 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
-| 4 | Buffett ranking: (a) `buffett_metrics`, **done**; (b) `buffett_value`, `buffett_rank` | In progress |
+| 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
 | 5 | `projections`, `valuation_history`, `strategies` math | To do |
 | 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
 
@@ -167,6 +167,33 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 - Real data: `compute_metrics` on 618 filers, an even sample of the 5,561-filer universe (544 generic, 40 banks, 16 insurers, 18 REITs), has zero differences in any field.
 
 **Speed:** about 94 µs → 80 µs per company (1.2×). The cost at this size is moving the nested dicts across the boundary, not the arithmetic. The per-company EDGAR load dominates either way.
+
+## Phase 4b (25 Oct 2026): cross-sectional scoring
+
+**What moved** (`rank.rs`):
+- `_winsorised_percentile`: quantiles, clip and rank;
+- `_pillar_scores`' row means;
+- `_quality_score`'s weight-renormalised blend, which `score_value` reuses.
+
+**What stays pandas:**
+- the per-model `groupby`, the index and `metrics_to_frame`;
+- the final sort and rank in `combine`/`rerank`. pandas' default sort is NumPy's unstable quicksort, whose tie order is its own;
+- the one-expression blends in `combine` and `blend_scores`;
+- `compute_market_metrics`, which is EDGAR reads and one-line formulas.
+
+**pandas semantics reproduced:**
+- `Series.quantile` is NumPy's linear percentile at `q * 100.0` over the non-NaN values, so an infinite value can make a bound infinite or NaN.
+- `clip` ignores a NaN bound and swaps reversed bounds. Its second step compares the *original* value against the upper bound.
+- `rank(pct=True)` averages each tie group as an integer sum of positions over the group size, then divides by the non-NaN count.
+- Row means skip NaN and add left to right.
+
+**Parity:** in random groups (NaN, infinities, heavy ties, constant columns, groups of 1–4, object and integer columns, all four model specs), the percentile, pillar scores, quality score, `score_quality` and `score_value` match bitwise, with the same index, name and dtype.
+
+**Real data:**
+- `score_value` on the latest stored run (1,221 ranked companies: 799 generic, 246 banks, 111 REITs, 65 insurers) is identical.
+- `score_quality` on all 5,561 filers in the universe (metrics and gates recomputed, 1,225 eligible) is identical in every column.
+- Scoring speed: 9 → 3 ms for value, 93 → 45 ms for quality. A full metrics pass over the universe takes 75 s, nearly all of it EDGAR loads.
+- Full suite: 1,213 tests pass.
 
 ## Found while porting
 

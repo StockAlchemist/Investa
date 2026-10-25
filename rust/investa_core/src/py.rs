@@ -1035,3 +1035,50 @@ pub fn buffett_total_debt(concepts: crate::buffett::Concepts, period: &str) -> O
 pub fn buffett_cagr(values: Vec<Option<f64>>) -> Option<f64> {
     crate::buffett::py_cagr(&values)
 }
+
+// --- rank.rs: cross-sectional scoring --------------------------------------
+
+/// `buffett_rank._winsorised_percentile` on float values (NaN = missing).
+#[pyfunction]
+pub fn winsorised_percentile<'py>(
+    py: Python<'py>,
+    values: PyReadonlyArray1<'py, f64>,
+    higher_is_better: bool,
+) -> Bound<'py, PyArray1<f64>> {
+    to_py_vec(
+        py,
+        crate::rank::winsorised_percentile(&view(&values), higher_is_better),
+    )
+}
+
+/// Row-wise NaN-skipping mean of equal-length columns.
+#[pyfunction]
+pub fn row_mean<'py>(
+    py: Python<'py>,
+    columns: Vec<PyReadonlyArray1<'py, f64>>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let cols: Vec<Vec<f64>> = columns.iter().map(|c| view(c).into_owned()).collect();
+    if cols.windows(2).any(|w| w[0].len() != w[1].len()) {
+        return Err(PyValueError::new_err("row_mean: columns differ in length"));
+    }
+    Ok(to_py_vec(py, crate::rank::row_mean(&cols)))
+}
+
+/// Weight-renormalised blend of equal-length columns.
+#[pyfunction]
+pub fn weighted_renormalised<'py>(
+    py: Python<'py>,
+    columns: Vec<PyReadonlyArray1<'py, f64>>,
+    weights: Vec<f64>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let cols: Vec<Vec<f64>> = columns.iter().map(|c| view(c).into_owned()).collect();
+    if cols.len() != weights.len() || cols.windows(2).any(|w| w[0].len() != w[1].len()) {
+        return Err(PyValueError::new_err(
+            "weighted_renormalised: mismatched inputs",
+        ));
+    }
+    Ok(to_py_vec(
+        py,
+        crate::rank::weighted_renormalised(&cols, &weights),
+    ))
+}

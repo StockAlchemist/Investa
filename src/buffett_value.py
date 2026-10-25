@@ -46,6 +46,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Sequence
 
+import investa_core
 import numpy as np
 import pandas as pd
 
@@ -179,7 +180,8 @@ def score_value(frame: pd.DataFrame) -> pd.Series:
 
     Uses the same winsorised-percentile machinery as the quality pillars so the
     two halves of the composite are on genuinely the same scale — otherwise the
-    quality/value weighting would not mean what it says.
+    quality/value weighting would not mean what it says. The percentiles and
+    the weight-renormalised blend run in Rust.
     """
     from buffett_rank import _winsorised_percentile
 
@@ -187,16 +189,13 @@ def score_value(frame: pd.DataFrame) -> pd.Series:
         return pd.Series(dtype=float)
 
     scores = pd.Series(np.nan, index=frame.index, dtype=float)
-
     for model, group in frame.groupby("model"):
         if len(group) < 5:
             logging.warning(
                 f"Value: only {len(group)} '{model}' companies — "
                 "percentile scores for this group are unreliable"
             )
-        total = pd.Series(0.0, index=group.index)
-        weight_sum = pd.Series(0.0, index=group.index)
-
+        columns, weights = [], []
         # Iterating the weights, not every computed metric, is what keeps the
         # unscored diagnostics out of the score.
         for metric in VALUE_WEIGHTS:
@@ -209,13 +208,12 @@ def score_value(frame: pd.DataFrame) -> pd.Series:
             if not higher_is_better:
                 values = values.where(values > 0)
             percentile = _winsorised_percentile(values, higher_is_better)
-            weight = VALUE_WEIGHTS.get(metric, 0.0)
-            present = percentile.notna()
-            total = total.add(percentile.fillna(0.0) * weight * present, fill_value=0.0)
-            weight_sum = weight_sum.add(weight * present, fill_value=0.0)
-
-        scores.loc[group.index] = total / weight_sum.replace(0.0, np.nan)
-
+            columns.append(np.ascontiguousarray(percentile.to_numpy(dtype=np.float64)))
+            weights.append(float(VALUE_WEIGHTS.get(metric, 0.0)))
+        if columns:
+            scores.loc[group.index] = investa_core.weighted_renormalised(columns, weights)
+        else:
+            scores.loc[group.index] = np.nan
     return scores
 
 

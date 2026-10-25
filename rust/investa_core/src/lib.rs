@@ -12,6 +12,7 @@ pub mod irr;
 mod irr_grid;
 pub mod mc;
 mod py;
+pub mod rank;
 pub mod stats;
 pub mod util;
 pub mod valuation;
@@ -75,6 +76,9 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::py_pstdev, m)?)?;
     m.add_function(wrap_pyfunction!(py::buffett_total_debt, m)?)?;
     m.add_function(wrap_pyfunction!(py::buffett_cagr, m)?)?;
+    m.add_function(wrap_pyfunction!(py::winsorised_percentile, m)?)?;
+    m.add_function(wrap_pyfunction!(py::row_mean, m)?)?;
+    m.add_function(wrap_pyfunction!(py::weighted_renormalised, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;
