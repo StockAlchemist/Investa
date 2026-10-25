@@ -46,7 +46,7 @@ The crate builds in four places:
 | 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
 | 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
 | 5 | `projections`; the aggregations in `valuation_history`, `strategies` and `track_record` | **Done** |
-| 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
+| 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | (a) **Done**; (b), (c) to do |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -229,6 +229,31 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 **Parity:**
 - Fuzz: random populations, month-end histories (window lengths 1–12) and annual series with gaps, losses, NaN and ties match bitwise.
 - Real data: bands and stress response for 253 real companies are identical (86 had enough history for bands), as is the trend signal on SPY, QQQ, IWM and EFA at 1-, 10- and 12-month windows.
+
+## Phase 6a (25 Oct 2026): FIFO lots and realized gains
+
+**What moved** (`fifo.rs`): the lot book behind `portfolio_analyzer.calculate_fifo_lots_and_gains`. That covers transfers that move lots and re-sort the destination, global splits, both spin-off legs, buys that open lots, and FIFO sells with their local and display cost bases.
+
+**What stays Python:**
+- Reading each row with the original's quirks. A missing destination reads as `"NAN"`; a currency that is not three letters falls back to the default.
+- The skip rules and the split de-duplication.
+- The FX lookups and the display-gain fallback.
+- Building the gains frame and the lot dicts. Each lot's date, FX and id are the original objects, reattached by the event that opened the lot.
+
+**Two changes to how the work is done** (the results are unchanged):
+- The shim reads the columns once instead of building a row Series per transaction with `iterrows`.
+- It asks the historical FX lookup once per (currency, day). kitmatan's book makes 1,495 lookups, of which only 326 are distinct cross-currency ones, and that lookup was 87% of the function's time.
+
+**Reproduced:**
+- `holdings_long` is a `defaultdict`, so reading a key creates it. The returned dict keeps the creation order, holdings left empty included.
+- Python's `min` tie rule.
+- Transfers drop a lot only when it is *at or below* the tolerance, while sells drop it only *below*.
+- The destination sort is stable by (purchase date, id); ids are compared by rank.
+
+**Parity:**
+- Fuzz: 1,500 random ledgers (about 2,000 sales and 3,400 lots, plus 460 holdings left empty) match bitwise, type for type. The gains frame's columns, dtypes and index order match too. The ledgers include NaN, zero and negative quantities, missing prices, all four kinds of FX answer (float, NumPy float, NaN, None), repeated splits, and same-day lots with shuffled ids.
+- Real data: kitmatan (5,024 rows, 207 sales) and dheematan (3,914 rows, 210 sales), in USD and THB. The FIFO output and the whole portfolio summary are identical; the only difference is the `calculated_at` timestamp.
+- **Speed:** 150–180 ms per call against 340–510 ms for the original.
 
 ## Found while porting
 

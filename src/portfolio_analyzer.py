@@ -2825,6 +2825,15 @@ def extract_dividend_history(
     return df_dividends
 
 
+# Event kinds for investa_core.fifo_lots.
+_FIFO_TRANSFER, _FIFO_SPLIT, _FIFO_OPEN, _FIFO_REDUCE_BASIS, _FIFO_SELL = range(5)
+
+
+def _fifo_float(value: Any) -> float:
+    """A rate or price for the Rust lot book: None and NaN both mean missing."""
+    return np.nan if value is None else float(value)
+
+
 def calculate_fifo_lots_and_gains(
     transactions_df: pd.DataFrame,
     display_currency: str,
@@ -2841,6 +2850,10 @@ def calculate_fifo_lots_and_gains(
         - open_lots (Dict): Dictionary of currently held open lots.
              Key: (Symbol, Account)
              Value: List of Lot Dicts
+
+    Each row is read and priced here, then turned into one lot event; the lot
+    bookkeeping (transfers, global splits, spin-off legs, buys and FIFO sells)
+    runs in investa_core.fifo_lots.
     """
     output_columns = [
         "Date",
@@ -2860,31 +2873,123 @@ def calculate_fifo_lots_and_gains(
         "original_tx_id",
     ]
 
-    # Dictionary to store purchase lots: (symbol, account) -> list of lots
-    holdings_long: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
-    realized_gains_records: List[Dict[str, Any]] = []
+    # (symbol, account) -> holding id; symbols get ids of their own for splits.
+    holding_ids: Dict[Tuple[str, str], int] = {}
+    holding_keys: List[Tuple[str, str]] = []
+    symbol_ids: Dict[str, int] = {}
+    symbol_of: List[int] = []
+
+    def holding(key: Tuple[str, str]) -> int:
+        h = holding_ids.get(key)
+        if h is None:
+            h = holding_ids[key] = len(holding_keys)
+            holding_keys.append(key)
+            symbol_of.append(symbol_ids.setdefault(key[0], len(symbol_ids)))
+        return h
+
+    kinds: List[int] = []
+    col_a: List[int] = []
+    col_b: List[int] = []
+    col_x: List[float] = []
+    col_y: List[float] = []
+    col_z: List[float] = []
+    col_w: List[float] = []
+    days: List[int] = []
+    # Per event: the lot's (purchase date, FX, id) objects for an open, the
+    # partial gains record for a sell.
+    context: List[Any] = []
+
+    def emit(kind, a=0, b=0, x=np.nan, y=np.nan, z=np.nan, w=np.nan, day=0, ctx=None):
+        kinds.append(kind)
+        col_a.append(a)
+        col_b.append(b)
+        col_x.append(float(x))
+        col_y.append(float(y))
+        col_z.append(float(z))
+        col_w.append(float(w))
+        days.append(day)
+        context.append(ctx)
+
+    def open_lot(key, qty, cps, tx_date, fx, tx_id):
+        emit(
+            _FIFO_OPEN,
+            a=holding(key),
+            x=qty,
+            y=cps,
+            z=_fifo_float(fx),
+            day=tx_date.toordinal(),
+            ctx=(tx_date, fx, tx_id),
+        )
+
+    # The historical rate depends only on the currency and the day here, and a
+    # ledger repeats both (1,495 lookups, 326 distinct cross-currency ones on a
+    # real book), so each is asked once per call.
+    fx_memo: Dict[Tuple[str, date], Any] = {}
+
+    def fx_on(local_curr: str, tx_date: date) -> Any:
+        key = (local_curr, tx_date)
+        if key not in fx_memo:
+            fx_memo[key] = get_historical_rate_via_usd_bridge(
+                local_curr, display_currency, tx_date, historical_fx_yf
+            )
+        return fx_memo[key]
 
     # Track splits already applied to avoid double-processing (symbol, date, ratio)
     processed_splits: Set[Tuple[str, date, float]] = set()
 
-    # Ensure transactions are sorted chronologically
-    # Note: We assume transactions_df is already a copy if needed, but safe to sort in place if it's passed as such.
-    # To be safe within this function, we operate on the passed df directly if the caller prepared it,
-    # or iterate. The caller is responsible for filtering out unwanted rows if any,
-    # BUT this function does the main type/symbol filtering.
+    # Columns as iterrows() would hand them out, without building a row Series
+    # per transaction (row.get(col) is None for a missing column).
+    n_rows = len(transactions_df)
 
-    # We iterate the DataFrame.
-    for _, row in transactions_df.iterrows():
+    def column(name, missing=None):
+        if name in transactions_df.columns:
+            return transactions_df[name].tolist()
+        return [missing] * n_rows
+
+    required = ["Date", "Symbol", "Account", "Type"]
+    if any(c not in transactions_df.columns for c in required):
+        for c in required:
+            if c not in transactions_df.columns:
+                logging.warning(f"Error parsing basic data for FIFO row: {c!r}")
+                break
+        return pd.DataFrame(columns=output_columns), {}
+
+    rows = zip(
+        column("Date"),
+        column("Symbol"),
+        column("Account"),
+        column("Type"),
+        column("Local Currency"),
+        column("Quantity"),
+        column("Price/Share"),
+        column("Commission"),
+        column("Split Ratio"),
+        column("original_index"),
+        column("To Account", ""),
+        column("Total Amount"),
+    )
+    for (
+        tx_date_dt,
+        symbol_raw,
+        account_raw,
+        type_raw,
+        local_curr_raw,
+        qty_raw,
+        price_local_raw,
+        commission_local_raw,
+        split_ratio_raw,
+        original_tx_id_current_row,
+        to_account_raw,
+        total_amount_raw,
+    ) in rows:
         try:
-            tx_date_dt = row["Date"]
             if pd.isna(tx_date_dt):
                 continue
             tx_date = tx_date_dt.date()
 
-            symbol = str(row["Symbol"]).upper().strip()
-            account = str(row["Account"]).upper().strip()
-            tx_type = str(row["Type"]).lower().strip()
-            local_curr_raw = row.get("Local Currency")
+            symbol = str(symbol_raw).upper().strip()
+            account = str(account_raw).upper().strip()
+            tx_type = str(type_raw).lower().strip()
             local_curr = str(
                 local_curr_raw
                 if pd.notna(local_curr_raw) and str(local_curr_raw).strip()
@@ -2894,11 +2999,6 @@ def calculate_fifo_lots_and_gains(
             if not local_curr or len(local_curr) != 3:
                 local_curr = default_currency.upper()
 
-            qty_raw = row.get("Quantity")
-            price_local_raw = row.get("Price/Share")
-            commission_local_raw = row.get("Commission")
-            split_ratio_raw = row.get("Split Ratio")
-
             qty = pd.to_numeric(qty_raw, errors="coerce")
             price_local = pd.to_numeric(price_local_raw, errors="coerce")
             commission_local = (
@@ -2907,7 +3007,6 @@ def calculate_fifo_lots_and_gains(
                 else float(pd.to_numeric(commission_local_raw, errors="coerce"))
             )
             split_ratio = pd.to_numeric(split_ratio_raw, errors="coerce")
-            original_tx_id_current_row = row.get("original_index")
 
         except Exception as e_parse:
             logging.warning(f"Error parsing basic data for FIFO row: {e_parse}")
@@ -2925,44 +3024,14 @@ def calculate_fifo_lots_and_gains(
 
         # --- Handle Transfers ---
         if tx_type == "transfer":
-            to_account = str(row.get("To Account", "")).upper().strip()
+            to_account = str(to_account_raw).upper().strip()
             if not to_account:
                 continue
-
-            dest_holding_key = (symbol, to_account)
-            qty_to_transfer_remaining = qty
-            source_lots = holdings_long[holding_key]
-            remaining_source_lots = []
-            lots_to_add_to_dest = []
-
-            if not source_lots:
-                logging.debug(
-                    f"Transfer Info: Transfer {qty} of {symbol} from {account} with no lots tracked (maybe short or data gap)."
-                )
-                continue
-
-            for lot in source_lots:
-                if qty_to_transfer_remaining <= stock_quantity_close_tolerance:
-                    remaining_source_lots.append(lot)
-                    continue
-
-                qty_taken_from_lot = min(qty_to_transfer_remaining, lot["qty"])
-
-                moved_lot = lot.copy()
-                moved_lot["qty"] = qty_taken_from_lot
-                lots_to_add_to_dest.append(moved_lot)
-
-                lot["qty"] -= qty_taken_from_lot
-                qty_to_transfer_remaining -= qty_taken_from_lot
-
-                if lot["qty"] > stock_quantity_close_tolerance:
-                    remaining_source_lots.append(lot)
-
-            holdings_long[holding_key] = remaining_source_lots
-            holdings_long[dest_holding_key].extend(lots_to_add_to_dest)
-            # Sort by original purchase date/id to maintain FIFO at destination
-            holdings_long[dest_holding_key].sort(
-                key=lambda x: (x["purchase_date"], x.get("original_tx_id", 0))
+            emit(
+                _FIFO_TRANSFER,
+                a=holding(holding_key),
+                b=holding((symbol, to_account)),
+                x=qty,
             )
             continue
 
@@ -2971,62 +3040,39 @@ def calculate_fifo_lots_and_gains(
                 split_event = (symbol, tx_date, float(split_ratio))
                 if split_event not in processed_splits:
                     # Global split: apply to all accounts holding this symbol
-                    for (h_sym, h_acc), lots in holdings_long.items():
-                        if h_sym == symbol:
-                            for lot in lots:
-                                lot["qty"] *= split_ratio
-                                if lot["qty"] > 0:
-                                    lot["cost_per_share_local_net"] /= split_ratio
-                                else:
-                                    lot["cost_per_share_local_net"] = 0.0
+                    emit(
+                        _FIFO_SPLIT,
+                        a=symbol_ids.setdefault(symbol, len(symbol_ids)),
+                        x=split_ratio,
+                    )
                     processed_splits.add(split_event)
             continue
 
         # --- Spin-off (cash-neutral basis reallocation, two legs by qty) ---
         if tx_type in ["spin off", "spin-off", "spinoff"]:
-            total_amt_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+            total_amt_raw = pd.to_numeric(total_amount_raw, errors="coerce")
             total_amt = abs(float(total_amt_raw)) if pd.notna(total_amt_raw) else 0.0
             if pd.notna(qty) and qty > 1e-9:
                 # Child receipt: open a lot at the allocated per-share basis.
                 cps = total_amt / qty if qty > 1e-9 else 0.0
-                fx_child = get_historical_rate_via_usd_bridge(
-                    local_curr, display_currency, tx_date, historical_fx_yf
-                )
-                holdings_long[holding_key].append(
-                    {
-                        "qty": qty,
-                        "cost_per_share_local_net": cps,
-                        "purchase_date": tx_date,
-                        "purchase_fx_to_display": fx_child,
-                        "original_tx_id": original_tx_id_current_row,
-                    }
+                fx_child = fx_on(local_curr, tx_date)
+                open_lot(
+                    holding_key, qty, cps, tx_date, fx_child, original_tx_id_current_row
                 )
             else:
-                # Parent basis reduction: scale each remaining lot's per-share
-                # cost so the total basis drops by `total_amt` (clamped >= 0).
-                lots = holdings_long.get(holding_key, [])
-                current_basis = 0.0
-                for lot in lots:
-                    current_basis += lot["qty"] * lot["cost_per_share_local_net"]
-                if current_basis > 1e-9:
-                    reduce_amt = (
-                        total_amt if total_amt < current_basis else current_basis
-                    )
-                    factor = 1.0 - (reduce_amt / current_basis)
-                    for lot in lots:
-                        lot["cost_per_share_local_net"] *= factor
+                # Parent basis reduction: the remaining lots' total basis drops
+                # by `total_amt` (clamped >= 0).
+                emit(_FIFO_REDUCE_BASIS, a=holding(holding_key), x=total_amt)
             continue
 
         if pd.isna(qty) or qty <= 1e-9:
             continue
 
-        fx_rate_to_display_current_tx = get_historical_rate_via_usd_bridge(
-            local_curr, display_currency, tx_date, historical_fx_yf
-        )
+        fx_rate_to_display_current_tx = fx_on(local_curr, tx_date)
 
         if tx_type == "buy":
             if pd.isna(price_local) or price_local <= 1e-9:
-                total_amt_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+                total_amt_raw = pd.to_numeric(total_amount_raw, errors="coerce")
                 if (
                     pd.notna(total_amt_raw)
                     and abs(float(total_amt_raw)) > 1e-9
@@ -3037,135 +3083,121 @@ def calculate_fifo_lots_and_gains(
                     continue
 
             cost_per_share_local_net = ((qty * price_local) + commission_local) / qty
-
-            holdings_long[holding_key].append(
-                {
-                    "qty": qty,
-                    "cost_per_share_local_net": cost_per_share_local_net,
-                    "purchase_date": tx_date,
-                    "purchase_fx_to_display": fx_rate_to_display_current_tx,
-                    "original_tx_id": original_tx_id_current_row,
-                }
+            open_lot(
+                holding_key,
+                qty,
+                cost_per_share_local_net,
+                tx_date,
+                fx_rate_to_display_current_tx,
+                original_tx_id_current_row,
             )
 
         elif tx_type == "sell":
             if pd.isna(price_local):
-                total_amt_raw = pd.to_numeric(row.get("Total Amount"), errors="coerce")
+                total_amt_raw = pd.to_numeric(total_amount_raw, errors="coerce")
                 if pd.notna(total_amt_raw) and qty > 1e-9:
                     price_local = abs(float(total_amt_raw)) / qty
                 else:
                     price_local = 0.0
             price_local = max(0.0, float(price_local))
-
-            qty_to_sell_remaining = qty
-            total_proceeds_local_for_this_sale = (qty * price_local) - commission_local
-            total_cost_basis_local_for_this_sale = 0.0
-            total_cost_basis_display_for_this_sale = 0.0
-
-            lots_for_holding = holdings_long[holding_key]
-            temp_lots_after_sale = []
-
-            for lot in lots_for_holding:
-                if qty_to_sell_remaining <= stock_quantity_close_tolerance:
-                    temp_lots_after_sale.append(lot)
-                    continue
-
-                qty_sold_from_this_lot = min(qty_to_sell_remaining, lot["qty"])
-
-                cost_basis_lot_local = (
-                    qty_sold_from_this_lot * lot["cost_per_share_local_net"]
-                )
-                total_cost_basis_local_for_this_sale += cost_basis_lot_local
-
-                cost_basis_lot_display_part = np.nan
-                if pd.notna(lot["purchase_fx_to_display"]) and pd.notna(
-                    lot["cost_per_share_local_net"]
-                ):
-                    cost_basis_lot_display_part = (
-                        qty_sold_from_this_lot
-                        * lot["cost_per_share_local_net"]
-                        * lot["purchase_fx_to_display"]
-                    )
-
-                if pd.notna(cost_basis_lot_display_part):
-                    total_cost_basis_display_for_this_sale = (
-                        total_cost_basis_display_for_this_sale
-                        if pd.notna(total_cost_basis_display_for_this_sale)
-                        else 0.0
-                    ) + cost_basis_lot_display_part
-                else:
-                    total_cost_basis_display_for_this_sale = np.nan
-
-                lot["qty"] -= qty_sold_from_this_lot
-                qty_to_sell_remaining -= qty_sold_from_this_lot
-
-                if lot["qty"] >= stock_quantity_close_tolerance:
-                    temp_lots_after_sale.append(lot)
-
-            holdings_long[holding_key] = temp_lots_after_sale
-
-            realized_gain_local = (
-                total_proceeds_local_for_this_sale
-                - total_cost_basis_local_for_this_sale
-            )
-
-            total_proceeds_display = np.nan
-            if pd.notna(fx_rate_to_display_current_tx) and pd.notna(
-                total_proceeds_local_for_this_sale
-            ):
-                total_proceeds_display = (
-                    total_proceeds_local_for_this_sale * fx_rate_to_display_current_tx
-                )
-
-            realized_gain_display = np.nan
-            if pd.notna(total_proceeds_display) and pd.notna(
-                total_cost_basis_display_for_this_sale
-            ):
-                realized_gain_display = (
-                    total_proceeds_display - total_cost_basis_display_for_this_sale
-                )
-
-            # Fallback logic for display gain
-            if pd.isna(realized_gain_display) and pd.notna(realized_gain_local):
-                if current_fx_rates_vs_usd:
-                    try:
-                        fallback_rate = get_conversion_rate(
-                            local_curr, display_currency, current_fx_rates_vs_usd
-                        )
-                        if pd.notna(fallback_rate):
-                            realized_gain_display = realized_gain_local * fallback_rate
-                    except Exception:
-                        pass
-                if pd.isna(realized_gain_display) and local_curr == display_currency:
-                    realized_gain_display = realized_gain_local
-
-            realized_gains_records.append(
-                {
+            emit(
+                _FIFO_SELL,
+                a=holding(holding_key),
+                x=qty,
+                y=price_local,
+                z=commission_local,
+                w=_fifo_float(fx_rate_to_display_current_tx),
+                ctx={
                     "Date": tx_date,
                     "Symbol": symbol,
                     "Account": account,
                     "Type": "Sale Long",
                     "Quantity": qty,
                     "Avg Sale Price (Local)": price_local,
-                    "Total Proceeds (Local)": total_proceeds_local_for_this_sale,
-                    "Total Cost Basis (Local)": total_cost_basis_local_for_this_sale,
-                    "Realized Gain (Local)": realized_gain_local,
                     "Sale/Cover FX Rate": fx_rate_to_display_current_tx,
-                    "Total Proceeds (Display)": total_proceeds_display,
-                    "Total Cost Basis (Display)": total_cost_basis_display_for_this_sale,
-                    "Realized Gain (Display)": realized_gain_display,
                     "LocalCurrency": local_curr,
                     "original_tx_id": original_tx_id_current_row,
-                }
+                },
             )
 
+    # Lots of one purchase date stay in transaction-id order after a transfer;
+    # the Rust book compares ids by rank.
+    open_events = [i for i, k in enumerate(kinds) if k == _FIFO_OPEN]
+    id_rank = {v: r for r, v in enumerate(sorted({context[i][2] for i in open_events}))}
+    ranks = [0] * len(kinds)
+    for i in open_events:
+        ranks[i] = id_rank[context[i][2]]
+
+    sales, (keys, offsets, lot_qty, lot_cps, lot_source) = investa_core.fifo_lots(
+        kinds,
+        col_a,
+        col_b,
+        col_x,
+        col_y,
+        col_z,
+        col_w,
+        days,
+        ranks,
+        symbol_of,
+        float(stock_quantity_close_tolerance),
+    )
+
+    open_lots: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for k, h in enumerate(keys):
+        lots = []
+        for j in range(offsets[k], offsets[k + 1]):
+            purchase_date, fx, tx_id = context[lot_source[j]]
+            lots.append(
+                {
+                    "qty": lot_qty[j],
+                    "cost_per_share_local_net": lot_cps[j],
+                    "purchase_date": purchase_date,
+                    "purchase_fx_to_display": fx,
+                    "original_tx_id": tx_id,
+                }
+            )
+        open_lots[holding_keys[h]] = lots
+
+    realized_gains_records: List[Dict[str, Any]] = []
+    sell_events = (i for i, k in enumerate(kinds) if k == _FIFO_SELL)
+    for i, (
+        proceeds_local,
+        cost_local,
+        realized_gain_local,
+        proceeds_display,
+        cost_display,
+        realized_gain_display,
+    ) in zip(sell_events, sales):
+        record = context[i]
+        local_curr = record["LocalCurrency"]
+        # Fallback logic for display gain
+        if pd.isna(realized_gain_display) and pd.notna(realized_gain_local):
+            if current_fx_rates_vs_usd:
+                try:
+                    fallback_rate = get_conversion_rate(
+                        local_curr, display_currency, current_fx_rates_vs_usd
+                    )
+                    if pd.notna(fallback_rate):
+                        realized_gain_display = realized_gain_local * fallback_rate
+                except Exception:
+                    pass
+            if pd.isna(realized_gain_display) and local_curr == display_currency:
+                realized_gain_display = realized_gain_local
+        record["Total Proceeds (Local)"] = proceeds_local
+        record["Total Cost Basis (Local)"] = cost_local
+        record["Realized Gain (Local)"] = realized_gain_local
+        record["Total Proceeds (Display)"] = proceeds_display
+        record["Total Cost Basis (Display)"] = cost_display
+        record["Realized Gain (Display)"] = realized_gain_display
+        realized_gains_records.append(record)
+
     if not realized_gains_records:
-        return pd.DataFrame(columns=output_columns), dict(holdings_long)
+        return pd.DataFrame(columns=output_columns), open_lots
 
     df_gains = pd.DataFrame(realized_gains_records, columns=output_columns)
     df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
 
-    return df_gains, dict(holdings_long)
+    return df_gains, open_lots
 
 
 @profile

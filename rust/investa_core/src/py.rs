@@ -1232,3 +1232,129 @@ pub fn stress_window(
         )
     })
 }
+
+// --- fifo.rs: FIFO tax lots and realized gains -----------------------------
+
+/// The open lots per holding: (holding ids in `holdings_long` order, offsets
+/// into the lot arrays, qty, cost per share, opening event).
+type FifoLots = (Vec<usize>, Vec<usize>, Vec<f64>, Vec<f64>, Vec<usize>);
+
+/// `calculate_fifo_lots_and_gains`' lot bookkeeping over one event per row.
+/// Columns by kind (0 transfer, 1 split, 2 open, 3 reduce basis, 4 sell):
+/// `a` holding / source / symbol, `b` destination, `x` qty / ratio / total,
+/// `y` cost per share / price, `z` FX at purchase / commission, `w` sale FX,
+/// `day` purchase ordinal, `rank` id rank. Returns the sales (proceeds, cost
+/// and gain, local then display) and the open lots.
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn fifo_lots(
+    py: Python<'_>,
+    kind: Vec<u8>,
+    a: Vec<usize>,
+    b: Vec<usize>,
+    x: Vec<f64>,
+    y: Vec<f64>,
+    z: Vec<f64>,
+    w: Vec<f64>,
+    day: Vec<i64>,
+    rank: Vec<i64>,
+    symbol_of: Vec<usize>,
+    tol: f64,
+) -> PyResult<(Vec<[f64; 6]>, FifoLots)> {
+    use crate::fifo::{Event, Lot};
+    let n = kind.len();
+    for (name, len) in [
+        ("a", a.len()),
+        ("b", b.len()),
+        ("x", x.len()),
+        ("y", y.len()),
+        ("z", z.len()),
+        ("w", w.len()),
+        ("day", day.len()),
+        ("rank", rank.len()),
+    ] {
+        if len != n {
+            return Err(PyValueError::new_err(format!(
+                "fifo_lots: {name} has {len} entries, kind has {n}"
+            )));
+        }
+    }
+    let holdings = symbol_of.len();
+    let check = |h: usize| -> PyResult<usize> {
+        if h < holdings {
+            Ok(h)
+        } else {
+            Err(PyIndexError::new_err(format!(
+                "fifo_lots: holding {h} out of {holdings}"
+            )))
+        }
+    };
+    let mut events = Vec::with_capacity(n);
+    for i in 0..n {
+        events.push(match kind[i] {
+            0 => Event::Transfer {
+                from: check(a[i])?,
+                to: check(b[i])?,
+                qty: x[i],
+            },
+            // A symbol with no holding yet matches no lots.
+            1 => Event::Split {
+                symbol: a[i],
+                ratio: x[i],
+            },
+            2 => Event::Open {
+                holding: check(a[i])?,
+                lot: Lot {
+                    qty: x[i],
+                    cost_per_share_local_net: y[i],
+                    purchase_date: day[i],
+                    purchase_fx_to_display: z[i],
+                    id_rank: rank[i],
+                    source: i,
+                },
+            },
+            3 => Event::ReduceBasis {
+                holding: check(a[i])?,
+                total_amt: x[i],
+            },
+            4 => Event::Sell {
+                holding: check(a[i])?,
+                qty: x[i],
+                price_local: y[i],
+                commission_local: z[i],
+                fx: w[i],
+            },
+            k => {
+                return Err(PyValueError::new_err(format!(
+                    "fifo_lots: unknown kind {k}"
+                )));
+            }
+        });
+    }
+    let (sales, book) = py.detach(|| crate::fifo::run(&events, &symbol_of, tol));
+    let sales = sales
+        .into_iter()
+        .map(|s| {
+            [
+                s.proceeds_local,
+                s.cost_basis_local,
+                s.realized_gain_local,
+                s.proceeds_display,
+                s.cost_basis_display,
+                s.realized_gain_display,
+            ]
+        })
+        .collect();
+    let (mut keys, mut offsets) = (Vec::new(), vec![0]);
+    let (mut qty, mut cps, mut source) = (Vec::new(), Vec::new(), Vec::new());
+    for (h, lots) in book.into_ordered() {
+        keys.push(h);
+        for l in lots {
+            qty.push(l.qty);
+            cps.push(l.cost_per_share_local_net);
+            source.push(l.source);
+        }
+        offsets.push(qty.len());
+    }
+    Ok((sales, (keys, offsets, qty, cps, source)))
+}
