@@ -974,3 +974,1114 @@ pub fn db_check_empty_and_csv_exists<'py>(
         Ok(false)
     })
 }
+
+// --- paths, connections, schema ------------------------------------------------
+
+fn config(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
+    py.import("config")
+}
+
+fn dbu(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
+    py.import("db_utils")
+}
+
+fn os_path(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    py.import("os")?.getattr("path")
+}
+
+/// `get_database_path`: the app data dir's copy if it exists, then the
+/// working directory's, else the app data path (created later).
+#[pyfunction]
+pub fn db_get_database_path<'py>(
+    py: Python<'py>,
+    db_filename: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let path = os_path(py)?;
+    let cfg = config(py)?;
+    let app_data_dir = path.call_method1(
+        "join",
+        (
+            cfg.getattr("get_app_data_dir")?.call0()?,
+            cfg.getattr("DB_DIR")?,
+        ),
+    )?;
+    let app_data_path = path.call_method1("join", (&app_data_dir, db_filename))?;
+    if path
+        .call_method1("exists", (&app_data_path,))?
+        .is_truthy()?
+    {
+        return Ok(app_data_path);
+    }
+    let cwd_path = path.call_method1(
+        "join",
+        (py.import("os")?.call_method0("getcwd")?, db_filename),
+    )?;
+    if path.call_method1("exists", (&cwd_path,))?.is_truthy()? {
+        return Ok(cwd_path);
+    }
+    Ok(app_data_path)
+}
+
+/// `get_global_screener_db_path`
+#[pyfunction]
+pub fn db_get_global_screener_db_path(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    let path = os_path(py)?;
+    let cfg = config(py)?;
+    let dir = path.call_method1(
+        "join",
+        (
+            cfg.getattr("get_app_data_dir")?.call0()?,
+            cfg.getattr("SCREENER_DIR")?,
+        ),
+    )?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("exist_ok", true)?;
+    py.import("os")?
+        .call_method("makedirs", (&dir,), Some(&kwargs))?;
+    path.call_method1("join", (dir, cfg.getattr("SCREENER_DB_FILENAME")?))
+}
+
+const SCREENER_SCHEMA: &str = "
+        CREATE TABLE IF NOT EXISTS screener_cache (
+            symbol TEXT NOT NULL,
+            name TEXT,
+            price REAL,
+            intrinsic_value REAL,
+            margin_of_safety REAL,
+            pe_ratio REAL,
+            market_cap REAL,
+            sector TEXT,
+            ai_moat REAL,
+            ai_financial_strength REAL,
+            ai_predictability REAL,
+            ai_growth REAL,
+            ai_moat_analysis TEXT,
+            ai_financial_strength_analysis TEXT,
+            ai_predictability_analysis TEXT,
+            ai_growth_perspective_analysis TEXT,
+            ai_summary TEXT,
+            ai_sentiment REAL,
+            ai_catalysts TEXT,
+            last_fiscal_year_end INTEGER,
+            most_recent_quarter INTEGER,
+            universe TEXT NOT NULL DEFAULT 'manual',
+            updated_at TEXT NOT NULL,
+            valuation_details TEXT,
+            user_id INTEGER,
+            PRIMARY KEY (symbol, universe)
+        );
+        ";
+
+const ANALYSIS_COLUMNS: [&str; 4] = [
+    "ai_moat_analysis TEXT",
+    "ai_financial_strength_analysis TEXT",
+    "ai_predictability_analysis TEXT",
+    "ai_growth_perspective_analysis TEXT",
+];
+
+/// `_ensure_screener_schema`
+#[pyfunction]
+pub fn db_ensure_screener_schema<'py>(py: Python<'py>, conn: &Bound<'py, PyAny>) -> PyResult<()> {
+    let pc = PyConn::new(conn)?;
+    pc.run(SCREENER_SCHEMA, vec![])?;
+    pc.run(
+        "CREATE INDEX IF NOT EXISTS idx_screener_cache_universe ON screener_cache(universe);",
+        vec![],
+    )?;
+    for col_def in ANALYSIS_COLUMNS {
+        let col_name = col_def.split_whitespace().next().unwrap_or_default();
+        match PyConn::new(conn)?.run(
+            &format!("ALTER TABLE screener_cache ADD COLUMN {col_def};"),
+            vec![],
+        ) {
+            Ok(_) => {}
+            Err(e) if crate::pyhelp::is_sqlite(py, &e, "OperationalError")? => {
+                if !es(py, &e).to_lowercase().contains("duplicate column name") {
+                    log(
+                        py,
+                        "warning",
+                        format!("Could not add {col_name} to screener_cache: {}", es(py, &e)),
+                    )?;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    pc.commit()
+}
+
+/// `open_screener_db_conn`: a fresh connection to the global screener DB,
+/// whose schema is ensured once per process.
+#[pyfunction]
+pub fn db_open_screener_db_conn(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    let m = dbu(py)?;
+    let path = m.getattr("get_global_screener_db_path")?.call0()?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("use_cache", false)?;
+    let conn = m
+        .getattr("get_db_connection")?
+        .call((path,), Some(&kwargs))?;
+    if conn.is_none() {
+        return Ok(conn);
+    }
+    if !m.getattr("_SCREENER_SCHEMA_INITED")?.is_truthy()? {
+        match m.getattr("_ensure_screener_schema")?.call1((&conn,)) {
+            Ok(_) => m.setattr("_SCREENER_SCHEMA_INITED", true)?,
+            Err(e) if crate::pyhelp::is_sqlite(py, &e, "Error")? => {
+                log(
+                    py,
+                    "warning",
+                    format!("Could not ensure screener schema: {}", es(py, &e)),
+                )?;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(conn)
+}
+
+/// `is_path_on_cloud_drive`
+#[pyfunction]
+pub fn db_is_path_on_cloud_drive(path: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !path.is_truthy()? {
+        return Ok(false);
+    }
+    let lower: String = path.call_method0("lower")?.extract()?;
+    Ok([
+        "cloudstorage",
+        "googledrive",
+        "google drive",
+        "dropbox",
+        "onedrive",
+        "icloud",
+    ]
+    .iter()
+    .any(|i| lower.contains(i)))
+}
+
+/// Python's `str(float)` for a retry delay (Rust prints 1.0 as "1").
+fn py_float_str(py: Python<'_>, x: f64) -> PyResult<String> {
+    s(&PyFloat::new(py, x).into_any())
+}
+
+/// `get_db_connection`: a connection with Investa's PRAGMAs, cached per
+/// thread, retried on a locked or busy file.
+#[pyfunction]
+pub fn db_get_db_connection<'py>(
+    py: Python<'py>,
+    db_path: &Bound<'py, PyAny>,
+    check_same_thread: &Bound<'py, PyAny>,
+    use_cache: &Bound<'py, PyAny>,
+    timeout: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let m = dbu(py)?;
+    let db_path = if db_path.is_none() {
+        m.getattr("get_database_path")?.call0()?
+    } else {
+        db_path.clone()
+    };
+    let cache_key = PyTuple::new(py, [&db_path, check_same_thread])?;
+    let local = m.getattr("_DB_CONN_CACHE")?;
+    if !local.hasattr("connections")? {
+        local.setattr("connections", PyDict::new(py))?;
+    }
+    let use_cache_b = use_cache.is_truthy()?;
+    if use_cache_b && local.getattr("connections")?.contains(&cache_key)? {
+        let connections = local.getattr("connections")?;
+        match PyConn::new(&connections.get_item(&cache_key)?)
+            .and_then(|c| c.run("SELECT 1", vec![]))
+        {
+            Ok(_) => return connections.get_item(&cache_key),
+            Err(e) if crate::pyhelp::is_sqlite(py, &e, "Error")? => {
+                connections.del_item(&cache_key)?;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    let attempt = (|| -> PyResult<Bound<'py, PyAny>> {
+        let path = os_path(py)?;
+        let db_dir = path.call_method1("dirname", (&db_path,))?;
+        if db_dir.is_truthy()? {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("exist_ok", true)?;
+            py.import("os")?
+                .call_method("makedirs", (&db_dir,), Some(&kwargs))?;
+        }
+        let sqlite3 = py.import("sqlite3")?;
+        let retries = 5;
+        let mut conn = py.None().into_bound(py);
+        for i in 0..retries {
+            let opened = (|| -> PyResult<Bound<'py, PyAny>> {
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("timeout", timeout)?;
+                kwargs.set_item("check_same_thread", check_same_thread)?;
+                let c = sqlite3.call_method("connect", (&db_path,), Some(&kwargs))?;
+                conn = c.clone();
+                let pc = PyConn::new(&c)?;
+                pc.run("PRAGMA busy_timeout = 30000;", vec![])?;
+                pc.run("PRAGMA foreign_keys = ON;", vec![])?;
+                let modes = (|| -> PyResult<()> {
+                    let pc = PyConn::new(&c)?;
+                    let row = pc.run("PRAGMA journal_mode;", vec![])?;
+                    let current: String = row
+                        .first(py)
+                        .ok_or_else(|| {
+                            pyo3::exceptions::PyTypeError::new_err(
+                                "'NoneType' object is not subscriptable",
+                            )
+                        })?
+                        .bind(py)
+                        .get_item(0)?
+                        .call_method0("upper")?
+                        .extract()?;
+                    let is_cloud = m
+                        .getattr("is_path_on_cloud_drive")?
+                        .call1((&db_path,))?
+                        .is_truthy()?;
+                    if is_cloud {
+                        if current != "WAL" {
+                            log(
+                                py,
+                                "info",
+                                format!(
+                                    "Cloud drive detected for {}. Using safe journal mode (DELETE).",
+                                    s(&db_path)?
+                                ),
+                            )?;
+                            pc.run("PRAGMA journal_mode=DELETE;", vec![])?;
+                        }
+                        pc.run("PRAGMA synchronous=FULL;", vec![])?;
+                    } else {
+                        if current != "WAL" {
+                            pc.run("PRAGMA journal_mode=WAL;", vec![])?;
+                        }
+                        pc.run("PRAGMA synchronous=NORMAL;", vec![])?;
+                    }
+                    Ok(())
+                })();
+                match modes {
+                    Ok(()) => {}
+                    Err(e) if crate::pyhelp::is_sqlite(py, &e, "OperationalError")? => {
+                        if es(py, &e).to_lowercase().contains("database is locked") {
+                            log(
+                                py,
+                                "warning",
+                                format!(
+                                    "Could not set PRAGMA journal_mode/synchronous on {} (locked). Continuing with current settings.",
+                                    s(&db_path)?
+                                ),
+                            )?;
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+                Ok(c)
+            })();
+            match opened {
+                Ok(_) => break,
+                Err(e) if crate::pyhelp::is_sqlite(py, &e, "OperationalError")? => {
+                    if i < retries - 1 {
+                        let delay = 0.2 * f64::from(i + 1);
+                        log(
+                            py,
+                            "warning",
+                            format!(
+                                "Database access issue ({}) for {}. Retrying in {}s... (attempt {}/{})",
+                                es(py, &e),
+                                s(&db_path)?,
+                                py_float_str(py, delay)?,
+                                i + 1,
+                                retries
+                            ),
+                        )?;
+                        py.import("time")?.call_method1("sleep", (delay,))?;
+                        continue;
+                    }
+                    log(
+                        py,
+                        "error",
+                        format!(
+                            "Failed to connect to database after {retries} attempts: {} - Error: {}",
+                            s(&db_path)?,
+                            es(py, &e)
+                        ),
+                    )?;
+                    return Err(e);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        if conn.is_truthy()? {
+            if use_cache_b {
+                local.getattr("connections")?.set_item(&cache_key, &conn)?;
+            }
+            log(
+                py,
+                "debug",
+                format!(
+                    "Successfully connected to database ({}): {} (check_same_thread={})",
+                    if use_cache_b { "cached" } else { "fresh" },
+                    s(&db_path)?,
+                    s(check_same_thread)?
+                ),
+            )?;
+            return Ok(conn);
+        }
+        Ok(py.None().into_bound(py))
+    })();
+    match attempt {
+        Ok(c) => Ok(c),
+        Err(e) if crate::pyhelp::is_sqlite(py, &e, "Error")? => {
+            log_exc(
+                py,
+                "error",
+                format!(
+                    "Error connecting to database at {}: {}",
+                    s(&db_path)?,
+                    es(py, &e)
+                ),
+                &e,
+            )?;
+            Ok(py.None().into_bound(py))
+        }
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyOSError>(py) => {
+            log_exc(
+                py,
+                "error",
+                format!(
+                    "OS error setting up database path {}: {}",
+                    s(&db_path)?,
+                    es(py, &e)
+                ),
+                &e,
+            )?;
+            Ok(py.None().into_bound(py))
+        }
+        Err(e) => Err(e),
+    }
+}
+
+const TRANSACTIONS_SCHEMA: &str = r#"
+    CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        Date TEXT NOT NULL,
+        Type TEXT NOT NULL,
+        Symbol TEXT NOT NULL,
+        Quantity REAL,
+        "Price/Share" REAL,
+        "Total Amount" REAL,
+        Commission REAL,
+        Account TEXT NOT NULL,
+        "Split Ratio" REAL,
+        Note TEXT,
+        "Local Currency" TEXT NOT NULL,
+        "To Account" TEXT,
+        "Tags" TEXT,
+        "ExternalID" TEXT
+    );
+    "#;
+
+const VERSION_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        applied_on TEXT NOT NULL
+    );
+    ";
+
+const STAMP_SQL: &str = "INSERT OR REPLACE INTO schema_version (version, applied_on) VALUES (?, ?)";
+
+/// One migration step's failure, as the original's `except` clauses read it.
+enum Step {
+    Ok,
+    Duplicate,
+}
+
+/// Run `sql`; an OperationalError whose text holds "duplicate column name"
+/// (compared as the original does, optionally lower-cased) is `Duplicate`,
+/// anything else raises.
+fn alter(
+    py: Python<'_>,
+    pc: &PyConn<'_>,
+    sql: &str,
+    lower: bool,
+    any_error: bool,
+) -> PyResult<Step> {
+    match pc.run(sql, vec![]) {
+        Ok(_) => Ok(Step::Ok),
+        Err(e) => {
+            let class = if any_error {
+                "Error"
+            } else {
+                "OperationalError"
+            };
+            if crate::pyhelp::is_sqlite(py, &e, class)? {
+                let text = es(py, &e);
+                let text = if lower { text.to_lowercase() } else { text };
+                if text.contains("duplicate column name") {
+                    return Ok(Step::Duplicate);
+                }
+            }
+            Err(e)
+        }
+    }
+}
+
+fn stamp(py: Python<'_>, pc: &PyConn<'_>, version: i64) -> PyResult<()> {
+    pc.run(
+        STAMP_SQL,
+        vec![
+            version.into_pyobject(py)?.into_any(),
+            pystr(py, &now_iso(py)?),
+        ],
+    )?;
+    Ok(())
+}
+
+/// The migrations of `create_transactions_table`, inside its `try`.
+fn migrate(py: Python<'_>, conn: &Bound<'_, PyAny>, is_new: bool) -> PyResult<()> {
+    let m = dbu(py)?;
+    let current_version: i64 = m.getattr("DB_SCHEMA_VERSION")?.extract()?;
+    let pc = PyConn::new(conn)?;
+    pc.run(TRANSACTIONS_SCHEMA, vec![])?;
+    if is_new {
+        let receipts = py
+            .import("server.transaction_writes")?
+            .getattr("RECEIPTS_SCHEMA")?;
+        pc.execute(&receipts, PyTuple::empty(py).as_any())?;
+    }
+    pc.run(VERSION_SCHEMA, vec![])?;
+    let row = pc.run(
+        "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+        vec![],
+    )?;
+    let db_version: i64 = match row.first(py) {
+        Some(r) => r.bind(py).get_item(0)?.extract()?,
+        None => 0,
+    };
+
+    if db_version < 1 {
+        stamp(py, &pc, current_version)?;
+        log(
+            py,
+            "info",
+            format!("Initialized database schema to version {current_version}."),
+        )?;
+    }
+    if db_version < 2 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 2. Applying 'To Account' column migration.",
+        )?;
+        match alter(
+            py,
+            &pc,
+            "ALTER TABLE transactions ADD COLUMN \"To Account\" TEXT;",
+            false,
+            false,
+        )? {
+            Step::Ok => log(
+                py,
+                "info",
+                "Added 'To Account' column to transactions table.",
+            )?,
+            Step::Duplicate => log(py, "info", "'To Account' column already exists.")?,
+        }
+        let moved = pc.run(
+            "UPDATE transactions SET \"To Account\" = SUBSTR(Note, INSTR(Note, ':') + 2) WHERE Type = 'Transfer' AND Note LIKE 'To:%' AND \"To Account\" IS NULL;",
+            vec![],
+        )?;
+        log(
+            py,
+            "info",
+            format!(
+                "Migrated {} existing transfer transactions to use the 'To Account' column.",
+                moved.rowcount()
+            ),
+        )?;
+        stamp(py, &pc, current_version)?;
+    }
+    pc.run(
+        "
+        CREATE TABLE IF NOT EXISTS watchlist (
+            Symbol TEXT PRIMARY KEY,
+            Note TEXT,
+            AddedOn TEXT NOT NULL
+        );
+        ",
+        vec![],
+    )?;
+    if db_version < 3 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 3. Watchlist table created (if not exists).",
+        )?;
+        stamp(py, &pc, current_version)?;
+    }
+    if db_version < 4 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 4. Applying 'Tags' column migration.",
+        )?;
+        match alter(
+            py,
+            &pc,
+            "ALTER TABLE transactions ADD COLUMN Tags TEXT;",
+            false,
+            false,
+        )? {
+            Step::Ok => log(py, "info", "Added 'Tags' column to transactions table.")?,
+            Step::Duplicate => log(py, "info", "'Tags' column already exists.")?,
+        }
+    }
+    if db_version < 5 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 5. Applying Multiple Watchlists migration.",
+        )?;
+        let v5 = (|| -> PyResult<()> {
+            pc.run(
+                "
+                    CREATE TABLE IF NOT EXISTS watchlists (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                ",
+                vec![],
+            )?;
+            let count = pc.run("SELECT count(*) FROM watchlists", vec![])?;
+            let n: i64 = count
+                .first(py)
+                .map(|r| r.bind(py).get_item(0))
+                .transpose()?
+                .map(|v| v.extract())
+                .transpose()?
+                .unwrap_or(0);
+            let default_id = if n == 0 {
+                let made = pc.run(
+                    "INSERT INTO watchlists (name, created_at) VALUES (?, ?)",
+                    vec![pystr(py, "My Watchlist"), pystr(py, &now_iso(py)?)],
+                )?;
+                made.lastrowid(py)
+            } else {
+                let first = pc.run("SELECT id FROM watchlists LIMIT 1", vec![])?;
+                first.first(py).expect("a row").bind(py).get_item(0)?
+            };
+            pc.run(
+                "
+                    CREATE TABLE IF NOT EXISTS watchlist_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        watchlist_id INTEGER NOT NULL,
+                        symbol TEXT NOT NULL,
+                        note TEXT,
+                        added_on TEXT NOT NULL,
+                        FOREIGN KEY(watchlist_id) REFERENCES watchlists(id) ON DELETE CASCADE
+                    );
+                ",
+                vec![],
+            )?;
+            let old = pc.run(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='watchlist';",
+                vec![],
+            )?;
+            if old.first(py).is_some() {
+                log(py, "info", "Migrating existing watchlist items...")?;
+                let rows = pc.run("SELECT Symbol, Note, AddedOn FROM watchlist", vec![])?;
+                let items = rows.all(py);
+                for r in &items {
+                    let r = r.bind(py);
+                    pc.run(
+                        "INSERT INTO watchlist_items (watchlist_id, symbol, note, added_on) VALUES (?, ?, ?, ?)",
+                        vec![default_id.clone(), r.get_item(0)?, r.get_item(1)?, r.get_item(2)?],
+                    )?;
+                }
+                pc.run("DROP TABLE watchlist", vec![])?;
+                log(
+                    py,
+                    "info",
+                    format!(
+                        "Migrated {} items and dropped old watchlist table.",
+                        items.len()
+                    ),
+                )?;
+            }
+            Ok(())
+        })();
+        if let Err(e) = v5 {
+            if crate::pyhelp::is_sqlite(py, &e, "Error")? {
+                log(
+                    py,
+                    "error",
+                    format!("Error during migration v5: {}", es(py, &e)),
+                )?;
+            }
+            return Err(e);
+        }
+        log(py, "info", "Updating schema_version to 5...")?;
+        stamp(py, &pc, 5)?;
+        log(py, "info", "Updated schema_version to 5 (pending commit).")?;
+    }
+    if db_version < 6 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 6. Creating screener_cache table.",
+        )?;
+        let v6 = (|| -> PyResult<()> {
+            pc.run(
+                "
+                    CREATE TABLE IF NOT EXISTS screener_cache (
+                        symbol TEXT PRIMARY KEY,
+                        name TEXT,
+                        price REAL,
+                        intrinsic_value REAL,
+                        margin_of_safety REAL,
+                        pe_ratio REAL,
+                        market_cap REAL,
+                        sector TEXT,
+                        ai_moat REAL,
+                        ai_financial_strength REAL,
+                        ai_predictability REAL,
+                        ai_growth REAL,
+                        ai_summary TEXT,
+                        last_fiscal_year_end INTEGER,
+                        most_recent_quarter INTEGER,
+                        updated_at TEXT NOT NULL
+                    );
+                ",
+                vec![],
+            )?;
+            stamp(py, &pc, 6)?;
+            log(py, "info", "Updated schema_version to 6.")
+        })();
+        logged_raise(py, v6, "v6")?;
+    }
+    if db_version < 7 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 7. Adding 'universe' column to screener_cache.",
+        )?;
+        let v7 = (|| -> PyResult<()> {
+            pc.run(
+                "ALTER TABLE screener_cache ADD COLUMN universe TEXT;",
+                vec![],
+            )?;
+            stamp(py, &pc, 7)?;
+            log(py, "info", "Updated schema_version to 7.")
+        })();
+        duplicate_or_raise(py, v7, "'universe' column already exists.", "v7")?;
+    }
+    if db_version < 8 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 8. Migrating screener_cache to composite PK (symbol, universe).",
+        )?;
+        let v8 = (|| -> PyResult<()> {
+            pc.run(
+                "ALTER TABLE screener_cache RENAME TO screener_cache_old;",
+                vec![],
+            )?;
+            pc.run(
+                "
+                    CREATE TABLE screener_cache (
+                        symbol TEXT NOT NULL,
+                        name TEXT,
+                        price REAL,
+                        intrinsic_value REAL,
+                        margin_of_safety REAL,
+                        pe_ratio REAL,
+                        market_cap REAL,
+                        sector TEXT,
+                        ai_moat REAL,
+                        ai_financial_strength REAL,
+                        ai_predictability REAL,
+                        ai_growth REAL,
+                        ai_summary TEXT,
+                        last_fiscal_year_end INTEGER,
+                        most_recent_quarter INTEGER,
+                        universe TEXT NOT NULL DEFAULT 'manual',
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (symbol, universe)
+                    );
+                ",
+                vec![],
+            )?;
+            pc.run(
+                "
+                    INSERT INTO screener_cache (
+                        symbol, name, price, intrinsic_value, margin_of_safety,
+                        pe_ratio, market_cap, sector, ai_moat, ai_financial_strength,
+                        ai_predictability, ai_growth, ai_summary, last_fiscal_year_end,
+                        most_recent_quarter, universe, updated_at
+                    )
+                    SELECT 
+                        symbol, name, price, intrinsic_value, margin_of_safety,
+                        pe_ratio, market_cap, sector, ai_moat, ai_financial_strength,
+                        ai_predictability, ai_growth, ai_summary, last_fiscal_year_end,
+                        most_recent_quarter, COALESCE(universe, 'manual'), updated_at
+                    FROM screener_cache_old;
+                ",
+                vec![],
+            )?;
+            pc.run("DROP TABLE screener_cache_old;", vec![])?;
+            stamp(py, &pc, 8)?;
+            log(py, "info", "Updated schema_version to 8.")
+        })();
+        logged_raise(py, v8, "v8")?;
+    }
+    if db_version < 9 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 9. Adding 'valuation_details' column to screener_cache.",
+        )?;
+        let v9 = (|| -> PyResult<()> {
+            pc.run(
+                "ALTER TABLE screener_cache ADD COLUMN valuation_details TEXT;",
+                vec![],
+            )?;
+            stamp(py, &pc, 9)?;
+            log(py, "info", "Updated schema_version to 9.")
+        })();
+        duplicate_or_raise(py, v9, "'valuation_details' column already exists.", "v9")?;
+    }
+    if db_version < 10 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 10. Adding users table and user_id column.",
+        )?;
+        for table in ["transactions", "watchlists", "screener_cache"] {
+            alter(
+                py,
+                &pc,
+                &format!("ALTER TABLE {table} ADD COLUMN user_id INTEGER;"),
+                false,
+                false,
+            )?;
+        }
+        stamp(py, &pc, 10)?;
+        log(py, "info", "Updated schema_version to 10.")?;
+    }
+    if db_version < 11 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 11. Adding 'ExternalID' column to transactions.",
+        )?;
+        let v11 = (|| -> PyResult<()> {
+            pc.run(
+                "ALTER TABLE transactions ADD COLUMN ExternalID TEXT;",
+                vec![],
+            )?;
+            pc.run(
+                "CREATE INDEX IF NOT EXISTS idx_external_id ON transactions (ExternalID);",
+                vec![],
+            )?;
+            stamp(py, &pc, 11)?;
+            log(py, "info", "Updated schema_version to 11.")
+        })();
+        duplicate_or_raise(py, v11, "'ExternalID' column already exists.", "v11")?;
+    }
+    if db_version < 12 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 12. Creating 'pending_transactions' table.",
+        )?;
+        let v12 = (|| -> PyResult<()> {
+            pc.run(
+                r#"
+                    CREATE TABLE IF NOT EXISTS pending_transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Date TEXT NOT NULL,
+                        Type TEXT NOT NULL,
+                        Symbol TEXT NOT NULL,
+                        Quantity REAL,
+                        "Price/Share" REAL,
+                        "Total Amount" REAL,
+                        Commission REAL,
+                        Account TEXT NOT NULL,
+                        "Split Ratio" REAL,
+                        Note TEXT,
+                        "Local Currency" TEXT NOT NULL,
+                        "To Account" TEXT,
+                        "Tags" TEXT,
+                        "ExternalID" TEXT,
+                        user_id INTEGER
+                    );
+                "#,
+                vec![],
+            )?;
+            pc.run(
+                "CREATE INDEX IF NOT EXISTS idx_pending_external_id ON pending_transactions (ExternalID);",
+                vec![],
+            )?;
+            stamp(py, &pc, 12)?;
+            log(py, "info", "Updated schema_version to 12.")
+        })();
+        logged_raise(py, v12, "v12")?;
+    }
+    if db_version < 13 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 13. Creating indexes and portfolio_snapshots table.",
+        )?;
+        let v13 = (|| -> PyResult<()> {
+            pc.run(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions (Symbol);",
+                vec![],
+            )?;
+            pc.run(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (Date);",
+                vec![],
+            )?;
+            pc.run(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions (Account);",
+                vec![],
+            )?;
+            pc.run(
+                "
+                    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        snapshot_date TEXT NOT NULL,
+                        account TEXT NOT NULL,
+                        total_value REAL NOT NULL,
+                        total_cost REAL,
+                        total_gain REAL,
+                        total_return_pct REAL,
+                        twr REAL,
+                        irr REAL,
+                        created_at TEXT NOT NULL
+                    );
+                ",
+                vec![],
+            )?;
+            pc.run(
+                "CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_date_account ON portfolio_snapshots (snapshot_date, account);",
+                vec![],
+            )?;
+            stamp(py, &pc, 13)?;
+            log(py, "info", "Updated schema_version to 13.")
+        })();
+        logged_raise(py, v13, "v13")?;
+    }
+    if db_version < 14 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 14. Adding 'ai_sentiment' and 'ai_catalysts' to screener_cache.",
+        )?;
+        let v14 = (|| -> PyResult<()> {
+            pc.run(
+                "ALTER TABLE screener_cache ADD COLUMN ai_sentiment REAL;",
+                vec![],
+            )?;
+            pc.run(
+                "ALTER TABLE screener_cache ADD COLUMN ai_catalysts TEXT;",
+                vec![],
+            )?;
+            stamp(py, &pc, 14)?;
+            log(py, "info", "Updated schema_version to 14.")
+        })();
+        logged_raise(py, v14, "v14")?;
+    }
+    if db_version < 15 {
+        log(
+            py,
+            "info",
+            "Schema version is less than 15. Adding AI per-dimension analysis text columns to screener_cache.",
+        )?;
+        for col_def in ANALYSIS_COLUMNS {
+            match pc.run(
+                &format!("ALTER TABLE screener_cache ADD COLUMN {col_def};"),
+                vec![],
+            ) {
+                Ok(_) => {}
+                Err(e) if crate::pyhelp::is_sqlite(py, &e, "OperationalError")? => {
+                    if !es(py, &e).to_lowercase().contains("duplicate column name") {
+                        log(
+                            py,
+                            "error",
+                            format!("Error during migration v15 ({col_def}): {}", es(py, &e)),
+                        )?;
+                        return Err(e);
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        stamp(py, &pc, 15)?;
+        log(py, "info", "Updated schema_version to 15.")?;
+    }
+    pc.commit()?;
+    log(
+        py,
+        "info",
+        "Transactions, watchlist, and schema_version tables checked/created/updated successfully.",
+    )
+}
+
+/// `except sqlite3.Error as e: logging.error(f"Error during migration {v}: {e}"); raise`
+fn logged_raise(py: Python<'_>, r: PyResult<()>, version: &str) -> PyResult<()> {
+    if let Err(e) = r {
+        if crate::pyhelp::is_sqlite(py, &e, "Error")? {
+            log(
+                py,
+                "error",
+                format!("Error during migration {version}: {}", es(py, &e)),
+            )?;
+        }
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// The v7/v9/v11 handler: a duplicate column is noted, any other sqlite
+/// error logged and raised.
+fn duplicate_or_raise(py: Python<'_>, r: PyResult<()>, note: &str, version: &str) -> PyResult<()> {
+    match r {
+        Ok(()) => Ok(()),
+        Err(e) if crate::pyhelp::is_sqlite(py, &e, "Error")? => {
+            if es(py, &e).contains("duplicate column name") {
+                log(py, "info", note)
+            } else {
+                log(
+                    py,
+                    "error",
+                    format!("Error during migration {version}: {}", es(py, &e)),
+                )?;
+                Err(e)
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// `create_transactions_table`
+#[pyfunction]
+pub fn db_create_transactions_table<'py>(
+    py: Python<'py>,
+    conn: &Bound<'py, PyAny>,
+) -> PyResult<()> {
+    let is_new = PyConn::new(conn)?
+        .run(
+            "SELECT 1 FROM sqlite_master WHERE name='transactions'",
+            vec![],
+        )?
+        .first(py)
+        .is_none();
+    match migrate(py, conn, is_new) {
+        Ok(()) => Ok(()),
+        Err(e) if crate::pyhelp::is_sqlite(py, &e, "Error")? => {
+            log_exc(
+                py,
+                "error",
+                format!("Error creating/updating tables: {}", es(py, &e)),
+                &e,
+            )?;
+            conn.call_method0("rollback").map(|_| ())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// `initialize_database`
+#[pyfunction]
+pub fn db_initialize_database<'py>(
+    py: Python<'py>,
+    db_path: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let m = dbu(py)?;
+    let conn = m.getattr("get_db_connection")?.call1((db_path,))?;
+    if conn.is_truthy()? {
+        m.getattr("create_transactions_table")?.call1((&conn,))?;
+    }
+    Ok(conn)
+}
+
+/// `initialize_global_database`: the users table in the global DB.
+#[pyfunction]
+pub fn db_initialize_global_database(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    let cfg = config(py)?;
+    let path = os_path(py)?.call_method1(
+        "join",
+        (
+            cfg.getattr("get_app_data_dir")?.call0()?,
+            cfg.getattr("DB_DIR")?,
+            cfg.getattr("GLOBAL_DB_FILENAME")?,
+        ),
+    )?;
+    let conn = dbu(py)?.getattr("get_db_connection")?.call1((path,))?;
+    if conn.is_truthy()? {
+        let pc = PyConn::new(&conn)?;
+        pc.run(
+            "
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                alias TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+        ",
+            vec![],
+        )?;
+        match alter(
+            py,
+            &pc,
+            "ALTER TABLE users ADD COLUMN alias TEXT;",
+            false,
+            false,
+        )? {
+            Step::Ok => log(py, "info", "Added 'alias' column to users table.")?,
+            Step::Duplicate => {}
+        }
+        pc.commit()?;
+    }
+    Ok(conn)
+}
+
+/// `connect_readonly`: `mode=ro`, or `query_only` where a WAL file has no
+/// `-shm` yet and mode=ro cannot create it.
+#[pyfunction]
+pub fn db_connect_readonly<'py>(
+    py: Python<'py>,
+    db_path: &Bound<'py, PyAny>,
+    timeout: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let sqlite3 = py.import("sqlite3")?;
+    let strict = (|| -> PyResult<Bound<'py, PyAny>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("uri", true)?;
+        kwargs.set_item("timeout", timeout)?;
+        let conn = sqlite3.call_method(
+            "connect",
+            (format!("file:{}?mode=ro", s(db_path)?),),
+            Some(&kwargs),
+        )?;
+        PyConn::new(&conn)?.run("SELECT 1", vec![])?;
+        Ok(conn)
+    })();
+    match strict {
+        Ok(conn) => Ok(conn),
+        Err(e) if crate::pyhelp::is_sqlite(py, &e, "OperationalError")? => {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("timeout", timeout)?;
+            let conn = sqlite3.call_method("connect", (db_path,), Some(&kwargs))?;
+            PyConn::new(&conn)?.run("PRAGMA query_only = 1", vec![])?;
+            Ok(conn)
+        }
+        Err(e) => Err(e),
+    }
+}

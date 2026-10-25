@@ -10,6 +10,7 @@ pub mod asof;
 pub mod buffett;
 pub mod cashflows;
 pub mod db_portfolio;
+pub mod db_screener;
 pub mod fifo;
 pub mod history;
 pub mod holdings;
@@ -166,5 +167,56 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         types.add(name, value)?;
     }
     m.add_submodule(&types)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_get_database_path, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_get_global_screener_db_path,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_ensure_screener_schema,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_open_screener_db_conn, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_is_path_on_cloud_drive,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_get_db_connection, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_create_transactions_table,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_initialize_database, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_initialize_global_database,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_connect_readonly, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_screener::db_upsert_screener_results,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_screener::db_refresh_screener_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_screener::db_get_cached_screener_results,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        db_screener::db_get_screener_results_by_universe,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        db_screener::db_get_all_distinct_screener_results,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_screener::db_is_synthetic_symbol, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_screener::db_update_ai_review_in_cache,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        db_screener::db_update_intrinsic_value_in_cache,
+        m
+    )?)?;
     Ok(())
 }

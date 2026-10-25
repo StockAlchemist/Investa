@@ -51,7 +51,7 @@ The crate builds in four places:
 | 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
 | 9 | The summary's per-holding and per-account filters, selected once (Python) | **Done** |
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
-| 11 | Storage modules: `db_utils`, `market_db`, `buffett_store`, the EDGAR fact store | Planned |
+| 11 | Storage modules: (a) `db_utils` **done**; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store | In progress |
 | 12 | Import: `data_loader` and CSV cleaning | Planned |
 | 13 | Summary engine: the rest of `portfolio_analyzer`, the computational parts of `portfolio_logic`, `corporate_actions` | Planned |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
@@ -521,6 +521,36 @@ The storage modules keep their `sqlite3.Connection` objects: connection caching,
 - a NUL in the query or an empty statement.
 
 **Parity:** 32 random sequences of 120 operations (named and positional parameters, `executemany` runs that fail partway), on twin databases under every isolation level including autocommit, agree after every step. They compare each outcome (rows, description, rowcount, lastrowid, or the exception's class, message, code and name), `in_transaction`, `total_changes` and every table's contents. Across them, 1,710 statements ran in Rust, 185 raised SQLite errors and 235 programming errors (all matching Python's), and 899 were declined to Python by their parameters. Tests also cover a Rust write rolled back by the caller's `with conn:` block, the thread and closed checks, and the connections Rust must leave alone.
+
+## Phase 11a (25 Oct 2026): `db_utils`
+
+`db_utils.py` went from 2,234 lines to 517. Everything except `migrate_csv_to_db` (Phase 12, with the import code), the `NpEncoder` class and the module constants is now Rust (`db_portfolio.rs`, `db_screener.rs`):
+- the transaction writes and loader;
+- watchlists;
+- the screener cache and its AI and intrinsic-value updates;
+- the v1–v15 schema migrations;
+- `get_db_connection` with its per-thread cache and retries;
+- paths and the read-only connection.
+
+**How the port is written.** It is PyO3 code working on the same Python objects: routes pass dicts, the loader returns a DataFrame.
+- **Native Rust:** the SQL statements and the arithmetic.
+- **The same Python calls,** wherever the original relied on a Python operation's exact behaviour: `str.title`, `strptime`, `pd.isna`, `str()` of a dict in a log line, `json.dumps(cls=NpEncoder)`, `sum()` (compensated for floats since 3.12), `list.sort(key=...)`, `datetime.now()`, logging with the caught exception as `exc_info`, and pandas' column operations in the loader.
+- **Module lookups:** sibling functions and module state (`_DB_CONN_CACHE`, `_SCREENER_SCHEMA_INITED`, `FAVORITES_WATCHLIST_NAME`) are read from the `db_utils` module at call time, so a patched attribute is the one used, as a Python global lookup finds it.
+- **Evaluation order:** kept wherever it decides which handler catches a failure. Values built before a `try` raise past it; values built inside are caught.
+
+**Found while porting: pandas counts references.** `DataFrame.__setitem__` warns of chained assignment when `sys.getrefcount(self) <= 3`. A Python `df[col] = v` holds the frame on the interpreter's stack, one reference more than a call from Rust, so the first port warned seven times per load where the original warned never. `pyhelp::setitem` holds that reference too. The parity tests now compare warnings as well as logs.
+
+**Parity** (against `tests/reference/db_utils.py`, frozen before the port), comparing return values, every table's schema and rows, every log record (level, message, exception type) and every warning:
+- 900 random calls on twin portfolio databases (adds, updates, deletes, watchlists, loads);
+- migrations from 40 random older states (any recorded version, columns dropped, tables missing, a legacy `watchlist` table to move, no `schema_version` table);
+- connections on plain and cloud-drive paths, through the cache, a closed cached connection, `use_cache=False`, `check_same_thread=False`, an unwritable directory and the read-only fallback;
+- 360 random screener-cache operations.
+
+**Real data:**
+- The three books load identically, with their watchlists.
+- The screener readers return the same 3,007 rows.
+- The migration leaves copies of all five user databases identical.
+- All 1,376 tests pass.
 
 ## Found while porting
 
