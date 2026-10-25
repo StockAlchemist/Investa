@@ -53,7 +53,7 @@ The crate builds in four places:
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
-| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | In progress |
+| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors **done**; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | In progress |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
@@ -609,6 +609,18 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
 - The spin-off parser uses the module's compiled patterns, so the regex semantics stay Python's.
 - `generate_cash_interest_events` still anchors on `date.today()`; that is flagged, not changed.
 - **Parity:** 320 random rounds of the arithmetic, the parser, the leg builder and split deduplication, and 160 of the analyzer helpers, match the frozen originals type for type, with logs and warnings.
+
+## Phase 13b (26 Oct 2026): the report extractors
+
+`calculate_periodic_returns`, `extract_dividend_history` and `extract_realized_capital_gains_history` are now Rust (`pa_reports.rs`): the same pandas operations in the original's order, side effects included.
+
+**Found while porting:** two ways the port was not the original, both invisible to a read of the code.
+- **A name the linter thought unused.** `ruff --fix` removed `portfolio_analyzer`'s import of `USFederalHolidayCalendar` once no Python code used it, but the port reads it from the module at call time. The holiday filter then failed into its `except` branch and logged a warning, so a history starting on 1 January kept the holiday. `tests/test_rust_module_names.py` now scans the Rust sources for every module attribute they read and fails if one is missing.
+- **An object kept alive longer than in Python.** `df_gains, _ = calculate_fifo_lots_and_gains(...)` discards the tuple at once. The port held it in a local, which kept the unfiltered frame alive, and pandas' SettingWithCopy check (a weak reference from the slice to its parent) then warned where the original never did. The tuple is now dropped where Python drops it.
+
+**Parity:**
+- 125 random rounds of each extractor match the frozen originals: histories on DatetimeIndex and RangeIndex across weekends and holidays; ledgers with taxes, interest, text amounts and missing FX; account and date filters on a non-datetime `Date`. That covers results, logs, warnings, and the inputs left behind.
+- **Real data:** for all three books, the summaries in USD and THB (which run the dividend history), the realized gains under three account filters, and the 8,883-day periodic returns are identical.
 
 ## Found while porting
 

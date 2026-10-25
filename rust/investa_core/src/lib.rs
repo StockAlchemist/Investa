@@ -21,6 +21,7 @@ pub mod irr;
 mod irr_grid;
 pub mod mc;
 pub mod mdb;
+pub mod pa_reports;
 pub mod pa_small;
 pub mod projection;
 mod py;
@@ -315,5 +316,8 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(pa_small::pa_calculate_hhi, m)?)?;
     m.add_function(wrap_pyfunction!(pa_small::pa_health_score, m)?)?;
     m.add_function(wrap_pyfunction!(pa_small::pa_cash_interest_events, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_reports::pa_periodic_returns, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_reports::pa_dividend_history, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_reports::pa_realized_gains_history, m)?)?;
     Ok(())
 }

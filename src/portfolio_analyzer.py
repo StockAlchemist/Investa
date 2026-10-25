@@ -22,7 +22,6 @@ from datetime import (
     date,
     datetime,
 )  # Used in _build_summary_rows, _process_transactions...
-from pandas.tseries.holiday import USFederalHolidayCalendar
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
 try:
@@ -37,6 +36,9 @@ except ImportError:
 from typing import List, Tuple, Dict, Optional, Any, Set
 from collections import defaultdict
 import investa_core
+
+# Read by the Rust port at call time (portfolio_analyzer.USFederalHolidayCalendar).
+from pandas.tseries.holiday import USFederalHolidayCalendar  # noqa: F401
 
 # --- Import Configuration ---
 try:
@@ -2400,177 +2402,8 @@ def calculate_periodic_returns(
             and values are DataFrames containing the periodic returns for that interval.
             Returns empty dict if input is invalid.
     """
-    # --- ADDED: Log input ---
-    logging.debug("--- Entering calculate_periodic_returns ---")
-    if not isinstance(historical_df, pd.DataFrame) or historical_df.empty:
-        logging.warning(
-            "Input historical_df is not a valid DataFrame or is empty. Returning empty dict."
-        )
-        return {}
-    logging.debug(f"Input historical_df shape: {historical_df.shape}")
-    logging.debug(f"Input benchmarks: {benchmark_symbols}")
-    # --- END ADDED ---
-
-    periodic_returns = {}
-    intervals = {"W": "W-FRI", "M": "ME", "Y": "YE"}  # Use Month End, Year End
-    if not isinstance(historical_df, pd.DataFrame) or historical_df.empty:
-        logging.warning("Cannot calculate periodic returns: Input DataFrame is empty.")
-        return periodic_returns
-
-    # Ensure index is DatetimeIndex
-    if not isinstance(historical_df.index, pd.DatetimeIndex):
-        try:
-            historical_df.index = pd.to_datetime(historical_df.index)
-        except Exception as e:
-            logging.error(f"Error converting index to DatetimeIndex: {e}")
-            return periodic_returns
-
-    # Identify relevant columns
-    portfolio_col = "Portfolio Accumulated Gain"
-    benchmark_cols = [f"{b} Accumulated Gain" for b in benchmark_symbols]
-    all_gain_cols = [portfolio_col] + benchmark_cols
-    valid_gain_cols = [col for col in all_gain_cols if col in historical_df.columns]
-
-    if not valid_gain_cols:
-        logging.warning(
-            "Cannot calculate periodic returns: No valid accumulated gain columns found."
-        )
-        return periodic_returns
-
-    # Define intervals and corresponding pandas frequency codes
-    intervals = {"W": "W-FRI", "M": "ME", "Y": "YE", "D": "D"}
-
-    for interval_key, freq_code in intervals.items():
-        try:
-            # --- MODIFIED: Include daily_gain for value change calculation ---
-            cols_to_resample = list(valid_gain_cols)
-            agg_dict = {col: "last" for col in valid_gain_cols}
-
-            # Determine which daily gain column to use (it might be renamed to 'Portfolio Daily Gain')
-            target_daily_gain_col = "daily_gain"
-            if "Portfolio Daily Gain" in historical_df.columns:
-                target_daily_gain_col = "Portfolio Daily Gain"
-
-            if target_daily_gain_col in historical_df.columns:
-                cols_to_resample.append(target_daily_gain_col)
-                agg_dict[target_daily_gain_col] = "sum"
-
-            # Check for Cumulative Net Flow to calculate periodic flows
-            net_flow_col = "Cumulative Net Flow"
-            if net_flow_col in historical_df.columns:
-                cols_to_resample.append(net_flow_col)
-                agg_dict[net_flow_col] = "last"
-
-            # Resample
-            resampled_data = (
-                historical_df[cols_to_resample].resample(freq_code).agg(agg_dict)
-            )
-
-            # Separate factors and value changes
-            resampled_factors = resampled_data[valid_gain_cols]
-            resampled_value_change = (
-                resampled_data[target_daily_gain_col]
-                if target_daily_gain_col in resampled_data.columns
-                else pd.Series()
-            )
-
-            # Calculate periodic net flow
-            resampled_net_flow = pd.Series(dtype=float)
-            if net_flow_col in resampled_data.columns:
-                # Calculate diff to get flow per period
-                resampled_net_flow = resampled_data[net_flow_col].diff()
-                # Initial period flow is just the cumulative flow at that point (assuming start from 0 or handling disjoint periods)
-                # However, resample('ME') essentially snapshots the cumulative at end.
-                # If the first period snapshots at X, and prev was 0, then flow is X.
-                # But we must be careful about the very first entry if it's not 0.
-                if not resampled_net_flow.empty:
-                    resampled_net_flow.iloc[0] = resampled_data[net_flow_col].iloc[0]
-
-            # --- END MODIFIED ---
-
-            # --- ADDED: Filter out weekends for Daily returns ---
-            if interval_key == "D":
-                # 0=Monday, 6=Sunday. Filter out 5 (Sat) and 6 (Sun)
-                # Filter both factors and value change
-                mask = resampled_factors.index.dayofweek < 5
-                resampled_factors = resampled_factors[mask]
-                if not resampled_value_change.empty:
-                    resampled_value_change = resampled_value_change[mask]
-
-                # Filter Net Flow as well
-                if not resampled_net_flow.empty:
-                    resampled_net_flow = resampled_net_flow[mask]
-
-                # Filter out US Holidays
-                try:
-                    # --- FIX: Ensure index has valid dates to avoid 'float' error ---
-                    if not resampled_factors.empty and pd.notnull(
-                        resampled_factors.index.min()
-                    ):
-                        cal = USFederalHolidayCalendar()
-                        holidays = cal.holidays(
-                            start=resampled_factors.index.min(),
-                            end=resampled_factors.index.max(),
-                        )
-                        mask_hol = ~resampled_factors.index.isin(holidays)
-                        resampled_factors = resampled_factors[mask_hol]
-                        if not resampled_value_change.empty:
-                            resampled_value_change = resampled_value_change[mask_hol]
-                        if not resampled_net_flow.empty:
-                            resampled_net_flow = resampled_net_flow[mask_hol]
-                except Exception as e_hol:
-                    logging.warning(f"Failed to filter holidays: {e_hol}")
-            # --- END ADDED ---
-
-            # --- MODIFIED: Handle first period return correctly ---
-            # pct_change() will make the first period NaN, which gets dropped.
-            # We need to calculate it manually: (end_factor - 1)
-            if not resampled_factors.empty:
-                # Calculate returns using pct_change for all periods after the first
-                period_returns_df = resampled_factors.pct_change(fill_method=None)
-
-                # Manually calculate the return for the first period
-                first_period_return = resampled_factors.iloc[0] - 1.0
-                period_returns_df.iloc[0] = first_period_return
-
-                # Convert to percentage
-                period_returns_df *= 100.0
-
-                # Add Value Change column
-                if not resampled_value_change.empty:
-                    # Align indices just in case
-                    period_returns_df[f"Portfolio {interval_key}-Value"] = (
-                        resampled_value_change
-                    )
-
-                # Add Net Flow column
-                if not resampled_net_flow.empty:
-                    period_returns_df[f"Portfolio {interval_key}-NetFlow"] = (
-                        resampled_net_flow
-                    )
-            else:
-                period_returns_df = pd.DataFrame(columns=resampled_factors.columns)
-            # --- END MODIFIED ---
-            # --- END MODIFIED ---
-
-            # Rename columns for clarity (optional)
-            period_returns_df.columns = [
-                col.replace(" Accumulated Gain", f" {interval_key}-Return")
-                for col in period_returns_df.columns
-            ]
-
-            periodic_returns[interval_key] = period_returns_df
-
-        except Exception as e:
-            logging.error(f"Error calculating {interval_key} periodic returns: {e}")
-            periodic_returns[interval_key] = pd.DataFrame()  # Add empty df on error
-
-    # --- ADDED: Log final result ---
-    logging.debug(
-        f"--- Exiting calculate_periodic_returns. Result keys: {list(periodic_returns.keys())} ---"
-    )
-    # --- END ADDED ---
-    return periodic_returns
+    # Ported to Rust: rust/investa_core/src/pa_reports.rs
+    return investa_core.pa_periodic_returns(historical_df, benchmark_symbols)
 
 
 def calculate_correlation_matrix(historical_returns_df: pd.DataFrame) -> pd.DataFrame:
@@ -2633,191 +2466,10 @@ def extract_dividend_history(
                'FXRateUsed', 'DividendAmountDisplayCurrency'.
                Returns an empty DataFrame if no dividend transactions or on critical error.
     """
-    logging.info(f"Extracting dividend history for display in {display_currency}...")
-    logging.debug(
-        f"  Input all_transactions_df shape: {all_transactions_df.shape if isinstance(all_transactions_df, pd.DataFrame) else 'Not a DF'}"
+    # Ported to Rust: rust/investa_core/src/pa_reports.rs
+    return investa_core.pa_dividend_history(
+        all_transactions_df, display_currency, historical_fx_yf, default_currency, include_accounts
     )
-
-    # ADDED LOG: Log include_accounts
-    logging.debug(
-        f"  extract_dividend_history received include_accounts: {include_accounts}"
-    )
-
-    logging.debug(
-        f"  Historical FX data keys: {list(historical_fx_yf.keys()) if historical_fx_yf else 'Empty'}"
-    )
-    if not isinstance(all_transactions_df, pd.DataFrame) or all_transactions_df.empty:
-        logging.warning("Dividend history: Input transactions DataFrame is empty.")
-        return pd.DataFrame()
-
-    # Capture both dividends and taxes
-    dividend_mask = (all_transactions_df["Type"].str.lower() == "dividend") | (
-        (all_transactions_df["Type"].str.lower() == "interest")
-        & (all_transactions_df["Symbol"].str.upper() == "$CASH")
-    )
-    tax_mask = all_transactions_df["Type"].str.lower().isin(["tax", "withholding tax"])
-
-    dividend_transactions = all_transactions_df[dividend_mask].copy()
-    tax_transactions = all_transactions_df[tax_mask].copy()
-
-    # ADDED LOG: Log initial dividend transactions before account filtering
-    logging.debug(
-        f"  Initial dividend transactions (before account filter): {len(dividend_transactions)} rows."
-    )
-    if not dividend_transactions.empty:
-        logging.debug(
-            f"    Accounts in initial dividend transactions: {dividend_transactions['Account'].unique()}"
-        )
-
-    # Filter by include_accounts if specified
-    if include_accounts is not None and isinstance(include_accounts, list):
-        if "Account" in dividend_transactions.columns:
-            dividend_transactions = dividend_transactions[
-                dividend_transactions["Account"].isin(include_accounts)
-            ].copy()
-        if not tax_transactions.empty and "Account" in tax_transactions.columns:
-            tax_transactions = tax_transactions[
-                tax_transactions["Account"].isin(include_accounts)
-            ].copy()
-
-    logging.debug(f"  Found {len(dividend_transactions)} dividend transactions.")
-
-    if dividend_transactions.empty:
-        logging.info("No dividend transactions found.")
-        return pd.DataFrame(
-            columns=[
-                "Date",
-                "Symbol",
-                "Account",
-                "LocalCurrency",
-                "DividendAmountLocal",
-                "FXRateUsed",
-                "DividendAmountDisplayCurrency",
-                "TaxAmountLocal",
-                "TaxAmountDisplayCurrency",
-            ]
-        )  # Return empty DF with schema
-
-    # Index tax transactions for fast lookup by (Date, Symbol, Account)
-    tax_lookup = defaultdict(float)
-    for _, tx in tax_transactions.iterrows():
-        try:
-            d = tx["Date"].date()
-            s = tx["Symbol"]
-            a = tx["Account"]
-            amt = abs(pd.to_numeric(tx.get("Total Amount"), errors="coerce"))
-            if pd.isna(amt) or amt <= 1e-9:
-                amt = abs(pd.to_numeric(tx.get("Price/Share"), errors="coerce"))
-            if pd.notna(amt):
-                tax_lookup[(d, s, a)] += amt
-        except Exception:
-            continue
-
-    results = []
-    for i, (_, row) in enumerate(
-        dividend_transactions.iterrows()
-    ):  # Added index for logging
-        try:
-            tx_date = row["Date"].date()  # Convert to date object
-            symbol = row["Symbol"]
-            account = row["Account"]
-            local_curr = row.get("Local Currency", default_currency)
-
-            # Dividend amount in local currency (Net: Total Amount - Commission)
-            # For dividends, 'Total Amount' is typically the net received.
-            # 'Price/Share' can also be 'Dividend/Share'. 'Quantity' is shares.
-            # Let's prioritize 'Total Amount'. If not present, use Qty * Price.
-            dividend_local = pd.to_numeric(row.get("Total Amount"), errors="coerce")
-            if pd.isna(dividend_local):
-                qty = pd.to_numeric(row.get("Quantity"), errors="coerce")
-                price_per_share = pd.to_numeric(row.get("Price/Share"), errors="coerce")
-                if pd.notna(qty) and pd.notna(price_per_share):
-                    dividend_local = qty * price_per_share
-                else:
-                    logging.warning(
-                        f"Could not determine dividend amount for row: {row.get('original_index', 'N/A')}"
-                    )
-                    continue  # Skip if amount cannot be determined
-
-            commission_local = pd.to_numeric(row.get("Commission"), errors="coerce")
-            if pd.notna(commission_local):
-                dividend_local -= commission_local  # Subtract commission if present
-
-            # Lookup tax for this dividend
-            tax_local = tax_lookup.get((tx_date, symbol, account), 0.0)
-
-            fx_rate = get_historical_rate_via_usd_bridge(
-                local_curr, display_currency, tx_date, historical_fx_yf
-            )
-            dividend_display = (
-                dividend_local * fx_rate
-                if pd.notna(fx_rate) and pd.notna(dividend_local)
-                else np.nan
-            )
-            tax_display = (
-                tax_local * fx_rate
-                if pd.notna(fx_rate) and pd.notna(tax_local)
-                else np.nan
-            )
-
-            if i < 5:  # Log first few processed rows
-                logging.debug(
-                    f"    Processed dividend row (orig_idx: {row.get('original_index', 'N/A')}):"
-                )
-                logging.debug(
-                    f"      Date: {tx_date}, Symbol: {symbol}, Account: {account}, LocalCurr: {local_curr}"
-                )
-                logging.debug(
-                    f"      DividendLocal: {dividend_local}, FXRateUsed: {fx_rate}, DividendDisplayCurr: {dividend_display}"
-                )
-
-            results.append(
-                [
-                    tx_date,
-                    symbol,
-                    account,
-                    local_curr,
-                    dividend_local,
-                    fx_rate,
-                    dividend_display,
-                    tax_local,
-                    tax_display,
-                ]
-            )
-        except Exception as e:
-            logging.error(
-                f"Error processing dividend row {row.get('original_index', 'N/A')}: {e}"
-            )
-            continue
-
-    if not results:
-        logging.warning("  No results after processing dividend transactions.")
-        return pd.DataFrame()
-
-    df_dividends = pd.DataFrame(
-        results,
-        columns=[
-            "Date",
-            "Symbol",
-            "Account",
-            "LocalCurrency",
-            "DividendAmountLocal",
-            "FXRateUsed",
-            "DividendAmountDisplayCurrency",
-            "TaxAmountLocal",
-            "TaxAmountDisplayCurrency",
-        ],
-    )
-    df_dividends.sort_values(by="Date", ascending=False, inplace=True)
-    logging.info(f"Extracted {len(df_dividends)} dividend records.")
-    if not df_dividends.empty:
-        logging.debug(
-            f"  Returned df_dividends head:\n{df_dividends.head().to_string()}"
-        )
-        logging.debug(
-            f"  'DividendAmountDisplayCurrency' NaNs: {df_dividends['DividendAmountDisplayCurrency'].isna().sum()} out of {len(df_dividends)}"
-        )
-    return df_dividends
 
 
 # Event kinds for investa_core.fifo_lots.
@@ -3212,75 +2864,19 @@ def extract_realized_capital_gains_history(
     Calculates realized capital gains from transactions using FIFO accounting for long positions.
     Wrapper around calculate_fifo_lots_and_gains.
     """
-    logging.info(
-        f"Extracting realized capital gains history for display in {display_currency}..."
+    # Ported to Rust: rust/investa_core/src/pa_reports.rs
+    return investa_core.pa_realized_gains_history(
+        all_transactions_df,
+        display_currency,
+        historical_fx_yf,
+        default_currency,
+        shortable_symbols,
+        stock_quantity_close_tolerance,
+        include_accounts,
+        current_fx_rates_vs_usd,
+        from_date,
+        to_date,
     )
-
-    if not isinstance(all_transactions_df, pd.DataFrame) or all_transactions_df.empty:
-        logging.warning("Capital gains: Input transactions DataFrame is empty.")
-        # Return empty DF with correct columns (logic inside calc fn handles this but we need empty input handling)
-        return pd.DataFrame(
-            columns=[
-                "Date",
-                "Symbol",
-                "Account",
-                "Type",
-                "Quantity",
-                "Avg Sale Price (Local)",
-                "Total Proceeds (Local)",
-                "Total Cost Basis (Local)",
-                "Realized Gain (Local)",
-                "Sale/Cover FX Rate",
-                "Total Proceeds (Display)",
-                "Total Cost Basis (Display)",
-                "Realized Gain (Display)",
-                "LocalCurrency",
-                "original_tx_id",
-            ]
-        )
-
-    # 1. Prepare transactions (filtering logic moved here to keep wrapper clean or passed down)
-    # The original logic filtered AFTER calculation. We will follow that for compatibility.
-    # But we MUST process ALL accounts for the calculation itself.
-    transactions_to_process = all_transactions_df.copy()
-    transactions_to_process.sort_values(by=["Date", "original_index"], inplace=True)
-
-    # 2. Call core logic
-    df_gains, _ = calculate_fifo_lots_and_gains(
-        transactions_df=transactions_to_process,
-        display_currency=display_currency,
-        historical_fx_yf=historical_fx_yf,
-        default_currency=default_currency,
-        shortable_symbols=shortable_symbols,
-        stock_quantity_close_tolerance=stock_quantity_close_tolerance,
-        current_fx_rates_vs_usd=current_fx_rates_vs_usd,
-    )
-
-    # 3. Filter accounts (User View Filter)
-    if include_accounts and isinstance(include_accounts, list):
-        include_accounts_upper = [str(acc).upper().strip() for acc in include_accounts]
-        if not df_gains.empty:
-            df_gains = df_gains[df_gains["Account"].isin(include_accounts_upper)]
-
-    # 4. Filter by Date (Tax Year / Custom Range)
-    if not df_gains.empty:
-        # Ensure Date column is datetime or date
-        # It usually comes out as datetime from calculate_fifo_lots_and_gains (from transactions_df)
-        # normalize to date for comparison
-        if "Date" in df_gains.columns:
-            # Convert to datetime if needed, though likely already is
-            if not pd.api.types.is_datetime64_any_dtype(df_gains["Date"]):
-                df_gains["Date"] = pd.to_datetime(df_gains["Date"])
-
-            if from_date:
-                # pd.Timestamp(from_date) compares well with datetime64
-                df_gains = df_gains[df_gains["Date"] >= pd.Timestamp(from_date)]
-
-            if to_date:
-                df_gains = df_gains[df_gains["Date"] <= pd.Timestamp(to_date)]
-
-    logging.info(f"Extracted {len(df_gains)} realized capital gains records.")
-    return df_gains
 
 
 def calculate_rebalancing_trades(
