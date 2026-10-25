@@ -50,30 +50,49 @@ unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
-type Db = c_void;
-type Stmt = c_void;
+pub(crate) type Db = c_void;
+pub(crate) type Stmt = c_void;
 
 #[allow(non_snake_case)]
-struct Api {
-    open_v2: unsafe extern "C" fn(*const c_char, *mut *mut Db, c_int, *const c_char) -> c_int,
-    close_v2: unsafe extern "C" fn(*mut Db) -> c_int,
-    busy_timeout: unsafe extern "C" fn(*mut Db, c_int) -> c_int,
-    prepare_v2: unsafe extern "C" fn(
+pub(crate) struct Api {
+    pub(crate) open_v2:
+        unsafe extern "C" fn(*const c_char, *mut *mut Db, c_int, *const c_char) -> c_int,
+    pub(crate) close_v2: unsafe extern "C" fn(*mut Db) -> c_int,
+    pub(crate) busy_timeout: unsafe extern "C" fn(*mut Db, c_int) -> c_int,
+    pub(crate) prepare_v2: unsafe extern "C" fn(
         *mut Db,
         *const c_char,
         c_int,
         *mut *mut Stmt,
         *mut *const c_char,
     ) -> c_int,
-    bind_text: unsafe extern "C" fn(*mut Stmt, c_int, *const c_char, c_int, isize) -> c_int,
-    step: unsafe extern "C" fn(*mut Stmt) -> c_int,
-    finalize: unsafe extern "C" fn(*mut Stmt) -> c_int,
-    column_type: unsafe extern "C" fn(*mut Stmt, c_int) -> c_int,
-    column_int64: unsafe extern "C" fn(*mut Stmt, c_int) -> i64,
-    column_double: unsafe extern "C" fn(*mut Stmt, c_int) -> f64,
-    column_text: unsafe extern "C" fn(*mut Stmt, c_int) -> *const u8,
-    column_bytes: unsafe extern "C" fn(*mut Stmt, c_int) -> c_int,
-    errmsg: unsafe extern "C" fn(*mut Db) -> *const c_char,
+    pub(crate) bind_text:
+        unsafe extern "C" fn(*mut Stmt, c_int, *const c_char, c_int, isize) -> c_int,
+    pub(crate) step: unsafe extern "C" fn(*mut Stmt) -> c_int,
+    pub(crate) finalize: unsafe extern "C" fn(*mut Stmt) -> c_int,
+    pub(crate) column_type: unsafe extern "C" fn(*mut Stmt, c_int) -> c_int,
+    pub(crate) column_int64: unsafe extern "C" fn(*mut Stmt, c_int) -> i64,
+    pub(crate) column_double: unsafe extern "C" fn(*mut Stmt, c_int) -> f64,
+    pub(crate) column_text: unsafe extern "C" fn(*mut Stmt, c_int) -> *const u8,
+    pub(crate) column_bytes: unsafe extern "C" fn(*mut Stmt, c_int) -> c_int,
+    pub(crate) errmsg: unsafe extern "C" fn(*mut Db) -> *const c_char,
+
+    pub(crate) bind_int64: unsafe extern "C" fn(*mut Stmt, c_int, i64) -> c_int,
+    pub(crate) bind_double: unsafe extern "C" fn(*mut Stmt, c_int, f64) -> c_int,
+    pub(crate) bind_blob:
+        unsafe extern "C" fn(*mut Stmt, c_int, *const c_void, c_int, isize) -> c_int,
+    pub(crate) bind_null: unsafe extern "C" fn(*mut Stmt, c_int) -> c_int,
+    pub(crate) bind_parameter_count: unsafe extern "C" fn(*mut Stmt) -> c_int,
+    pub(crate) column_count: unsafe extern "C" fn(*mut Stmt) -> c_int,
+    pub(crate) column_name: unsafe extern "C" fn(*mut Stmt, c_int) -> *const c_char,
+    pub(crate) column_blob: unsafe extern "C" fn(*mut Stmt, c_int) -> *const c_void,
+    pub(crate) reset: unsafe extern "C" fn(*mut Stmt) -> c_int,
+    pub(crate) clear_bindings: unsafe extern "C" fn(*mut Stmt) -> c_int,
+    pub(crate) get_autocommit: unsafe extern "C" fn(*mut Db) -> c_int,
+    pub(crate) changes64: unsafe extern "C" fn(*mut Db) -> i64,
+    pub(crate) last_insert_rowid: unsafe extern "C" fn(*mut Db) -> i64,
+    pub(crate) extended_errcode: unsafe extern "C" fn(*mut Db) -> c_int,
+    pub(crate) db_filename: unsafe extern "C" fn(*mut Db, *const c_char) -> *const c_char,
 }
 
 // The function pointers are plain C entry points; SQLite itself is built
@@ -117,6 +136,21 @@ fn load(module_path: &str) -> Option<Api> {
             column_text: sym(handle, "sqlite3_column_text")?,
             column_bytes: sym(handle, "sqlite3_column_bytes")?,
             errmsg: sym(handle, "sqlite3_errmsg")?,
+            bind_int64: sym(handle, "sqlite3_bind_int64")?,
+            bind_double: sym(handle, "sqlite3_bind_double")?,
+            bind_blob: sym(handle, "sqlite3_bind_blob")?,
+            bind_null: sym(handle, "sqlite3_bind_null")?,
+            bind_parameter_count: sym(handle, "sqlite3_bind_parameter_count")?,
+            column_count: sym(handle, "sqlite3_column_count")?,
+            column_name: sym(handle, "sqlite3_column_name")?,
+            column_blob: sym(handle, "sqlite3_column_blob")?,
+            reset: sym(handle, "sqlite3_reset")?,
+            clear_bindings: sym(handle, "sqlite3_clear_bindings")?,
+            get_autocommit: sym(handle, "sqlite3_get_autocommit")?,
+            changes64: sym(handle, "sqlite3_changes64")?,
+            last_insert_rowid: sym(handle, "sqlite3_last_insert_rowid")?,
+            extended_errcode: sym(handle, "sqlite3_extended_errcode")?,
+            db_filename: sym(handle, "sqlite3_db_filename")?,
         })
     }
 }
@@ -127,7 +161,7 @@ pub fn bind(module_path: &str) -> bool {
     API.get_or_init(|| load(module_path)).is_some()
 }
 
-fn api() -> Option<&'static Api> {
+pub(crate) fn api() -> Option<&'static Api> {
     API.get().and_then(|a| a.as_ref())
 }
 

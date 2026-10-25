@@ -50,6 +50,13 @@ The crate builds in four places:
 | 7 | What the final benchmark left on the request path: (a) the historical FX lookup and the IRR/MWR cash flows; (b) statement assembly and the ratio history | **Done** |
 | 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
 | 9 | The summary's per-holding and per-account filters, selected once (Python) | **Done** |
+| 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
+| 11 | Storage modules: `db_utils`, `market_db`, `buffett_store`, the EDGAR fact store | Planned |
+| 12 | Import: `data_loader` and CSV cleaning | Planned |
+| 13 | Summary engine: the rest of `portfolio_analyzer`, the computational parts of `portfolio_logic`, `corporate_actions` | Planned |
+| 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
+| 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
+| 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -477,6 +484,38 @@ After Phase 8 the summary's remaining cost was pandas filtering, not arithmetic.
 History is unchanged (within ±3%), as expected: it does not run these functions.
 
 **What remains** (dheematan, profiled): the account and overall totals (0.10 s, MWR flows and `safe_sum`), the dividend history (0.10 s, an `iterrows` pass over about 1,200 dividends) and the FIFO setup (0.10 s, about 15,600 single-value `pd.to_numeric` calls). All three are per-row Python work.
+
+## Phases 10–16: the second port (25 Oct 2026 onward)
+
+On 25 Oct 2026 the user widened the scope: every module that *can* move to Rust does, whether or not it speeds the app up. That covers calculations, storage and import. Python keeps the FastAPI routes, the network fetchers (yfinance and the HTTP clients), PDF parsing (pdfplumber), the market calendar (pandas_market_calendars) and Gemini. Two kinds of code still stay in Python: pandas frame construction, because the routes take DataFrames, and BLAS/LAPACK-backed NumPy calls, which can't be reproduced bitwise. The method is unchanged: freeze the original, fuzz for bitwise parity, then check real data.
+
+## Phase 10 (25 Oct 2026): SQL in Rust on Python's own connections
+
+The storage modules keep their `sqlite3.Connection` objects: connection caching, PRAGMAs and the callers' `with conn:` blocks are untouched. `rust_sql.execute`, `executemany` and `read_frame` run the statement in Rust (`sql.rs`) on the `sqlite3*` the Python connection holds. So a Rust statement joins the caller's open transaction, sees its uncommitted writes, and commits or rolls back with it.
+
+**The handle.** In CPython 3.12 a `pysqlite_Connection` is `PyObject_HEAD` followed by `sqlite3 *db`.
+- `rust_sql` reads the pointer at `object.__basicsize__`, and once per process checks the layout: a probe connection on a temporary file must report the same file through `sqlite3_db_filename` as through `PRAGMA database_list`.
+- The pointer is read fresh on every call, because a closed connection sets it to NULL.
+- Connections don't take weak references, so nothing is cached per connection.
+
+**What Python's `sqlite3` does around a statement** (CPython 3.12 `cursor.c` and `statement.c`), reproduced:
+- Python's own thread and closed-connection checks run first (via `conn.cursor()`, which raises exactly what `execute` raises).
+- Under legacy transaction control, DML in autocommit runs `"BEGIN " + isolation_level` first, before binding, so a binding error leaves the transaction open as it does in Python. DML means `lstrip_sql` (whitespace, `--` and `/* */` comments) followed by INSERT, UPDATE, DELETE or REPLACE.
+- Only one statement is allowed per call.
+- The binding count must match, with Python's message.
+- `rowcount` is the DML changes or -1. `lastrowid` is the connection's last insert rowid after `execute`, and None after `executemany`.
+- Each SQLite error is raised as the class `get_exception_class` picks, with SQLite's message and the extended `sqlite_errorcode` / `sqlite_errorname`.
+- Text that isn't UTF-8 raises Python's `Could not decode to UTF-8 column` error.
+- `read_frame` builds the frame with pandas' own `_wrap_result`. A failure rolls the connection back and raises pandas' `DatabaseError`, as `read_sql_query` does.
+
+**Left to Python's own call, before anything runs:**
+- a parameter Python would adapt or refuse: an adapter registered on a base type, a date, a NumPy integer, an int beyond 64 bits, a surrogate string, a `bytearray`, a float subclass with `__conform__`;
+- named parameters;
+- a `row_factory` or a custom `text_factory`;
+- explicit `autocommit` control;
+- a NUL in the query or an empty statement.
+
+**Parity:** 32 random sequences of 120 operations, on twin databases under every isolation level including autocommit, agree after every step. They compare each outcome (rows, description, rowcount, lastrowid, or the exception's class, message, code and name), `in_transaction`, `total_changes` and every table's contents. Across them, 1,710 statements ran in Rust, 185 raised SQLite errors and 235 programming errors (all matching Python's), and 899 were declined to Python by their parameters. Tests also cover a Rust write rolled back by the caller's `with conn:` block, the thread and closed checks, and the connections Rust must leave alone.
 
 ## Found while porting
 

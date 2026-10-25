@@ -1713,3 +1713,140 @@ pub fn read_daily_ohlcv<'py>(
         columns,
     )))
 }
+
+// --- SQL on Python's own connections (src/rust_sql.py) ---------------------
+
+/// A parameter as Python's sqlite3 binds it without an adapter, or None when
+/// the shim must leave the call to Python (an adapter, a NumPy integer, an
+/// int beyond 64 bits, a string that is not valid UTF-8, ...).
+fn sql_value(v: &Bound<'_, PyAny>) -> Option<crate::sql::Value> {
+    use crate::sql::Value;
+    use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
+    if v.is_none() {
+        return Some(Value::Null);
+    }
+    if v.is_exact_instance_of::<PyBool>() {
+        return Some(Value::Int(i64::from(v.is_truthy().ok()?)));
+    }
+    if v.is_exact_instance_of::<PyInt>() {
+        return v.extract::<i64>().ok().map(Value::Int);
+    }
+    if v.is_instance_of::<PyFloat>() {
+        return v.extract::<f64>().ok().map(Value::Real);
+    }
+    if v.is_exact_instance_of::<PyString>() {
+        return v
+            .cast::<PyString>()
+            .ok()?
+            .to_str()
+            .ok()
+            .map(|s| Value::Text(s.as_bytes().to_vec()));
+    }
+    if v.is_exact_instance_of::<PyBytes>() {
+        return Some(Value::Blob(v.cast::<PyBytes>().ok()?.as_bytes().to_vec()));
+    }
+    None
+}
+
+fn sql_values(params: &[Bound<'_, PyAny>]) -> Option<Vec<crate::sql::Value>> {
+    params.iter().map(sql_value).collect()
+}
+
+fn sql_outcome<'py>(
+    py: Python<'py>,
+    result: Result<crate::sql::Outcome, crate::sql::Failure>,
+) -> PyResult<Bound<'py, PyAny>> {
+    use crate::sql::{Failure, Value};
+    use pyo3::types::{PyBytes, PyTuple};
+    let out = match result {
+        Err(Failure::Sqlite { code, message }) => {
+            ("sqlite", code, message).into_pyobject(py)?.into_any()
+        }
+        Err(Failure::Programming(m)) => ("programming", m).into_pyobject(py)?.into_any(),
+        Err(Failure::Decline(why)) => ("decline", why).into_pyobject(py)?.into_any(),
+        Ok(o) => {
+            let mut rows = Vec::with_capacity(o.rows.len());
+            for row in o.rows {
+                let mut cells: Vec<Bound<'py, PyAny>> = Vec::with_capacity(row.len());
+                for (c, v) in row.into_iter().enumerate() {
+                    cells.push(match v {
+                        Value::Null => py.None().into_bound(py),
+                        Value::Int(x) => x.into_pyobject(py)?.into_any(),
+                        Value::Real(x) => x.into_pyobject(py)?.into_any(),
+                        Value::Blob(b) => PyBytes::new(py, &b).into_any(),
+                        Value::Text(t) => match String::from_utf8(t) {
+                            Ok(s) => s.into_pyobject(py)?.into_any(),
+                            Err(e) => {
+                                // CPython: "Could not decode to UTF-8 column '%s' with text '%s'",
+                                // the text cut at its first NUL.
+                                let bytes = e.into_bytes();
+                                let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+                                let name = o.columns.get(c).cloned().unwrap_or_default();
+                                let text = String::from_utf8_lossy(&bytes[..end]).into_owned();
+                                return Ok(("undecodable", name, text)
+                                    .into_pyobject(py)?
+                                    .into_any());
+                            }
+                        },
+                    });
+                }
+                rows.push(PyTuple::new(py, cells)?);
+            }
+            ("ok", o.columns, rows, o.rowcount, o.lastrowid)
+                .into_pyobject(py)?
+                .into_any()
+        }
+    };
+    Ok(out)
+}
+
+/// `cursor.execute(sql, params); cursor.fetchall()` on the connection whose
+/// `sqlite3*` is `db`. Returns ("ok", columns, rows, rowcount, lastrowid),
+/// ("sqlite", extended code, message), ("programming", message),
+/// ("undecodable", column, text) or ("decline", why).
+#[pyfunction]
+#[pyo3(signature = (db, sql, params, begin=None))]
+pub fn sql_execute<'py>(
+    py: Python<'py>,
+    db: usize,
+    sql: &str,
+    params: Vec<Bound<'py, PyAny>>,
+    begin: Option<String>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let Some(values) = sql_values(&params) else {
+        return ("decline", "a parameter Python must bind")
+            .into_pyobject(py)
+            .map(|t| t.into_any());
+    };
+    let result = py.detach(|| crate::sql::execute(db, sql, &values, begin.as_deref()));
+    sql_outcome(py, result)
+}
+
+/// `cursor.executemany(sql, param_sets)`; the same outcomes as `sql_execute`.
+#[pyfunction]
+#[pyo3(signature = (db, sql, param_sets, begin=None))]
+pub fn sql_executemany<'py>(
+    py: Python<'py>,
+    db: usize,
+    sql: &str,
+    param_sets: Vec<Vec<Bound<'py, PyAny>>>,
+    begin: Option<String>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut sets = Vec::with_capacity(param_sets.len());
+    for params in &param_sets {
+        let Some(values) = sql_values(params) else {
+            return ("decline", "a parameter Python must bind")
+                .into_pyobject(py)
+                .map(|t| t.into_any());
+        };
+        sets.push(values);
+    }
+    let result = py.detach(|| crate::sql::executemany(db, sql, &sets, begin.as_deref()));
+    sql_outcome(py, result)
+}
+
+/// `sqlite3_db_filename(db, "main")`, None when unbound.
+#[pyfunction]
+pub fn sql_db_filename(db: usize) -> Option<String> {
+    crate::sql::db_filename(db)
+}

@@ -20,6 +20,7 @@ mod py;
 pub mod rank;
 pub mod ratios;
 pub mod records;
+pub mod sql;
 pub mod sqlite_read;
 pub mod stats;
 pub mod util;
@@ -105,6 +106,9 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::key_ratio_fields, m)?)?;
     m.add_function(wrap_pyfunction!(py::sqlite_bind, m)?)?;
     m.add_function(wrap_pyfunction!(py::read_daily_ohlcv, m)?)?;
+    m.add_function(wrap_pyfunction!(py::sql_execute, m)?)?;
+    m.add_function(wrap_pyfunction!(py::sql_executemany, m)?)?;
+    m.add_function(wrap_pyfunction!(py::sql_db_filename, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;
