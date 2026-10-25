@@ -1533,28 +1533,13 @@ def _build_summary_rows(
                 elif abs(total_gain_display) <= 1e-9:
                     total_return_pct = 0.0
 
+            # A cash balance has no IRR of its own. Its external flows are only
+            # deposits and withdrawals, while most of what passes through it is
+            # sale proceeds and purchases inside the account, so an account
+            # funded by transferred-in stock looks like $690 deposited and
+            # $20,000 withdrawn: an "IRR" of 59,551%. The account's own return
+            # (its MWR) is the meaningful figure; the cash row shows none.
             stock_irr = np.nan
-            try:
-                # Enable IRR for cash
-                cf_dates, cf_values = get_cash_flows_for_symbol_account(
-                    CASH_SYMBOL_CSV,
-                    account,
-                    transactions_df,
-                    abs(market_value_local),
-                    is_transfer_a_flow=True,
-                    report_date=report_date,
-                )
-                if cf_dates and cf_values:
-                    for i in range(len(cf_dates)):
-                        d = cf_dates[i]
-                        if isinstance(d, (str, datetime)):
-                            cf_dates[i] = pd.to_datetime(d).date()
-
-                    duration_days = (cf_dates[-1] - cf_dates[0]).days
-                    if duration_days >= 365:
-                        stock_irr = calculate_irr(cf_dates, cf_values)
-            except Exception as e_irr_cash:
-                logging.debug(f"IRR skipped for cash {account}: {e_irr_cash}")
 
             div_yield_on_cost_pct_display = np.nan
 
