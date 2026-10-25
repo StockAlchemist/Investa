@@ -19,6 +19,7 @@ import numpy as np
 from datetime import date, datetime, timedelta
 import hashlib
 import os
+import weakref
 import config
 import logging
 import investa_core
@@ -510,6 +511,246 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
 
 
 # --- Cash Flow Helpers ---
+# Row types as both cash-flow builders compare them (lowercased, stripped),
+# coded for investa_core.holding_flows / mwr_flows.
+_FLOW_KINDS = {
+    "buy": 1,
+    "deposit": 2,
+    "sell": 3,
+    "withdrawal": 4,
+    "transfer": 5,
+    "short sell": 6,
+    "buy to cover": 7,
+    "dividend": 8,
+    "fees": 9,
+    "split": 10,
+    "stock split": 10,
+    "interest": 11,
+}
+_TRANSFER = _FLOW_KINDS["transfer"]
+
+
+def _numeric_column(df: pd.DataFrame, name: str, with_types: bool = False):
+    """`pd.to_numeric(row.get(name), errors="coerce")` for every row, as float64.
+
+    A missing column reads as None, hence NaN. A NumPy numeric column already
+    holds what to_numeric would return (iterating it yields Python numbers);
+    anything else is coerced cell by cell, as the originals did. With
+    `with_types`, also says which cells came back as NumPy scalars (to_numeric
+    turns the text "12.5" into one), whose type the arithmetic carries on.
+    """
+    n = len(df)
+    if name not in df.columns:
+        values, numpy_typed = np.full(n, np.nan), np.zeros(n, dtype=bool)
+    elif isinstance(df[name].dtype, np.dtype) and df[name].dtype.kind in "fiu":
+        values, numpy_typed = df[name].to_numpy(dtype=np.float64), np.zeros(n, dtype=bool)
+    else:
+        values, numpy_typed = np.empty(n, dtype=np.float64), np.zeros(n, dtype=bool)
+        for i, v in enumerate(df[name].tolist()):
+            v = pd.to_numeric(v, errors="coerce")
+            values[i] = np.nan if v is None or pd.isna(v) else float(v)
+            numpy_typed[i] = isinstance(v, np.generic)
+    return (values, numpy_typed) if with_types else values
+
+
+def _commission_column(df: pd.DataFrame) -> np.ndarray:
+    """Commission with NaN read as 0.0, as both builders treat it."""
+    values = _numeric_column(df, "Commission")
+    return np.where(np.isnan(values), 0.0, values)
+
+
+def _cell_text(values: Optional[list], i: int, default: str = "") -> str:
+    """`str(row.get(column, default))`: a missing column reads as the default."""
+    return default if values is None else str(values[i])
+
+
+class CashFlowLedger:
+    """A transactions frame read once, for any number of per-holding IRR flows.
+
+    `get_cash_flows_for_symbol_account` re-filtered the whole frame on every
+    call: an equality mask, a case-insensitive regex over every Note, and an
+    iterrows pass. That cost a summary about half its time (243 holdings,
+    780,000 regex searches). Here the rows are grouped by symbol once, each
+    account's mask is built once with the original's own pandas expressions,
+    and each row is parsed once. The flow rules run in investa_core.
+
+    Nothing is read until the first request, so a frame the original could
+    not read fails inside the caller's handler exactly as before.
+    """
+
+    def __init__(self, transactions_df: pd.DataFrame):
+        self.df = transactions_df
+        self._by_symbol: Optional[Dict[str, List[int]]] = None
+        self._account_masks: Dict[Any, np.ndarray] = {}
+        self._parsed = None
+
+    def _symbol_positions(self, symbol: Any) -> List[int]:
+        if not isinstance(symbol, str):
+            return np.flatnonzero((self.df["Symbol"] == symbol).to_numpy()).tolist()
+        if self._by_symbol is None:
+            groups: Dict[str, List[int]] = defaultdict(list)
+            for i, s in enumerate(self.df["Symbol"].tolist()):
+                if isinstance(s, str):
+                    groups[s].append(i)
+            self._by_symbol = groups
+        return self._by_symbol.get(symbol, [])
+
+    def _account_mask(self, account: Any) -> np.ndarray:
+        if account in self._account_masks:
+            return self._account_masks[account]
+        df = self.df
+        if "To Account" in df.columns:
+            mask = (df["Account"] == account) | (df["To Account"] == account)
+        else:
+            mask = df["Account"] == account
+        # Legacy transfers whose Account column is misaligned name the account
+        # in the Note. str.contains reads the account name as a regex.
+        if "Note" in df.columns:
+            mask |= df["Note"].str.contains(account, case=False, na=False) & (
+                df["Type"].str.lower() == "transfer"
+            )
+        mask = mask.to_numpy(dtype=bool)
+        self._account_masks[account] = mask
+        return mask
+
+    def _rows(self):
+        if self._parsed is None:
+            df = self.df
+            columns = df.columns
+
+            def texts(name):
+                return df[name].tolist() if name in columns else None
+
+            types = texts("Type")
+            self._parsed = {
+                "kind": np.array(
+                    [_FLOW_KINDS.get(_cell_text(types, i).lower().strip(), 0) for i in range(len(df))],
+                    dtype=np.uint8,
+                ),
+                "qty": _numeric_column(df, "Quantity"),
+                "price": _numeric_column(df, "Price/Share"),
+                "commission": _commission_column(df),
+                "total": _numeric_column(df, "Total Amount"),
+                "date": df["Date"].tolist(),
+                "account": texts("Account"),
+                "to_account": texts("To Account"),
+                "note": texts("Note"),
+            }
+        return self._parsed
+
+    def _sorted(self, positions: List[int]) -> List[int]:
+        """The positions in the original's `sort_values(["Date", "original_index"])`
+        order: a stable sort, missing keys last."""
+        if "original_index" not in self.df.columns:
+            raise KeyError("original_index")
+        dates = self._rows()["date"]
+        ids = self.df["original_index"]
+        id_values = ids.tolist()
+        clean = all(isinstance(dates[p], pd.Timestamp) and dates[p] is not pd.NaT for p in positions) and all(
+            isinstance(id_values[p], (int, np.integer)) for p in positions
+        )
+        if clean:
+            return sorted(positions, key=lambda p: (dates[p], id_values[p]))
+        keys = self.df.iloc[positions][["Date", "original_index"]].copy()
+        keys["_position"] = positions
+        return keys.sort_values(by=["Date", "original_index"])["_position"].tolist()
+
+    def flows_for(
+        self,
+        symbol: str,
+        account: Optional[str],
+        final_market_value: float,
+        is_transfer_a_flow: bool,
+        report_date: Optional[date] = None,
+    ) -> Tuple[List[date], List[float]]:
+        """`get_cash_flows_for_symbol_account` for one holding."""
+        positions = self._symbol_positions(symbol)
+        if account is not None:
+            mask = self._account_mask(account)
+            positions = [p for p in positions if mask[p]]
+        if not positions:
+            return [], []
+        order = self._sorted(positions)
+        rows = self._rows()
+        take = np.asarray(order, dtype=np.intp)
+        kind = rows["kind"][take]
+        tx_dates = [rows["date"][p].date() for p in order]
+
+        # A transfer's direction, when it counts as a flow: into the account
+        # (by To Account or "to <account>" in the Note) is money in (-), out
+        # of it is money out (+); when both or neither match, To Account decides.
+        direction = np.zeros(len(order), dtype=np.int8)
+        if is_transfer_a_flow:
+            for j, p in enumerate(order):
+                if kind[j] != _TRANSFER:
+                    continue
+                to_account = _cell_text(rows["to_account"], p).strip()
+                acct_col = _cell_text(rows["account"], p).strip()
+                note = _cell_text(rows["note"], p).lower()
+                is_from_note = f"from {account.lower()}" in note
+                is_to_note = f"to {account.lower()}" in note
+                is_incoming = (to_account == account) or is_to_note
+                is_outgoing = (acct_col == account) or is_from_note
+                if is_incoming and not is_outgoing:
+                    direction[j] = -1
+                elif is_outgoing and not is_incoming:
+                    direction[j] = 1
+                else:
+                    direction[j] = -1 if to_account == account else 1
+
+        flows = investa_core.holding_flows(
+            kind.tolist(),
+            rows["qty"][take].tolist(),
+            rows["price"][take].tolist(),
+            rows["commission"][take].tolist(),
+            rows["total"][take].tolist(),
+            direction.tolist(),
+            bool(symbol == CASH_SYMBOL_CSV),
+            symbol in SHORTABLE_SYMBOLS,
+            bool(is_transfer_a_flow),
+        )
+        dates_flows = defaultdict(float)
+        for tx_date, cash_flow_local in zip(tx_dates, flows):
+            if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
+                dates_flows[tx_date] += float(cash_flow_local)
+
+        sorted_dates = sorted(dates_flows.keys())
+        if not sorted_dates and abs(final_market_value) < 1e-9:
+            return [], []
+        final_dates = list(sorted_dates)
+        final_flows = [float(dates_flows[d]) for d in final_dates]
+        final_market_value_abs = (
+            abs(final_market_value) if pd.notna(final_market_value) else 0.0
+        )
+        if final_market_value_abs > 1e-9 and isinstance(report_date, date):
+            if not final_dates:
+                first_tx_date_for_holding = (
+                    self.df["Date"].iloc[order].min().date()
+                )
+                if report_date >= first_tx_date_for_holding:
+                    final_dates.append(report_date)
+                    final_flows.append(final_market_value_abs)
+                else:
+                    return [], []
+            elif report_date >= final_dates[-1]:
+                if final_dates[-1] == report_date:
+                    final_flows[-1] += final_market_value_abs
+                else:
+                    final_dates.append(report_date)
+                    final_flows.append(final_market_value_abs)
+
+        if len(final_dates) < 2:
+            return [], []
+        non_zero_final_flows = [cf for cf in final_flows if abs(cf) > 1e-9]
+        if (
+            not non_zero_final_flows
+            or all(cf >= -1e-9 for cf in non_zero_final_flows)
+            or all(cf <= 1e-9 for cf in non_zero_final_flows)
+        ):
+            return [], []
+        return final_dates, final_flows
+
+
 def get_cash_flows_for_symbol_account(
     symbol: str,
     account: Optional[str],
@@ -521,223 +762,23 @@ def get_cash_flows_for_symbol_account(
     """
     Extracts LOCAL currency cash flows for a specific symbol/account pair for IRR calculation.
 
-    Filters transactions for the given symbol and account. Calculates the cash flow
-    amount in the holding's local currency for each relevant transaction (buy, sell,
-    dividend, fees, shorting actions). Appends the final market value (in local currency)
-    as the last cash flow on the end_date.
-
-    Args:
-        symbol (str): The stock or ETF symbol.
-        account (str): The investment account name.
-        transactions (pd.DataFrame): The transactions DataFrame, filtered for the relevant
-                                     period and scope. Must contain 'Date', 'Symbol', 'Account',
-                                     'Type', 'Quantity', 'Price/Share', 'Commission',
-                                     'Total Amount', and 'Local Currency' columns.
-        final_market_value_local (float): The final market value of the holding in its
-                                          local currency as of the end_date.
-        end_date (date): The end date for the calculation period.
+    Filters transactions for the given symbol and account (``account=None`` takes
+    the symbol in every account). Each row's flow in the holding's local currency:
+    buys and fees negative, sales and dividends positive, transfers by direction
+    when ``is_transfer_a_flow``, shorting actions for shortable symbols. The final
+    market value is added as a positive flow on ``report_date``.
 
     Returns:
-        Tuple[List[date], List[float]]: A tuple containing:
-            - List[date]: A list of dates for the cash flows, sorted chronologically.
-            - List[float]: A list of cash flows in the local currency. Buys/fees are negative,
-                           sells/dividends are positive. The final market value is added
-                           as a positive flow on the end_date.
-            Returns ([], []) if no relevant transactions or final value exist, or if the
-            cash flow pattern is invalid for IRR.
+        Tuple[List[date], List[float]]: the dates (sorted) and their flows, or
+        ([], []) when there are none or they cannot have an IRR (fewer than two,
+        or all of one sign).
+
+    For many holdings of one frame, build a ``CashFlowLedger`` once and call
+    ``flows_for``; this reads the frame afresh.
     """
-    # --- MODIFIED: Handle missing 'To Account' column gracefully ---
-    if account is None:
-        symbol_account_tx_filtered = transactions_df[
-            (transactions_df["Symbol"] == symbol)
-        ]
-    elif "To Account" in transactions_df.columns:
-        account_mask = (transactions_df["Account"] == account) | (
-            transactions_df["To Account"] == account
-        )
-        # --- ADDED: Check Note for account name (handles legacy transfers where Account col is misaligned) ---
-        if "Note" in transactions_df.columns:
-            account_mask |= transactions_df["Note"].str.contains(
-                account, case=False, na=False
-            ) & (transactions_df["Type"].str.lower() == "transfer")
-
-        symbol_account_tx_filtered = transactions_df[
-            (transactions_df["Symbol"] == symbol) & account_mask
-        ]
-    else:
-        # If 'To Account' is missing, fallback to filtering only by 'Account'
-        account_mask = transactions_df["Account"] == account
-        if "Note" in transactions_df.columns:
-            account_mask |= transactions_df["Note"].str.contains(
-                account, case=False, na=False
-            ) & (transactions_df["Type"].str.lower() == "transfer")
-
-        symbol_account_tx_filtered = transactions_df[
-            (transactions_df["Symbol"] == symbol) & account_mask
-        ]
-    # --- END MODIFIED ---
-    if symbol_account_tx_filtered.empty:
-        return [], []
-    symbol_account_tx = symbol_account_tx_filtered.copy()
-    dates_flows = defaultdict(float)
-    symbol_account_tx.sort_values(
-        by=["Date", "original_index"], inplace=True, ascending=True
+    return CashFlowLedger(transactions_df).flows_for(
+        symbol, account, final_market_value, is_transfer_a_flow, report_date
     )
-
-    last_seen_price = None
-    for _, row in symbol_account_tx.iterrows():
-        tx_type = str(row.get("Type", "")).lower().strip()
-        qty_val = row.get("Quantity")
-        price_val = row.get("Price/Share")
-        commission_val = row.get("Commission")
-        total_amount_val = row.get("Total Amount")
-        qty = pd.to_numeric(qty_val, errors="coerce")
-        price_local = pd.to_numeric(price_val, errors="coerce")
-        commission_local_raw = pd.to_numeric(commission_val, errors="coerce")
-        commission_local = (
-            0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
-        )
-        total_amount_local = pd.to_numeric(total_amount_val, errors="coerce")
-
-        if pd.notna(price_local) and price_local > 1e-9:
-            last_seen_price = price_local
-        elif pd.notna(total_amount_local) and pd.notna(qty) and abs(qty) > 1e-9:
-            last_seen_price = abs(total_amount_local / qty)
-        tx_date = row["Date"].date()
-        cash_flow_local = 0.0
-        qty_abs = abs(qty) if pd.notna(qty) else 0.0
-
-        total_amount_abs = (
-            abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
-        )
-        qty_val_abs = abs(qty) if pd.notna(qty) else 0.0
-        cash_amt = total_amount_abs if total_amount_abs > 1e-9 else qty_val_abs
-
-        if symbol == CASH_SYMBOL_CSV:
-            if tx_type == "buy" or tx_type == "deposit":
-                cash_flow_local = -(cash_amt + commission_local)
-            elif tx_type == "sell" or tx_type == "withdrawal":
-                cash_flow_local = cash_amt - commission_local
-        else:
-            if tx_type == "buy" or tx_type == "deposit":
-                if pd.notna(qty) and qty > 0 and pd.notna(price_local):
-                    cash_flow_local = -((qty_abs * price_local) + commission_local)
-            elif tx_type == "sell" or tx_type == "withdrawal":
-                if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
-                    cash_flow_local = (qty_abs * price_local) - commission_local
-
-        if tx_type == "transfer" and is_transfer_a_flow:
-            # If transfers are treated as flows, an incoming transfer is like a "buy" (outflow of cash to acquire asset)
-            # and an outgoing transfer is like a "sell" (inflow of cash as asset is disposed).
-            # We determine if it's incoming or outgoing based on the 'To Account' column.
-            to_account = str(row.get("To Account", "")).strip()
-
-            if symbol == CASH_SYMBOL_CSV:
-                flow = cash_amt
-            else:
-                # Fallback for missing price in transfers
-                price_to_use = price_local
-                if (
-                    pd.isna(price_to_use) or price_to_use <= 1e-9
-                ) and last_seen_price is not None:
-                    price_to_use = last_seen_price
-
-                flow = qty * price_to_use if pd.notna(price_to_use) else 0.0
-
-            # Determine direction if Account matches but To Account doesn't, or vice-versa, or Note matches
-            acct_col = str(row.get("Account", "")).strip()
-            note = str(row.get("Note", "")).lower()
-
-            # Refined direction detection
-            is_from_note = f"from {account.lower()}" in note
-            is_to_note = f"to {account.lower()}" in note
-
-            is_incoming = (to_account == account) or is_to_note
-            is_outgoing = (acct_col == account) or is_from_note
-
-            if is_incoming and not is_outgoing:
-                # This is a transfer IN to the specified account. Treat as a cash outflow (like a buy).
-                cash_flow_local = -flow
-            elif is_outgoing and not is_incoming:
-                # This is a transfer OUT of the specified account. Treat as a cash inflow (like a sell).
-                cash_flow_local = flow
-            else:
-                # Ambiguous or both columns match (internal). Fallback to To Account check.
-                if to_account == account:
-                    cash_flow_local = -flow
-                else:
-                    cash_flow_local = flow
-        elif tx_type == "short sell" and symbol in SHORTABLE_SYMBOLS:
-            if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
-                cash_flow_local = (qty_abs * price_local) - commission_local
-        elif tx_type == "buy to cover" and symbol in SHORTABLE_SYMBOLS:
-            if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
-                cash_flow_local = -((qty_abs * price_local) + commission_local)
-        elif tx_type == "dividend":
-            dividend_amount_local_cf = 0.0
-            if pd.notna(total_amount_local):
-                dividend_amount_local_cf = total_amount_local
-            elif pd.notna(price_local):
-                dividend_amount_local_cf = (
-                    (qty_abs * price_local)
-                    if (pd.notna(qty) and qty_abs > 0)
-                    else price_local
-                )
-            if pd.notna(dividend_amount_local_cf):
-                cash_flow_local = dividend_amount_local_cf - commission_local
-        elif tx_type == "fees":
-            cash_flow_local = -(abs(commission_local))
-        elif tx_type in ["split", "stock split"]:
-            cash_flow_local = 0.0
-            if commission_local != 0:
-                cash_flow_local = -abs(commission_local)
-
-        if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
-            try:
-                flow_to_add = float(cash_flow_local)
-                dates_flows[tx_date] += flow_to_add
-            except (ValueError, TypeError):
-                logging.warning(
-                    f"Warning IRR CF Gen ({symbol}/{account}): Could not convert cash_flow_local {cash_flow_local} to float. Skipping flow."
-                )
-
-    sorted_dates = sorted(dates_flows.keys())
-    if not sorted_dates and abs(final_market_value) < 1e-9:
-        return [], []
-    final_dates = list(sorted_dates)
-    final_flows = [float(dates_flows[d]) for d in final_dates]
-    final_market_value_abs = (
-        abs(final_market_value) if pd.notna(final_market_value) else 0.0
-    )
-    if final_market_value_abs > 1e-9 and isinstance(report_date, date):
-        if not final_dates:
-            first_tx_date_for_holding = (
-                symbol_account_tx["Date"].min().date()
-                if not symbol_account_tx.empty
-                else report_date
-            )
-            if report_date >= first_tx_date_for_holding:
-                final_dates.append(report_date)
-                final_flows.append(final_market_value_abs)
-            else:
-                return [], []
-        elif report_date >= final_dates[-1]:
-            if final_dates[-1] == report_date:
-                final_flows[-1] += final_market_value_abs
-            else:
-                final_dates.append(report_date)
-                final_flows.append(final_market_value_abs)
-
-    if len(final_dates) < 2:
-        return [], []
-    non_zero_final_flows = [cf for cf in final_flows if abs(cf) > 1e-9]
-    if (
-        not non_zero_final_flows
-        or all(cf >= -1e-9 for cf in non_zero_final_flows)
-        or all(cf <= 1e-9 for cf in non_zero_final_flows)
-    ):
-        return [], []
-    return final_dates, final_flows
 
 
 def get_cash_flows_for_mwr(
@@ -758,35 +799,24 @@ def get_cash_flows_for_mwr(
     """
     Calculates cash flows for Money-Weighted Return (MWR) for a specific account in the target currency.
 
-    Processes transactions for a single account, calculating the cash flow impact of each
-    transaction (buys, sells, dividends, fees, cash deposits/withdrawals) in its local currency.
-    Converts these local currency flows to the `target_currency`.
+    Each transaction's flow in its local currency, converted to `target_currency` at
+    the `historical_fx_rates` rate for its date and currency ((date, currency) ->
+    rate), falling back to the current `fx_rates`. Transactions after `end_date`
+    are skipped.
 
-    CRITICAL CHANGE: Uses `historical_fx_rates` (if available) to convert flows using a pre-calculated
-    rate specific to the transaction date. The `historical_fx_rates` dict is expected to map
-    (date, local_currency) -> conversion_rate_to_target.
-    This ensures accurate IRR for non-USD currencies by capturing FX fluctuations.
-    Falls back to `fx_rates` (current/static) if historical data is missing.
-
-    Args:
-        account_transactions (pd.DataFrame): The transactions DataFrame filtered for a specific account.
-        final_account_market_value (float): The final market value of the entire account in the
-                                            `target_currency` as of the end_date.
-        end_date (date): The end date for the calculation period.
-        target_currency (str): The target currency for the MWR calculation.
-        fx_rates (Optional[Dict[str, float]]): Current FX rates (fallback).
-        display_currency (str): The display currency (informational).
-        historical_fx_rates (Optional[Dict[Tuple[date, str], float]]): Dictionary mapping (Date, LocalCurrency)
-            to the conversion rate to the target currency.
+    Under `flow_basis="portfolio"` only money crossing the scope counts: `$CASH`
+    deposits and withdrawals (see is_external_flow_row) and transfers into or out
+    of `include_accounts` (by default every account in the frame). Under
+    "per_trade" every trade is a flow. The per-row rules run in investa_core.
 
     Returns:
         Tuple[List[date], List[float]]: Sorted dates and cash flows in target currency.
     """
     if account_transactions.empty:
         return [], []
-    acc_tx_copy = account_transactions.copy()
-    dates_flows = defaultdict(float)
-    acc_tx_copy.sort_values(by=["Date", "original_index"], inplace=True, ascending=True)
+    acc_tx = account_transactions.sort_values(
+        by=["Date", "original_index"], ascending=True
+    )
 
     # Pre-calculate the scope of accounts for "Internal vs External" flow detection.
     # Transfers between accounts WITHIN this scope are 0-flow (internal).
@@ -801,166 +831,60 @@ def get_cash_flows_for_mwr(
             all_accs.update(account_transactions["To Account"].dropna().unique())
         included_set = {str(a).strip().upper() for a in all_accs if a}
 
-    for _, row in acc_tx_copy.iterrows():
-        tx_type = str(row["Type"]).lower().strip()
-        symbol = row["Symbol"]
-        qty = pd.to_numeric(row["Quantity"], errors="coerce")
-        price_local = pd.to_numeric(row["Price/Share"], errors="coerce")
-        commission_val = row.get("Commission")
-        total_amount_local = pd.to_numeric(row.get("Total Amount"), errors="coerce")
-        commission_local_raw = pd.to_numeric(commission_val, errors="coerce")
-        commission_local = (
-            0.0 if pd.isna(commission_local_raw) else float(commission_local_raw)
-        )
-        tx_date = row["Date"].date()
+    types = [str(t).lower().strip() for t in acc_tx["Type"].tolist()]
+    symbols = acc_tx["Symbol"].tolist()
+    acc_tx["Quantity"], acc_tx["Price/Share"]  # read strictly, as the original did
+    qty, qty_np = _numeric_column(acc_tx, "Quantity", with_types=True)
+    price, price_np = _numeric_column(acc_tx, "Price/Share", with_types=True)
+    commission = _commission_column(acc_tx)
+    total, total_np = _numeric_column(acc_tx, "Total Amount", with_types=True)
+    tx_dates = [d.date() for d in acc_tx["Date"].tolist()]
 
-        # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
-        if tx_date > end_date:
+    # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
+    kept = [i for i, d in enumerate(tx_dates) if not d > end_date]
+    if not kept:
+        local_currencies: list = []
+    else:
+        local_currencies = acc_tx["Local Currency"].tolist()
+
+    accounts = acc_tx["Account"].tolist() if "Account" in acc_tx.columns else None
+    to_accounts = acc_tx["To Account"].tolist() if "To Account" in acc_tx.columns else None
+    kind = np.array([_FLOW_KINDS.get(types[i], 0) for i in kept], dtype=np.uint8)
+    # A transfer crossing the scope: leaving it is money out (+), entering it
+    # money in (-); within it, or outside it entirely, no flow.
+    direction = np.zeros(len(kept), dtype=np.int8)
+    for j, i in enumerate(kept):
+        if kind[j] != _TRANSFER:
             continue
+        acct = _cell_text(accounts, i).strip().upper()
+        to_acct = _cell_text(to_accounts, i).strip().upper()
+        is_outbound = acct in included_set
+        is_inbound = bool(to_acct) and to_acct in included_set
+        if is_outbound and not is_inbound:
+            direction[j] = 1
+        elif not is_outbound and is_inbound:
+            direction[j] = -1
 
-        local_currency = row["Local Currency"]
-        cash_flow_local = 0.0
-        qty_abs = abs(qty) if pd.notna(qty) else 0.0
+    take = np.asarray(kept, dtype=np.intp)
+    flows = investa_core.mwr_flows(
+        kind.tolist(),
+        qty[take].tolist(),
+        price[take].tolist(),
+        commission[take].tolist(),
+        total[take].tolist(),
+        direction.tolist(),
+        [bool(symbols[i] == CASH_SYMBOL_CSV) for i in kept],
+        flow_basis == "portfolio",
+    )
 
-        # Under "portfolio" flow basis, buys/sells/dividends/short-sells/buy-to-cover/fees
-        # are INTERNAL rotations of cash within the portfolio and emit NO external flow.
-        # Only $CASH deposit/withdrawal and scope-crossing transfers contribute flows.
-        # Under "per_trade" basis (default, used by symbol-level IRR), every trade is a
-        # flow from that symbol/account's perspective.
-        portfolio_basis = flow_basis == "portfolio"
-
-        if symbol != CASH_SYMBOL_CSV:
-            if portfolio_basis:
-                if tx_type == "transfer":
-                    is_outbound = False
-                    is_inbound = False
-                    acct = str(row.get("Account", "")).strip().upper()
-                    to_acct = str(row.get("To Account", "")).strip().upper()
-
-                    if acct in included_set:
-                        is_outbound = True
-                    if to_acct and to_acct in included_set:
-                        is_inbound = True
-
-                    if is_outbound and not is_inbound:
-                        if pd.notna(qty) and pd.notna(price_local):
-                            cash_flow_local = (abs(qty) * price_local) - abs(
-                                commission_local
-                            )
-                    elif not is_outbound and is_inbound:
-                        if pd.notna(qty) and pd.notna(price_local):
-                            cash_flow_local = -(abs(qty) * price_local)
-                # buy/sell/dividend/short sell/buy to cover/fees/tax/interest: 0.0 (internal)
-            elif tx_type == "buy" or tx_type == "deposit":
-                # External asset contribution or purchase
-                if pd.notna(qty) and pd.notna(price_local):
-                    cash_flow_local = -(
-                        (qty_abs * price_local) + commission_local
-                    )  # OUT from pocket (-)
-            elif tx_type == "sell" or tx_type == "withdrawal":
-                # External asset removal or sale
-                if pd.notna(qty) and pd.notna(price_local):
-                    cash_flow_local = (
-                        qty_abs * price_local
-                    ) - commission_local  # IN to pocket (+)
-            elif tx_type == "dividend":
-                dividend_amount_local_cf = 0.0
-                if pd.notna(total_amount_local):
-                    dividend_amount_local_cf = total_amount_local
-                elif pd.notna(price_local):
-                    dividend_amount_local_cf = (
-                        (qty_abs * price_local)
-                        if (pd.notna(qty) and qty_abs > 0)
-                        else price_local
-                    )
-                if pd.notna(dividend_amount_local_cf):
-                    cash_flow_local = dividend_amount_local_cf - commission_local
-            elif tx_type == "short sell":
-                if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
-                    cash_flow_local = (qty_abs * price_local) - commission_local
-            elif tx_type == "buy to cover":
-                if pd.notna(price_local) and pd.notna(qty) and qty_abs > 0:
-                    cash_flow_local = -((qty_abs * price_local) + commission_local)
-            elif tx_type == "fees":
-                cash_flow_local = -abs(
-                    commission_local
-                )  # BUG-08 FIX: Use abs() consistently
-            elif tx_type == "transfer":
-                # Asset Transfer logic
-                is_outbound = False
-                is_inbound = False
-                acct = str(row.get("Account", "")).strip().upper()
-                to_acct = str(row.get("To Account", "")).strip().upper()
-
-                if acct in included_set:
-                    is_outbound = True
-                if to_acct and to_acct in included_set:
-                    is_inbound = True
-
-                if is_outbound and not is_inbound:
-                    # Asset leaving scope -> Withdrawal -> Positive MWR Flow
-                    if pd.notna(qty) and pd.notna(price_local):
-                        cash_flow_local = (abs(qty) * price_local) - abs(
-                            commission_local
-                        )  # BUG-09 FIX: Subtract commission (broker takes it)
-                elif not is_outbound and is_inbound:
-                    # Asset entering scope -> Deposit -> Negative MWR Flow
-                    if pd.notna(qty) and pd.notna(price_local):
-                        cash_flow_local = -(abs(qty) * price_local)
-
-        elif symbol == CASH_SYMBOL_CSV:
-            total_amount_abs = (
-                abs(total_amount_local) if pd.notna(total_amount_local) else 0.0
-            )
-            qty_val_abs = abs(qty) if pd.notna(qty) else 0.0
-            cash_amt = total_amount_abs if total_amount_abs > 1e-9 else qty_val_abs
-
-            if portfolio_basis:
-                # Portfolio-level MWR: use the centralized external-flow
-                # classifier (see is_external_flow_row above). Convention is
-                # "always external", so Note content is NOT inspected:
-                #   - $CASH Deposit/Withdrawal → flow, whatever the Note
-                #     (including "Auto-generated:" synthetic per-trade entries)
-                #   - $CASH buy/sell (settlement-style bookkeeping) → 0
-                #   - $CASH dividend/interest → 0 (internal income)
-                # Filtering the synthetic rows out inflates early-year returns;
-                # see tests/test_external_flow_classifier.py for the rationale.
-                # Same definition as the TWR engine — see
-                # _calculate_daily_net_cash_flow_vectorized in portfolio_cashflows.py.
-                if is_external_flow_row(symbol, tx_type, row.get("Note", "")):
-                    if tx_type == "deposit":
-                        cash_flow_local = -(cash_amt + commission_local)
-                    elif tx_type == "withdrawal":
-                        cash_flow_local = cash_amt - commission_local
-                # else: 0 (internal trade rotation, synthetic, or income on cash)
-            elif tx_type in ["deposit", "buy"]:
-                # External cash deposit (legacy per_trade)
-                cash_flow_local = -(cash_amt + commission_local)  # OUT from pocket (-)
-            elif tx_type in ["withdrawal", "sell"]:
-                # External cash withdrawal (legacy per_trade)
-                cash_flow_local = cash_amt - commission_local  # IN to pocket (+)
-            elif tx_type in ["dividend", "interest"]:
-                # Internal interest/dividends on cash are NOT external flows
-                cash_flow_local = 0.0
-            elif tx_type == "transfer":
-                # Cash Transfer logic
-                is_outbound = False
-                is_inbound = False
-                acct = str(row.get("Account", "")).strip().upper()
-                to_acct = str(row.get("To Account", "")).strip().upper()
-
-                if acct in included_set:
-                    is_outbound = True
-                if to_acct and to_acct in included_set:
-                    is_inbound = True
-
-                if is_outbound and not is_inbound:
-                    # Money leaving the scope -> Withdrawal -> Positive MWR Flow
-                    cash_flow_local = cash_amt - commission_local
-                elif not is_outbound and is_inbound:
-                    # Money entering the scope -> Deposit -> Negative MWR Flow
-                    cash_flow_local = -(cash_amt + commission_local)
-
+    dates_flows = defaultdict(float)
+    for i, (cash_flow_local, uses) in zip(kept, flows):
+        if uses and (
+            (uses & 1 and qty_np[i]) or (uses & 2 and price_np[i]) or (uses & 4 and total_np[i])
+        ):
+            cash_flow_local = np.float64(cash_flow_local)
+        tx_date = tx_dates[i]
+        local_currency = local_currencies[i]
         cash_flow_target = cash_flow_local
         if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
             if local_currency != target_currency:
@@ -968,10 +892,6 @@ def get_cash_flows_for_mwr(
                 # Try Historical Lookup
                 if historical_fx_rates:
                     lookup_date = tx_date
-                    if isinstance(lookup_date, pd.Timestamp):
-                        lookup_date = lookup_date.date()
-                    elif isinstance(lookup_date, datetime):
-                        lookup_date = lookup_date.date()
                     if (lookup_date, local_currency) in historical_fx_rates:
                         rate = historical_fx_rates[(lookup_date, local_currency)]
 
@@ -1133,6 +1053,69 @@ def get_conversion_rate(
 
 
 # --- Historical Price/Rate Helpers ---
+_EPOCH_ORDINAL = date(1970, 1, 1).toordinal()
+_DAY_NS = 86_400_000_000_000
+_TS_MIN_NS, _TS_MAX_NS = pd.Timestamp.min.value, pd.Timestamp.max.value
+# id(frame) -> (weakref to it, its shape signature, PriceTable or None)
+_PRICE_TABLES: Dict[int, Tuple[Any, Any, Any]] = {}
+
+
+def _price_table(df: pd.DataFrame) -> Optional["investa_core.PriceTable"]:
+    """The frame's lookup table, built once per frame, or None to use pandas.
+
+    Covers what a request meets in practice (daily FX and price frames on a
+    naive or UTC DatetimeIndex with a numeric price column), with the original's
+    semantics exactly: `asof` takes the last row at or before the day with no
+    NaN in any column, and a day before the first row takes that row's price.
+    Price frames are treated as immutable once built, as the market-data cache
+    already shares them between requests. A frame whose length, columns or
+    first/last date change gets a new table.
+    """
+    key = id(df)
+    signature = (len(df), tuple(df.columns), df.index[0], df.index[-1])
+    hit = _PRICE_TABLES.get(key)
+    if hit is not None and hit[0]() is df and hit[1] == signature:
+        return hit[2]
+    table = _build_price_table(df)
+    try:
+        ref = weakref.ref(df, lambda _r, k=key: _PRICE_TABLES.pop(k, None))
+    except TypeError:
+        return table
+    _PRICE_TABLES[key] = (ref, signature, table)
+    return table
+
+
+def _build_price_table(df: pd.DataFrame) -> Optional["investa_core.PriceTable"]:
+    idx = df.index
+    if not isinstance(idx, pd.DatetimeIndex):
+        return None
+    if idx.tz is not None and str(idx.tz) != "UTC":
+        return None  # midnight in another zone: leave the localisation to pandas
+    if not df.columns.is_unique:
+        return None
+    columns = [c for c in ("price", "Adj Close", "Close") if c in df.columns]
+    if not columns:
+        return None
+    column = df[columns[0]]
+    if not pd.api.types.is_numeric_dtype(column) or pd.api.types.is_bool_dtype(column):
+        return None
+    if not idx.is_monotonic_increasing:
+        df = df.sort_index()  # as the original sorts before its asof
+        column = df[columns[0]]
+    valid = ~df.isna().any(axis=1).to_numpy()
+    try:
+        ticks = df.index.as_unit("ns").asi8  # an index may count in s/ms/us
+    except (ValueError, OverflowError):
+        return None
+    values = column.to_numpy(dtype=np.float64)
+    return investa_core.PriceTable(
+        np.ascontiguousarray(ticks[valid]),
+        np.ascontiguousarray(values[valid]),
+        int(ticks[0]),
+        float(values[0]),
+    )
+
+
 def get_historical_price(
     symbol_key: str, target_date: date, prices_dict: Dict[str, pd.DataFrame]
 ) -> float:
@@ -1167,7 +1150,14 @@ def get_historical_price(
     # Avoid modifying the original DataFrame in prices_dict (it might be shared)
     df = prices_dict[symbol_key]
 
-    # DEBUG: Trace THB calls - REMOVED
+    # A calendar day against a frame the Rust table covers: binary search
+    # instead of a pandas asof call (same answer, see _price_table).
+    if type(target_date) is date:
+        ns = (target_date.toordinal() - _EPOCH_ORDINAL) * _DAY_NS
+        if _TS_MIN_NS <= ns <= _TS_MAX_NS:
+            table = _price_table(df)
+            if table is not None:
+                return table.asof(ns)
 
     try:
         # Optimization: Use asof for efficient lookup

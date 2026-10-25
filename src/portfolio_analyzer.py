@@ -63,7 +63,7 @@ try:
         is_cash_symbol,
         get_conversion_rate,  # Used by _build_summary_rows
         calculate_irr,  # Used by _build_summary_rows
-        get_cash_flows_for_symbol_account,  # Used by _build_summary_rows
+        CashFlowLedger,  # Used by _build_summary_rows
         safe_sum,  # Used by _calculate_aggregate_metrics
         get_currency_symbol_from_code,
         get_historical_rate_via_usd_bridge,  # Added for dividend history
@@ -692,6 +692,9 @@ def _build_summary_rows(
         else:
             stock_holdings[holding_key] = data
 
+    # Every holding's IRR flows come from one read of the ledger.
+    cash_flow_ledger = CashFlowLedger(transactions_df)
+
     for holding_key, data in stock_holdings.items():
         symbol, account = holding_key
         current_qty = data.get("qty", 0.0)
@@ -1231,10 +1234,9 @@ def _build_summary_rows(
                 if abs(current_qty) > 1e-9 and pd.notna(market_value_local)
                 else 0.0
             )
-            cf_dates, cf_values = get_cash_flows_for_symbol_account(
+            cf_dates, cf_values = cash_flow_ledger.flows_for(
                 symbol,
                 account,
-                transactions_df,  # The filtered transactions DataFrame
                 market_value_local_for_irr,  # The final value of this specific holding
                 is_transfer_a_flow=True,  # ADDED: Treat transfers as flows for IRR
                 report_date=report_date,  # The date of the final value
@@ -1687,10 +1689,9 @@ def _build_summary_rows(
         for sym, total_mv_local in symbol_agg_mvs.items():
             try:
                 # With account=None and is_transfer_a_flow=False, it gets true flows ignoring internal transfers
-                cf_dates, cf_values = get_cash_flows_for_symbol_account(
+                cf_dates, cf_values = cash_flow_ledger.flows_for(
                     symbol=sym,
                     account=None,
-                    transactions_df=transactions_df,
                     final_market_value=float(total_mv_local),
                     is_transfer_a_flow=False,
                     report_date=report_date,

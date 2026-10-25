@@ -1479,3 +1479,135 @@ fn triple(py: Python<'_>, a: Vec<f64>, b: Vec<f64>, c: Vec<f64>) -> TripleOut<'_
         Array1::from_vec(c).into_pyarray(py),
     )
 }
+
+// --- asof.rs: historical price lookups -------------------------------------
+
+/// `get_historical_price` for one frame: built once, then asked per date.
+#[pyclass(name = "PriceTable", module = "investa_core", frozen)]
+pub struct PyPriceTable(crate::asof::PriceTable);
+
+#[pymethods]
+impl PyPriceTable {
+    /// `ticks`/`values`: the rows with no NaN in any column (ascending UTC ns
+    /// and their prices); `first_tick`/`first_value`: the frame's first row.
+    #[new]
+    fn new(
+        ticks: PyReadonlyArray1<'_, i64>,
+        values: PyReadonlyArray1<'_, f64>,
+        first_tick: i64,
+        first_value: f64,
+    ) -> PyResult<Self> {
+        let (t, v) = (view(&ticks).into_owned(), view(&values).into_owned());
+        if t.len() != v.len() {
+            return Err(PyValueError::new_err(
+                "PriceTable: ticks and values differ in length",
+            ));
+        }
+        if t.windows(2).any(|w| w[1] < w[0]) {
+            return Err(PyValueError::new_err("PriceTable: ticks must be ascending"));
+        }
+        Ok(PyPriceTable(crate::asof::PriceTable::new(
+            t,
+            v,
+            first_tick,
+            first_value,
+        )))
+    }
+
+    /// The price on UTC tick `t`, or NaN.
+    fn asof(&self, t: i64) -> f64 {
+        self.0.asof(t)
+    }
+}
+
+// --- cashflows.rs: IRR and MWR cash flows ----------------------------------
+
+fn flow_rows(
+    kind: &[u8],
+    qty: &[f64],
+    price: &[f64],
+    commission: &[f64],
+    total: &[f64],
+    direction: &[i8],
+) -> PyResult<Vec<crate::cashflows::Row>> {
+    let n = kind.len();
+    if [
+        qty.len(),
+        price.len(),
+        commission.len(),
+        total.len(),
+        direction.len(),
+    ]
+    .iter()
+    .any(|&l| l != n)
+    {
+        return Err(PyValueError::new_err(
+            "cash flows: columns differ in length",
+        ));
+    }
+    (0..n)
+        .map(|i| {
+            let k = crate::cashflows::Kind::from_code(kind[i]).ok_or_else(|| {
+                PyValueError::new_err(format!("cash flows: unknown kind {}", kind[i]))
+            })?;
+            Ok(crate::cashflows::Row {
+                kind: k,
+                qty: qty[i],
+                price: price[i],
+                commission: commission[i],
+                total: total[i],
+                direction: direction[i],
+            })
+        })
+        .collect()
+}
+
+/// `get_cash_flows_for_symbol_account`'s flow per row (sorted by date, id).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn holding_flows(
+    kind: Vec<u8>,
+    qty: Vec<f64>,
+    price: Vec<f64>,
+    commission: Vec<f64>,
+    total: Vec<f64>,
+    direction: Vec<i8>,
+    is_cash: bool,
+    shortable: bool,
+    transfer_is_flow: bool,
+) -> PyResult<Vec<f64>> {
+    let rows = flow_rows(&kind, &qty, &price, &commission, &total, &direction)?;
+    Ok(crate::cashflows::holding_flows(
+        &rows,
+        is_cash,
+        shortable,
+        transfer_is_flow,
+    ))
+}
+
+/// `get_cash_flows_for_mwr`'s local-currency flow per row, and which inputs
+/// it used (bits: 1 qty, 2 price, 4 total).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn mwr_flows(
+    kind: Vec<u8>,
+    qty: Vec<f64>,
+    price: Vec<f64>,
+    commission: Vec<f64>,
+    total: Vec<f64>,
+    direction: Vec<i8>,
+    is_cash: Vec<bool>,
+    portfolio_basis: bool,
+) -> PyResult<Vec<(f64, u8)>> {
+    let rows = flow_rows(&kind, &qty, &price, &commission, &total, &direction)?;
+    if is_cash.len() != rows.len() {
+        return Err(PyValueError::new_err(
+            "mwr_flows: is_cash differs in length",
+        ));
+    }
+    Ok(crate::cashflows::mwr_flows(
+        &rows,
+        &is_cash,
+        portfolio_basis,
+    ))
+}

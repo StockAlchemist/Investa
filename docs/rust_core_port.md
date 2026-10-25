@@ -47,6 +47,7 @@ The crate builds in four places:
 | 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
 | 5 | `projections`; the aggregations in `valuation_history`, `strategies` and `track_record` | **Done** |
 | 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | **Done** |
+| 7 | What the final benchmark left on the request path: (a) the historical FX lookup and the IRR/MWR cash flows; (b) statement assembly and the ratio history | (a) **Done**; (b) to do |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -333,8 +334,38 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 - **Against Numba the kernels are 1.3–1.7× faster,** except the single-date holdings kernel. It is about 10% slower, but at 40 µs and off the request path.
 - **Nothing changed in the numbers:** every area is bitwise identical to the original on fuzzed and real inputs.
 
+## Phase 7a (25 Oct 2026): historical FX lookups and the IRR/MWR cash flows
+
+The final benchmark's profile put most of a summary's remaining time here, in pandas called once per row or per holding rather than in arithmetic.
+
+**The historical lookup** (`asof.rs`): `get_historical_price` made a pandas `asof` call for each of about 1,300 lookups per summary. Each price frame now gets an `investa_core.PriceTable`, built once and found again by the frame's identity, which is checked by weak reference, length, columns and first and last dates.
+- A plain-date lookup becomes a binary search.
+- The table reproduces `DataFrame.asof` exactly: it takes the last row at or before the day with no NaN in *any* column, and NaN when there is none. For a day before the first row, the original backfills with that row's price even if another column of the row is NaN, and the table does the same.
+- What the table doesn't cover keeps the original pandas path: indexes in another time zone, datetime targets, dates outside the nanosecond range, and frames without a numeric price column. An index stored in s/ms/us is converted to nanoseconds first.
+- Price frames are treated as immutable once built, as the market-data cache already shares them between requests.
+
+**The cash flows** (`cashflows.rs`): `get_cash_flows_for_symbol_account` re-filtered the whole ledger for every holding. Each call ran an equality mask, a case-insensitive regex over every Note (780,000 searches per summary) and an `iterrows` pass. `get_cash_flows_for_mwr` ran `iterrows` with four `pd.to_numeric` calls per row.
+- A `CashFlowLedger` now reads the frame once. It groups rows by symbol, builds each account's mask once with the original's own pandas expressions, and parses each row once. `_build_summary_rows` shares one ledger across all its holdings.
+- Every row's flow is computed in Rust, branch for branch, for both builders.
+- Python keeps the row selection and sort, each transfer's direction (decided from account names and Notes), the MWR's FX conversion and the result assembly.
+- A text cell that `pd.to_numeric` turns into a NumPy scalar makes the original's MWR flow a NumPy float, and the IRR solver treats NumPy floats differently. So Rust reports which inputs each flow used, and the shim gives the flow that type. The holding builder casts every flow to `float` anyway.
+
+**Parity:**
+- Lookup fuzz: 1,500 random frames, each asked 21 questions, match bitwise and type for type. The frames are naive, UTC or New York indexed, in four time units, sorted, unsorted or with duplicate dates, with rows missing a column, NaN prices and integer prices, and each price-column name. A frame that grows in place gets a new table.
+- Cash-flow fuzz:
+  - 480 random ledgers × 12 holdings, through both the one-shot function and a shared ledger, plus 720 MWR cases under both flow bases, with and without a scope, with historical and current FX.
+  - All match bitwise and type for type, with the 410 failures matched exception for exception.
+  - The ledgers include regex-like account names, transfers named only in the Note, a shortable symbol, every row type, NaN, zero and negative amounts, same-day rows with shuffled ids, and integer and text-typed numeric columns.
+- Real data: the full summary for kitmatan, dheematan and atchamatan, in USD and THB, is identical. So is the full history for kitmatan and dheematan.
+- **Speed:** a summary takes 0.49–0.58 s against 1.33–1.67 s on the two large books, and 0.14–0.25 s against 0.34–0.74 s on atchamatan's. That is about 3× faster.
+
 ## Found while porting
 
+- **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
+  - atchamatan's `E*Trade` account reads as `E*Trade`, i.e. any number of E's followed by "trade". So a transfer of the same symbol whose Note contains "trade" anywhere, such as "TD Ameritrade", is pulled into the E*Trade holding's flows.
+  - An account name with parentheses, like `IBKR (1)`, is a regex group: pandas warns about it, and `(1)` matches a bare `1`.
+  - The ledger keeps the original's expression, so the behaviour is unchanged. Fixing it needs `regex=False`, a deliberate change with its own before-and-after check.
+- **Known type corner, not reached by real data:** in an MWR transfer into the scope, `-(abs(qty) * price)` stays a NumPy *integer* when both cells were text holding integers, such as "3" and "5". The port makes it a NumPy float with the same value. The loader never produces text-typed numeric columns.
 - **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.
 
 - **Fixed 24 Oct 2026: tax rows were booked twice whenever the Auto-cash block skipped them.** That covered every Manual-mode tax row and every tax row on `$CASH`.
