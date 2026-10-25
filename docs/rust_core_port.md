@@ -44,7 +44,7 @@ The crate builds in four places:
 | 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. | **Done** |
 | 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
 | 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
-| 4 | Buffett ranking: `buffett_metrics` (including its helpers), `buffett_value`, `buffett_rank` | To do |
+| 4 | Buffett ranking: (a) `buffett_metrics`, **done**; (b) `buffett_value`, `buffett_rank` | In progress |
 | 5 | `projections`, `valuation_history`, `strategies` math | To do |
 | 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
 
@@ -147,6 +147,26 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 **Parity:** random statements and profiles drive every ported function against the module as it was before Phase 3b. The statements are multi-year with NaN gaps, FCF reported or derived, with dividends and debt; the profiles have missing fields, NaN beta and analyst estimates. Results are bitwise and type-for-type equal. 65–83% of cases produce a valuation rather than an early error, and more than half pass NumPy-scalar arguments.
 
 **Real data:** complete intrinsic-value results for AAPL, KO, JPM, NVDA, MSFT, XOM, O, BRK-B, BAC, TRV, PLD and DUK are identical to the pre-3b module, with zero differences. That set covers operating companies, banks, an insurer, REITs and a utility, with 10–12 of 12 models valued each. Full suite: 1,193 tests pass.
+
+## Phase 4a (25 Oct 2026): Buffett quality metrics
+
+**What moved** (`buffett.rs`):
+- the generic, bank and REIT metric models (`_compute_*_metrics`) in full;
+- `_total_debt` and `_cagr`, which stay as Python wrappers over Rust so their unit tests exercise the running code;
+- the dead helpers `_aligned`, `_common_periods`, `_owner_earnings`, `_stdev` and `_median` are deleted.
+- What stays Python: `compute_metrics`, meaning the EDGAR loads, the split-consistent share series, the ratio bridge through `financial_ratios`, and coverage.
+
+**Python semantics reproduced:**
+- **Raw values flow through.** Several metrics read values without `_finite`: the revenue deltas (`current or 0`), loss-year counts (NaN counts as observed), and share counts (infinity passes `v > 0` and is filtered later by `_cagr`). So concept values cross with `None`, NaN and infinity intact.
+- **Counts stay Python ints,** and keys keep insertion order, the conditional ones included.
+- **`statistics.pstdev` is exact rational arithmetic.** The port computes the population variance as an exact big-integer fraction and takes CPython's correctly rounded `_float_sqrt_of_frac` (round-to-odd isqrt) of it. It is bit-identical on 5,000 random sets from 1e-300 to 1e300.
+- `statistics.median` is the middle element or `(a + b) / 2`, on a stable sort.
+
+**Parity**
+- Fuzz: 1,500 random companies through each of the three models are equal in keys, order, types and bits, with 66–78% of metric values populated.
+- Real data: `compute_metrics` on 618 filers, an even sample of the 5,561-filer universe (544 generic, 40 banks, 16 insurers, 18 REITs), has zero differences in any field.
+
+**Speed:** about 94 µs → 80 µs per company (1.2×). The cost at this size is moving the nested dicts across the boundary, not the arithmetic. The per-company EDGAR load dominates either way.
 
 ## Found while porting
 

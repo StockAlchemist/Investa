@@ -969,3 +969,69 @@ pub fn np_percentile(mut values: Vec<f64>, q: f64) -> PyResult<f64> {
     values.sort_by(|a, b| a.partial_cmp(b).expect("no NaN"));
     Ok(crate::mc::np_percentile_sorted(&values, q))
 }
+
+// --- buffett.rs: Buffett quality metrics ---------------------------------
+
+/// (key, value, is_int) in Python's insertion order.
+type MetricsOut = Vec<(&'static str, Option<f64>, bool)>;
+
+fn metrics_out(m: crate::buffett::Metrics) -> MetricsOut {
+    use crate::buffett::Metric;
+    m.into_iter()
+        .map(|(k, v)| match v {
+            Metric::None => (k, None, false),
+            Metric::Float(f) => (k, Some(f), false),
+            Metric::Int(i) => (k, Some(i as f64), true),
+        })
+        .collect()
+}
+
+/// `buffett_metrics._compute_generic_metrics`.
+#[pyfunction]
+pub fn buffett_generic_metrics(
+    concepts: crate::buffett::Concepts,
+    ratios: crate::buffett::Ratios,
+) -> MetricsOut {
+    metrics_out(crate::buffett::generic_metrics(&concepts, &ratios))
+}
+
+/// `buffett_metrics._compute_bank_metrics`.
+#[pyfunction]
+pub fn buffett_bank_metrics(
+    concepts: crate::buffett::Concepts,
+    sector: crate::buffett::Concepts,
+    ratios: crate::buffett::Ratios,
+) -> MetricsOut {
+    metrics_out(crate::buffett::bank_metrics(&concepts, &sector, &ratios))
+}
+
+/// `buffett_metrics._compute_reit_metrics`.
+#[pyfunction]
+pub fn buffett_reit_metrics(
+    concepts: crate::buffett::Concepts,
+    sector: crate::buffett::Concepts,
+    ratios: crate::buffett::Ratios,
+) -> MetricsOut {
+    metrics_out(crate::buffett::reit_metrics(&concepts, &sector, &ratios))
+}
+
+/// `statistics.pstdev` of finite floats, exposed for its parity test.
+#[pyfunction]
+pub fn py_pstdev(values: Vec<f64>) -> PyResult<f64> {
+    if values.is_empty() || values.iter().any(|v| !v.is_finite()) {
+        return Err(PyValueError::new_err("py_pstdev needs finite values"));
+    }
+    Ok(crate::buffett::py_pstdev(&values))
+}
+
+/// `buffett_metrics._total_debt`: short + long-term debt at one period.
+#[pyfunction]
+pub fn buffett_total_debt(concepts: crate::buffett::Concepts, period: &str) -> Option<f64> {
+    crate::buffett::total_debt(&concepts, period)
+}
+
+/// `buffett_metrics._cagr` over raw values, oldest first.
+#[pyfunction]
+pub fn buffett_cagr(values: Vec<Option<f64>>) -> Option<f64> {
+    crate::buffett::py_cagr(&values)
+}

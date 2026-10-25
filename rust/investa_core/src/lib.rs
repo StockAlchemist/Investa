@@ -6,6 +6,7 @@
 //! golden tests and every cached history stay valid.
 
 pub mod analyzer;
+pub mod buffett;
 pub mod holdings;
 pub mod irr;
 mod irr_grid;
@@ -68,6 +69,12 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::model_reliability, m)?)?;
     m.add_function(wrap_pyfunction!(py::blend, m)?)?;
     m.add_function(wrap_pyfunction!(py::np_percentile, m)?)?;
+    m.add_function(wrap_pyfunction!(py::buffett_generic_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(py::buffett_bank_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(py::buffett_reit_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(py::py_pstdev, m)?)?;
+    m.add_function(wrap_pyfunction!(py::buffett_total_debt, m)?)?;
+    m.add_function(wrap_pyfunction!(py::buffett_cagr, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;
