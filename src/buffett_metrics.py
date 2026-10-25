@@ -143,7 +143,9 @@ def _raw_number(value) -> Optional[float]:
     raise TypeError(f"concept value is not a number: {value!r}")
 
 
-def _for_rust(concepts: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, Optional[float]]]:
+def _for_rust(
+    concepts: Dict[str, Dict[str, float]],
+) -> Dict[str, Dict[str, Optional[float]]]:
     return {
         name: {str(period): _raw_number(v) for period, v in (series or {}).items()}
         for name, series in (concepts or {}).items()
@@ -154,7 +156,9 @@ def _ratios_for_rust(
     ratios_by_period: Dict[str, Dict[str, float]],
 ) -> Dict[str, Dict[str, Optional[float]]]:
     return {
-        str(period): {label: _finite(row.get(label)) for label in _RATIO_LABELS if label in row}
+        str(period): {
+            label: _finite(row.get(label)) for label in _RATIO_LABELS if label in row
+        }
         for period, row in (ratios_by_period or {}).items()
     }
 
@@ -318,6 +322,12 @@ _COVERAGE_KEYS = {
 
 
 def compute_metrics(cik: str, symbol: str, name: str, model: str) -> CompanyMetrics:
+    """See `_compute_metrics`; its EDGAR reads share one per-company session."""
+    with edgar_provider.company_session(cik):
+        return _compute_metrics(cik, symbol, name, model)
+
+
+def _compute_metrics(cik: str, symbol: str, name: str, model: str) -> CompanyMetrics:
     """
     Derive one company's full metric set. Never raises — a company that cannot
     be measured comes back with `gate_failures` explaining why.

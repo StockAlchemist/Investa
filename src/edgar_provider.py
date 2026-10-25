@@ -180,6 +180,64 @@ def _effective_as_of(explicit: Optional[str]) -> Optional[str]:
     return explicit if explicit is not None else _as_of_var.get()
 
 
+# --- per-company read session -------------------------------------------------
+#
+# Scoring one company reads its facts about ten times — the whole concept set,
+# the statement subset, then one concept at a time for every split-sensitive
+# series — and each read opened its own connection. Inside `company_session`
+# the reads share one connection, and the two readers that repeat (the
+# assembled series and the by-filing view) query each tag once: a tag's rows
+# do not depend on which other tags share the query, so a later subset is
+# answered from what is already loaded. The cache dies with the block, so a
+# session sees the store as it stood when the company was first read, never
+# across companies.
+
+
+class _CompanySession:
+    __slots__ = ("cik", "thread", "connections", "loaded")
+
+    def __init__(self, cik: str):
+        self.cik = cik
+        # A connection belongs to the thread that opened it; a context copied
+        # into another thread (asyncio.to_thread) reads without the session.
+        self.thread = threading.get_ident()
+        self.connections: Dict[str, sqlite3.Connection] = {}
+        # (reader, db path, as_of) -> (tags loaded, {tag: rows})
+        self.loaded: Dict[Tuple[str, str, Optional[str]], Tuple[set, Dict]] = {}
+
+
+_session_var: contextvars.ContextVar[Optional[_CompanySession]] = (
+    contextvars.ContextVar("edgar_company_session", default=None)
+)
+
+
+def _session_for(cik: str) -> Optional[_CompanySession]:
+    session = _session_var.get()
+    if (
+        session is not None
+        and session.cik == cik
+        and session.thread == threading.get_ident()
+    ):
+        return session
+    return None
+
+
+@contextlib.contextmanager
+def company_session(cik: str):
+    """Share one connection and each tag's rows across this block's reads of `cik`."""
+    if _session_for(cik) is not None:  # nested: the outer block's session serves
+        yield
+        return
+    session = _CompanySession(cik)
+    token = _session_var.set(session)
+    try:
+        yield
+    finally:
+        _session_var.reset(token)
+        for conn in session.connections.values():
+            conn.close()
+
+
 def _db_path() -> str:
     directory = os.path.join(config.get_app_data_dir(), config.DB_DIR)
     os.makedirs(directory, exist_ok=True)
@@ -208,6 +266,32 @@ class EdgarFactStore:
                 f"Could not open database connection to {self.db_path}"
             )
         return conn
+
+    def _read_tags(self, reader: str, cik: str, tag_list, as_of, fetch, prefetch, copy):
+        """
+        `fetch(conn, tags)` for `tag_list`, through the company session if one
+        is open: tags it has not loaded yet (with `prefetch`, the rest of what
+        the session's company will ask for) are queried once, and the answer is
+        a copy of the loaded rows for `tag_list`.
+        """
+        session = _session_for(cik)
+        if session is None:
+            with self._connect() as conn:
+                return fetch(conn, tag_list)
+        loaded, rows = session.loaded.setdefault(
+            (reader, self.db_path, as_of), (set(), {})
+        )
+        wanted = set(tag_list)
+        if not wanted <= loaded:
+            missing = [
+                t for t in dict.fromkeys([*tag_list, *prefetch()]) if t not in loaded
+            ]
+            conn = session.connections.get(self.db_path)
+            if conn is None:
+                conn = session.connections[self.db_path] = self._connect()
+            rows.update(fetch(conn, missing))
+            loaded.update(missing)
+        return {tag: copy(value) for tag, value in rows.items() if tag in wanted}
 
     def _init_db(self) -> None:
         with self._write_lock, self._connect() as conn:
@@ -457,14 +541,8 @@ class EdgarFactStore:
                     result[period_end] = (val, unit)
         return result
 
-    def get_many_tag_series(
-        self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
-    ) -> Dict[str, Dict[str, Tuple[float, str]]]:
-        """Batched `get_tag_series` — one query instead of one per tag."""
-        tag_list = list(tags)
-        if not tag_list:
-            return {}
-        as_of = _effective_as_of(as_of)
+    @staticmethod
+    def _many_tag_series_query(cik, tag_list, as_of):
         placeholders = ",".join("?" * len(tag_list))
         query = f"""
             SELECT tag, period_end, val, unit FROM facts
@@ -475,13 +553,28 @@ class EdgarFactStore:
             query += " AND filed <= ?"
             params.append(as_of)
         query += " ORDER BY period_end, filed"
+        return query, params
 
-        result: Dict[str, Dict[str, Tuple[float, str]]] = {}
-        with self._connect() as conn:
+    def get_many_tag_series(
+        self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
+    ) -> Dict[str, Dict[str, Tuple[float, str]]]:
+        """Batched `get_tag_series` — one query instead of one per tag."""
+        tag_list = list(tags)
+        if not tag_list:
+            return {}
+        as_of = _effective_as_of(as_of)
+
+        def fetch(conn, tags):
+            query, params = self._many_tag_series_query(cik, tags, as_of)
+            result: Dict[str, Dict[str, Tuple[float, str]]] = {}
             for tag, period_end, val, unit in conn.execute(query, params):
                 if val is not None:
                     result.setdefault(tag, {})[period_end] = (val, unit)
-        return result
+            return result
+
+        return self._read_tags(
+            "series", cik, tag_list, as_of, fetch, _all_chain_tags, dict
+        )
 
     def get_tag_revisions(
         self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
@@ -544,21 +637,22 @@ class EdgarFactStore:
         if not tag_list:
             return {}
         as_of = _effective_as_of(as_of)
-        placeholders = ",".join("?" * len(tag_list))
-        query = f"""
-            SELECT tag, filed, accn, period_end, val FROM facts
-            WHERE cik = ? AND tag IN ({placeholders})
-        """
-        params: List[Any] = [cik, *tag_list]
-        if as_of:
-            query += " AND filed <= ?"
-            params.append(as_of)
-        # Newest filing first; the accession breaks a tie inside one day.
-        query += " ORDER BY filed DESC, accn DESC"
 
-        seen: Dict[str, Dict[Tuple[str, str], Dict[str, float]]] = {}
-        for_tag: Dict[str, List[Dict[str, float]]] = {}
-        with self._connect() as conn:
+        def fetch(conn, tags):
+            placeholders = ",".join("?" * len(tags))
+            query = f"""
+                SELECT tag, filed, accn, period_end, val FROM facts
+                WHERE cik = ? AND tag IN ({placeholders})
+            """
+            params: List[Any] = [cik, *tags]
+            if as_of:
+                query += " AND filed <= ?"
+                params.append(as_of)
+            # Newest filing first; the accession breaks a tie inside one day.
+            query += " ORDER BY filed DESC, accn DESC"
+
+            seen: Dict[str, Dict[Tuple[str, str], Dict[str, float]]] = {}
+            for_tag: Dict[str, List[Dict[str, float]]] = {}
             for tag, filed, accn, period_end, val in conn.execute(query, params):
                 if val is None:
                     continue
@@ -568,7 +662,17 @@ class EdgarFactStore:
                     filings[key] = {}
                     for_tag.setdefault(tag, []).append(filings[key])
                 filings[key][period_end] = val
-        return for_tag
+            return for_tag
+
+        return self._read_tags(
+            "by_filing",
+            cik,
+            tag_list,
+            as_of,
+            fetch,
+            lambda: _tags_for(_SHARE_SCALED + _PER_SHARE_SCALED),
+            lambda filings: [dict(f) for f in filings],
+        )
 
     def has_data(self, cik: str) -> bool:
         with self._connect() as conn:
@@ -1396,6 +1500,11 @@ _SHARE_SCALED = ("shares_diluted", "shares_basic", "shares_outstanding")
 _PER_SHARE_SCALED = ("eps_diluted", "eps_basic")
 
 
+def _all_chain_tags() -> List[str]:
+    """Every tag a concept chain reads: what scoring one company asks for in all."""
+    return [tag for chain in all_concepts().values() for tag in chain]
+
+
 def _tags_for(concepts: Tuple[str, ...]) -> List[str]:
     """The tags behind some concepts, in the order their fallback chains rank them."""
     chains = all_concepts()
@@ -1571,10 +1680,11 @@ def get_statements(cik: str) -> Dict[str, pd.DataFrame]:
     concept_names = (
         list(INCOME_CONCEPTS) + list(BALANCE_CONCEPTS) + list(CASHFLOW_CONCEPTS)
     )
-    values = get_concept_values(cik, concept_names)
-    for concept in list(_SHARE_SCALED) + list(_PER_SHARE_SCALED):
-        if concept in values:
-            values[concept] = split_consistent_series(cik, concept)
+    with company_session(cik):
+        values = get_concept_values(cik, concept_names)
+        for concept in list(_SHARE_SCALED) + list(_PER_SHARE_SCALED):
+            if concept in values:
+                values[concept] = split_consistent_series(cik, concept)
 
     income = _frame_from_concepts(values, _INCOME_LABELS)
     balance = _frame_from_concepts(values, _BALANCE_LABELS)
@@ -1779,7 +1889,14 @@ def _period_stamps(values: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
     format guessing; for `YYYY-MM-DD` strings the vectorised parse gives the
     same Timestamp (NaT for an impossible day). Other strings are left to the
     caller's one-at-a-time parse."""
-    ends = sorted({p for series in values.values() for p in series if type(p) is str and _ISO_DAY.fullmatch(p)})
+    ends = sorted(
+        {
+            p
+            for series in values.values()
+            for p in series
+            if type(p) is str and _ISO_DAY.fullmatch(p)
+        }
+    )
     if not ends:
         return {}
     parsed = pd.to_datetime(pd.Index(ends), errors="coerce", format="%Y-%m-%d")

@@ -551,11 +551,9 @@ async def _get_historical_performance_cached(
 def _previous_trading_day(d: date) -> date:
     """The last NYSE session strictly before ``d`` (falls back to the prior day)."""
     try:
-        from utils_time import get_nyse_calendar
+        from utils_time import nyse_schedule
 
-        schedule = get_nyse_calendar().schedule(
-            start_date=d - timedelta(days=10), end_date=d - timedelta(days=1)
-        )
+        schedule = nyse_schedule(d - timedelta(days=10), d - timedelta(days=1))
         if not schedule.empty:
             return schedule.index[-1].date()
     except Exception as e_cal:
@@ -1081,7 +1079,7 @@ async def _calculate_historical_performance_internal(
     # 2. For other views (1m, 1y, etc): Use get_est_today().
     #    This ensures "Today" is included as the last data point, capturing international markets (SET)
     #    that may have already closed/traded, matching the Summary Card total.
-    from utils_time import is_tradable_day, get_nyse_calendar
+    from utils_time import is_tradable_day, nyse_schedule
 
     # UNIFIED: Use get_est_today() + 1 day as the exclusive end_date for all relative periods.
     # This ensures yfinance includes today's data (if available) and the graph isn't truncated.
@@ -1454,10 +1452,7 @@ async def _calculate_historical_performance_internal(
     # Pre-calculate tradable days for the range to optimize the loop
     # (Avoids calling cal.schedule thousands of times for intraday data)
     try:
-        cal = get_nyse_calendar()
-        tradable_days = set(
-            cal.schedule(start_date=start_date, end_date=end_date).index.date
-        )
+        tradable_days = set(nyse_schedule(start_date, end_date).index.date)
     except Exception as e_cal:
         logging.warning(f"API: Failed to pre-calculate tradable days: {e_cal}")
         tradable_days = None

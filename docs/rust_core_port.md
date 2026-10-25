@@ -48,6 +48,7 @@ The crate builds in four places:
 | 5 | `projections`; the aggregations in `valuation_history`, `strategies` and `track_record` | **Done** |
 | 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | **Done** |
 | 7 | What the final benchmark left on the request path: (a) the historical FX lookup and the IRR/MWR cash flows; (b) statement assembly and the ratio history | **Done** |
+| 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -386,12 +387,73 @@ These dominated the ranking batch, about 27 ms per company, and they are the sam
   - The ranking's full metrics pass (`collect_metrics`, 5,561 filers) takes **45.8 s against 81 s**.
   - What remains is mostly SQLite: a new connection per concept read (about 2,900 per 279 filers) and the reads themselves, plus pandas frame construction.
 
+## Phase 8 (25 Oct 2026): the price read, the calendar, the EDGAR reads
+
+A profile after Phase 7 found the arithmetic almost all in Rust. What was left was I/O and pandas:
+- On `/history` (1.43 s for dheematan), 0.8 s went on reading prices out of SQLite and parsing their dates, against 0.04 s in the Rust kernels.
+- On the ranking, the time went on about ten EDGAR reads per company, each with its own connection.
+- On every request, the NYSE calendar was rebuilt per call.
+
+One item is a Rust port; the other three were cheaper to fix in Python.
+
+**The daily price read** (`sqlite_read.rs`, behind `market_db.get_ohlcv_batch` and `get_ohlcv`):
+- **The cost:** `pd.read_sql_query` built a Python tuple per row and an object per cell (about 340k rows × 8 for a full history), then `pd.to_datetime` parsed every date string.
+- **The port:** Rust steps the rows in C and writes column arrays; Python builds each symbol's frame from slices of them.
+- **One SQLite in the process.** Two copies of SQLite in one process can corrupt a database through POSIX locks. So the crate links no SQLite: `sqlite_bind` is handed the path of Python's `_sqlite3` extension, opens that already-loaded image with `RTLD_NOLOAD`, and resolves the C API through it. It is the same library Python calls, on macOS, in Docker and in CI. If it can't be resolved, the reader stays off and pandas reads.
+- **dtypes as pandas infers them over the whole result:** int64 when every cell is an INTEGER, float64 (NULL as NaN) otherwise. An all-NULL column is float64 NaN, which is what the original's `to_numeric` makes of the object column `read_sql_query` returns.
+- **Declines to the original:**
+  - a date that isn't `YYYY-MM-DD` inside the datetime64[ns] range (the original then raises or parses exactly as before);
+  - text or a blob in a price;
+  - a non-UTF-8 symbol;
+  - a symbols argument that isn't a list of `str`;
+  - a database it can't open;
+  - an empty single-symbol read, whose frame keeps the SQL column names.
+- **Python fix on the same path:** `market_data.get_historical_data` then made each index UTC with `pd.to_datetime(index, utc=True)`, about 3.4 ms per symbol. For a naive DatetimeIndex, `index.tz_localize("UTC")` gives the identical index in 6 µs. That was checked with NaT, ns/us/s units, a business-day frequency, intraday stamps and duplicate dates.
+
+**The NYSE calendar** (`utils_time.nyse_schedule`): every `cal.schedule()` call rebuilt the holiday table, about 30 ms warm and 130 ms cold, and a summary made several of them.
+- One schedule is now built per process, from 1970 to five years ahead (0.28 s, once), and each call is a 0.1 ms slice of it.
+- A range with no session returns the calendar's own empty frame, whose columns are object rather than UTC stamps.
+- Anything else goes to the calendar itself: a reversed range (which raises), a datetime, Timestamp or string, or a day outside the window.
+- The five direct call sites and `_cached_schedule` use it.
+
+**EDGAR read sessions** (`edgar_provider.company_session`): scoring one company read its facts about ten times, each through a new connection. Those reads were the whole concept set, the statement subset, then one concept at a time for every split-sensitive series.
+- Inside a session the reads share one connection. The assembled-series and by-filing readers query each tag once (the first read prefetches every chain tag) and answer later subsets from what is loaded.
+- That is exact because a tag's rows don't depend on which other tags share the query. That was checked on all 50 tags that hold same-day ties between two filings, against 350 random tag sets and the full set.
+- The cache dies with the block. A session is per company, per as-of date and per thread, and a context copied into another thread reads without it.
+- Callers get copies, so mutating an answer can't change a later one.
+- `compute_metrics`, `get_statements` and each company in `collect_metrics` open one.
+- Valuation bands do not: they read a few concepts once, and the prefetch made them slower (0.8 s → 1.4 s for 60 companies).
+
+**Parity:**
+- **Price read, fuzz:** 48 random archives with 672 requests match the frozen originals (`tests/reference/ohlcv_read.py`) bitwise and type for type: dict order, columns, dtypes, index and every cell, exceptions included.
+  - The archives carry NULL prices and volumes, all-NULL columns, integral prices, fractional volumes, text prices, impossible, misshapen and out-of-range dates, odd symbols, another interval, price bases and corporate actions.
+  - 446 reads went through Rust, 909 were empty and 108 declined.
+- **Price read, real data:** all 5,670 symbols in the archive (20,708,291 rows) read identically, in 9.5 s against 33.1 s. Single-symbol reads match for 100 symbols under all three adjustments.
+- **Calendar:** 360 random ranges plus the edges, holidays, weekends, reversed ranges and non-date arguments give the same frames as `cal.schedule()`.
+- **EDGAR sessions:** `collect_metrics` over all 5,561 filers, `get_statements` for all of them, bands and track records for 60 companies, and a 2016 as-of run are identical with sessions on and off. A unit test covers restatements, same-day ties, NULLs, subsets, nesting, threads and mutation.
+- **End to end against the last commit (da400ec7):** the summary for all three books in USD and THB and both history windows are identical. That covers every change above, including the UTC index. Both sides ran with `PYTHONHASHSEED=0`: without a fixed seed the summary's account rows come out in a different order in every process, on the old code as on the new (see below).
+
+**Speed**, computation with market data replayed (median of five, last commit → now):
+
+| | kitmatan | dheematan | atchamatan |
+|---|---|---|---|
+| `/history`, full | 1.06 → **0.48 s** | 1.17 → **0.49 s** | 0.71 → **0.28 s** |
+| `/history`, default window | 1.01 → 0.51 s | 1.14 → 0.50 s | 0.71 → 0.27 s |
+| `/summary` USD / THB | 0.59 / 0.57 → 0.48 / 0.46 s | 0.48 / 0.51 → 0.44 / 0.46 s | 0.13 / 0.25 → 0.13 / 0.19 s |
+
+| Batch | Before | After |
+|---|---|---|
+| Ranking metrics, 5,561 filers (`collect_metrics`) | 47.0 s | **29.6 s** |
+| Statements, 5,561 filers | 28.2 s | 20.0 s |
+| Whole price archive read | 33.1 s | 9.5 s |
+
 ## Found while porting
 
 - **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
   - atchamatan's `E*Trade` account reads as `E*Trade`, i.e. any number of E's followed by "trade". So a transfer of the same symbol whose Note contains "trade" anywhere, such as "TD Ameritrade", is pulled into the E*Trade holding's flows.
   - An account name with parentheses, like `IBKR (1)`, is a regex group: pandas warns about it, and `(1)` matches a bare `1`.
   - The ledger keeps the original's expression, so the behaviour is unchanged. Fixing it needs `regex=False`, a deliberate change with its own before-and-after check.
+- **The summary's account rows come out in a different order in every server process** (not changed). Their order follows the iteration of a set of account names, and Python seeds string hashing per process. The values are the same, but two runs of the same book can disagree on row order and on the order of the per-account dict. Comparing runs across processes needs `PYTHONHASHSEED` fixed or a sort.
 - **Known type corner, not reached by real data:** in an MWR transfer into the scope, `-(abs(qty) * price)` stays a NumPy *integer* when both cells were text holding integers, such as "3" and "5". The port makes it a NumPy float with the same value. The loader never produces text-typed numeric columns.
 - **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.
 

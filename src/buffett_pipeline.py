@@ -118,22 +118,25 @@ def collect_metrics(
     filers: Sequence[Tuple[str, Any]], progress_every: int = 500
 ) -> List[CompanyMetrics]:
     """Compute fundamentals-derived metrics and gate results for every filer."""
+    import edgar_provider
+
     sic_map = edgar_sic.get_sic_map()
     unmapped = 0
     inferred = 0
     companies: List[CompanyMetrics] = []
 
     for index, (cik, entry) in enumerate(filers, start=1):
-        sic = sic_map.get(cik)
-        if sic is None:
-            unmapped += 1
-            model = infer_model_from_facts(cik)
-            if model != "generic":
-                inferred += 1
-        else:
-            model = edgar_sic.model_for_sic(sic)
+        with edgar_provider.company_session(cik):
+            sic = sic_map.get(cik)
+            if sic is None:
+                unmapped += 1
+                model = infer_model_from_facts(cik)
+                if model != "generic":
+                    inferred += 1
+            else:
+                model = edgar_sic.model_for_sic(sic)
 
-        company = compute_metrics(cik, entry.symbol, entry.name, model)
+            company = compute_metrics(cik, entry.symbol, entry.name, model)
         # `compute_metrics` may already have recorded a blocking failure such as
         # missing fundamentals; gates are additive to that, never a replacement.
         company.gate_failures.extend(buffett_rank.evaluate_gates(company))
@@ -242,7 +245,11 @@ def _apply_price_quality_gate(companies: Sequence[CompanyMetrics]) -> int:
     gated = 0
     for company in companies:
         flag = flags.get(company.symbol)
-        if flag and flag.get("severity") == "high" and "price_history_unreliable" not in company.gate_failures:
+        if (
+            flag
+            and flag.get("severity") == "high"
+            and "price_history_unreliable" not in company.gate_failures
+        ):
             company.gate_failures.append("price_history_unreliable")
             gated += 1
     if gated:

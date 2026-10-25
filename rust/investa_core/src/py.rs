@@ -1659,3 +1659,57 @@ pub fn key_ratios(
 pub fn key_ratio_fields() -> Vec<&'static str> {
     crate::ratios::FIELDS.to_vec()
 }
+
+// --- the daily price archive -------------------------------------------------
+
+/// Resolve SQLite through Python's `_sqlite3` extension (its `__file__`).
+/// False when that image is not loaded or does not export the C API; the
+/// reader then stays off and `market_db` reads through pandas.
+#[pyfunction]
+pub fn sqlite_bind(module_path: &str) -> bool {
+    crate::sqlite_read::bind(module_path)
+}
+
+type OhlcvOut<'py> = (
+    Vec<String>,
+    Bound<'py, PyArray1<i64>>,
+    Bound<'py, PyArray1<i64>>,
+    Vec<Bound<'py, PyAny>>,
+);
+
+/// The daily rows for `symbols`, as (symbols, offsets, dates in ns, [open,
+/// high, low, close, adj_close, volume]); each column is int64 when every
+/// cell was an INTEGER and float64 otherwise. None when the rows hold values
+/// only the pandas reader handles; an OSError when the database cannot be read.
+#[pyfunction]
+pub fn read_daily_ohlcv<'py>(
+    py: Python<'py>,
+    db_path: &str,
+    symbols: Vec<String>,
+    interval: &str,
+    start: &str,
+    end: &str,
+) -> PyResult<Option<OhlcvOut<'py>>> {
+    use crate::sqlite_read::{Column, Outcome};
+    let outcome = py
+        .detach(|| crate::sqlite_read::read_daily_ohlcv(db_path, &symbols, interval, start, end))
+        .map_err(|e| pyo3::exceptions::PyOSError::new_err(e.0))?;
+    let batch = match outcome {
+        Outcome::Batch(b) => b,
+        Outcome::Unsupported(_) => return Ok(None),
+    };
+    let columns = batch
+        .columns
+        .into_iter()
+        .map(|c| match c {
+            Column::Int(v) => Array1::from_vec(v).into_pyarray(py).into_any(),
+            Column::Real(v) => Array1::from_vec(v).into_pyarray(py).into_any(),
+        })
+        .collect();
+    Ok(Some((
+        batch.symbols,
+        Array1::from_vec(batch.offsets).into_pyarray(py),
+        Array1::from_vec(batch.dates_ns).into_pyarray(py),
+        columns,
+    )))
+}

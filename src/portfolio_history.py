@@ -51,7 +51,7 @@ from portfolio_valuation_kernels import (
     _normalize_series,
 )
 from portfolio_version import CURRENT_HIST_VERSION
-from utils_time import get_est_today, get_latest_trading_date, get_nyse_calendar
+from utils_time import get_est_today, get_latest_trading_date, nyse_schedule
 
 try:
     from line_profiler import profile
@@ -1756,11 +1756,9 @@ def _load_or_calculate_daily_results(
                 if is_intraday_request and not range_active.empty:
                     try:
                         active_ny = range_active.tz_convert("America/New_York")
-                        cal = get_nyse_calendar()
                         tradable_days = set(
-                            cal.schedule(
-                                start_date=active_ny[0].date(),
-                                end_date=active_ny[-1].date(),
+                            nyse_schedule(
+                                active_ny[0].date(), active_ny[-1].date()
                             ).index.date
                         )
                         range_active = range_active[

@@ -6,6 +6,7 @@ from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional, Sequence, Tuple
 import threading
 import config
+import investa_core
 from db_utils import get_db_connection
 
 # --- price basis -----------------------------------------------------------
@@ -68,6 +69,69 @@ def _iso_days(idx: pd.DatetimeIndex) -> list:
     if nat.any():
         out[nat] = np.nan
     return out.tolist()
+
+
+# --- the Rust reader for the daily archive ------------------------------------
+#
+# pd.read_sql_query builds a Python object per cell before pandas infers each
+# column's dtype, and the date strings are parsed again after; a full history
+# read is ~340k rows x 8 cells. investa_core steps the rows in C, through the
+# same SQLite library Python's sqlite3 module uses (see
+# rust/investa_core/src/sqlite_read.rs), and the frames are built from its
+# column arrays. When it cannot read the rows exactly as pandas would, it says
+# so and the pandas path below runs instead.
+
+_OHLCV_COLUMNS = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
+_RUST_READER: Optional[bool] = None
+
+
+def _rust_reader_bound() -> bool:
+    global _RUST_READER
+    if _RUST_READER is None:
+        try:
+            import _sqlite3
+
+            _RUST_READER = bool(investa_core.sqlite_bind(_sqlite3.__file__))
+        except Exception as exc:
+            logging.info(f"MarketDB: Rust price reader unavailable ({exc})")
+            _RUST_READER = False
+    return _RUST_READER
+
+
+def _read_daily_frames(
+    db_path: str, symbols, interval, start: str, end: str
+) -> Optional[Dict[str, pd.DataFrame]]:
+    """
+    {symbol: frame} for the daily rows, each frame as the pandas path builds
+    it before any adjustment — date index, the six columns renamed, numeric —
+    in the query's symbol order. None to take the pandas path: the reader is
+    off, an argument is not what it binds verbatim, the database cannot be
+    opened, or a value would come out differently.
+    """
+    if (
+        type(symbols) is not list
+        or type(interval) is not str
+        or not all(type(s) is str for s in symbols)
+        or not _rust_reader_bound()
+    ):
+        return None
+    try:
+        read = investa_core.read_daily_ohlcv(db_path, symbols, interval, start, end)
+    except OSError as exc:
+        logging.info(f"MarketDB: Rust price read declined ({exc}); reading via pandas")
+        return None
+    if read is None:
+        return None
+    names, offsets, dates_ns, columns = read
+    stamps = dates_ns.view("M8[ns]")
+    frames: Dict[str, pd.DataFrame] = {}
+    for k, symbol in enumerate(names):
+        a, b = int(offsets[k]), int(offsets[k + 1])
+        frames[symbol] = pd.DataFrame(
+            {name: col[a:b] for name, col in zip(_OHLCV_COLUMNS, columns)},
+            index=pd.DatetimeIndex(stamps[a:b], name="date"),
+        )
+    return frames
 
 
 class MarketDatabase:
@@ -769,6 +833,19 @@ class MarketDatabase:
                 f"Unknown adjustment {adjust!r}; expected one of {VALID_ADJUSTMENTS}"
             )
 
+        frames = _read_daily_frames(
+            self.db_path, [symbol], interval, str(start_date), str(end_date)
+        )
+        if frames and type(symbol) is str and symbol in frames:
+            df = frames[symbol]
+            basis = self.get_price_basis([symbol]).get(symbol, BASIS_SPLIT_ADJ)
+            if basis != BASIS_SPLIT_ADJ or adjust != ADJUST_SPLIT:
+                actions = self.get_actions([symbol]).get(symbol)
+                df = self._adjust_frame(df, symbol, basis, adjust, actions)
+            return df
+
+        # No rows (whose empty frame keeps the SQL column names), or rows only
+        # pandas reads correctly: the original read.
         query = """
             SELECT date, open, high, low, close, adj_close, volume
             FROM daily_ohlcv
@@ -820,6 +897,30 @@ class MarketDatabase:
             )
         if not symbols:
             return {}
+
+        frames = _read_daily_frames(
+            self.db_path, symbols, interval, str(start_date), str(end_date)
+        )
+        if frames is not None:
+            if not frames:
+                return {}
+            bases = self.get_price_basis(symbols)
+            needs_work = [
+                s
+                for s in frames
+                if bases.get(s, BASIS_SPLIT_ADJ) != BASIS_SPLIT_ADJ
+                or adjust != ADJUST_SPLIT
+            ]
+            actions_by_symbol = self.get_actions(needs_work) if needs_work else {}
+            for sym in needs_work:
+                frames[sym] = self._adjust_frame(
+                    frames[sym],
+                    sym,
+                    bases.get(sym, BASIS_SPLIT_ADJ),
+                    adjust,
+                    actions_by_symbol.get(sym),
+                )
+            return frames
 
         placeholders = ", ".join(["?"] * len(symbols))
         query = f"""
