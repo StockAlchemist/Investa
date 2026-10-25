@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from typing import List, Optional
 
+import investa_core
 import numpy as np
 import pandas as pd
 
@@ -65,9 +66,13 @@ def compute_projection(
         A dict with ``available`` plus, when available, the per-horizon median
         and percentile band values, the annualized return/volatility used, and
         the starting value. All monetary values are in the summary's currency.
+
+    The returns are prepared here; the fit (annual log drift and volatility,
+    drift shrinkage) and the cone — whose spread carries parameter
+    uncertainty, sigma^2 * t * (1 + t / n_years) — run in Rust
+    (investa_core.projection).
     """
     horizons = horizons or HORIZONS_YEARS
-
     if (
         twr_series is None
         or current_value is None
@@ -89,63 +94,51 @@ def compute_projection(
     if len(returns) < 20:
         return {"available": False}
 
-    log_ret = np.log1p(returns)
-
     # Observations per year, inferred from the index so annualization and the
     # history length are correct whether the series is calendar-daily (~365/yr,
     # as the portfolio TWR is) or trading-daily (~252/yr, as raw market data is).
     periods_per_year = infer_periods_per_year(returns.index, default=_TRADING_DAYS)
-    n_years = len(returns) / periods_per_year
-
-    mu_raw = float(log_ret.mean()) * periods_per_year  # annual log drift (historical)
-    sigma_log = float(log_ret.std(ddof=1)) * math.sqrt(
-        periods_per_year
-    )  # annual log vol
-
-    if not math.isfinite(mu_raw) or not math.isfinite(sigma_log):
+    prior = (
+        float(benchmark_log_return)
+        if benchmark_log_return is not None and math.isfinite(benchmark_log_return)
+        else None
+    )
+    fitted = investa_core.projection(
+        np.ascontiguousarray(returns.to_numpy(dtype=np.float64)),
+        float(periods_per_year),
+        float(current_value),
+        [float(t) for t in horizons],
+        prior,
+    )
+    if fitted is None:
         return {"available": False}
-
-    # --- Drift shrinkage toward the benchmark ---
-    # A single realized path is a noisy drift estimate; pull it toward the broad
-    # market, trusting the data more the longer the history.
-    mu_log = mu_raw
-    if benchmark_log_return is not None and math.isfinite(benchmark_log_return):
-        w_data = n_years / (n_years + _DRIFT_SHRINK_K)
-        mu_log = w_data * mu_raw + (1.0 - w_data) * benchmark_log_return
+    annual_return_pct, annual_volatility_pct, rows = fitted
 
     points = []
-    for t in horizons:
-        drift = mu_log * t
-        # --- Predictive spread = process risk + parameter (drift) uncertainty ---
-        # The drift is estimated from n_years of data (SE ~ sigma/sqrt(n_years)),
-        # so the cumulative drift over t years carries variance t^2*sigma^2/n_years
-        # on top of the process variance t*sigma^2. Total: sigma^2 * t*(1 + t/n_years).
-        # Without this, the cone is badly overconfident at long horizons (backtested).
-        spread = (
-            sigma_log * math.sqrt(t * (1.0 + t / n_years))
-            if n_years > 0
-            else sigma_log * math.sqrt(t)
+    for t, (median, median_return_pct, expected, p10, p25, p75, p90) in zip(
+        horizons, rows
+    ):
+        points.append(
+            {
+                "years": t,
+                "median_value": median,
+                "median_return_pct": median_return_pct,
+                # Mean of the lognormal sits above the median (process variance
+                # only, so the central "expected" value stays interpretable).
+                "expected_value": expected,
+                "p10": p10,
+                "p25": p25,
+                "p75": p75,
+                "p90": p90,
+            }
         )
-        median = current_value * math.exp(drift)
-        point = {
-            "years": t,
-            "median_value": median,
-            "median_return_pct": (math.exp(drift) - 1.0) * 100.0,
-            # Mean of the lognormal sits above the median (uses process variance
-            # only, so the central "expected" value stays stable/interpretable).
-            "expected_value": current_value
-            * math.exp(drift + 0.5 * sigma_log * sigma_log * t),
-        }
-        for name, z in _BANDS.items():
-            point[name] = current_value * math.exp(drift + z * spread)
-        points.append(point)
 
     return {
         "available": True,
         "current_value": current_value,
         # Geometric (median) annualized return and annualized volatility.
-        "annual_return_pct": (math.exp(mu_log) - 1.0) * 100.0,
-        "annual_volatility_pct": sigma_log * 100.0,
+        "annual_return_pct": annual_return_pct,
+        "annual_volatility_pct": annual_volatility_pct,
         "horizons": points,
     }
 
@@ -174,11 +167,6 @@ _DAYS_PER_YEAR = 365.25
 _CALIBRATED_BAND = (0.85, 1.15)
 
 
-def _norm_cdf(z: np.ndarray) -> np.ndarray:
-    """Standard-normal CDF (the probability-integral transform of the errors)."""
-    return 0.5 * (1.0 + np.array([math.erf(v / math.sqrt(2.0)) for v in np.asarray(z)]))
-
-
 def _benchmark_prior(
     bench_window: Optional[pd.Series], periods_per_year: float
 ) -> Optional[float]:
@@ -198,39 +186,6 @@ def _benchmark_prior(
     return math.log(last / first) / (len(b) / periods_per_year)
 
 
-def _future_position(
-    index: pd.Index, pos: int, years: float, periods_per_year: float
-) -> Optional[int]:
-    """Position of the observation ``years`` after ``index[pos]``, or None.
-
-    Date-based so it is correct for a calendar-daily series (the portfolio TWR,
-    ~365 obs/yr) and a trading-daily one (raw market data, ~252) alike.
-    """
-    if isinstance(index, pd.DatetimeIndex):
-        target = index[pos] + pd.Timedelta(days=round(_DAYS_PER_YEAR * years))
-        nxt = int(index.searchsorted(target))
-        if nxt >= len(index):
-            return None
-        # Tolerate a weekend/holiday gap, but not a real hole in the history.
-        if (index[nxt] - target).days > 10:
-            return None
-        return nxt
-    nxt = pos + int(round(years * periods_per_year))
-    return nxt if nxt < len(index) else None
-
-
-def _predictive_moments(point: dict, v0: float) -> Optional[tuple]:
-    """Back out (mean, sd) of the model's predictive log-return from its bands."""
-    try:
-        mu = math.log(point["median_value"] / v0)
-        sd = (math.log(point["p90"] / v0) - mu) / _BANDS["p90"]
-    except (ValueError, ZeroDivisionError, KeyError, TypeError):
-        return None
-    if not math.isfinite(mu) or not math.isfinite(sd) or sd <= 0:
-        return None
-    return mu, sd
-
-
 def walk_forward_errors(
     twr_series: pd.Series,
     benchmark_series: Optional[pd.Series] = None,
@@ -239,6 +194,11 @@ def walk_forward_errors(
     step: Optional[int] = None,
 ) -> pd.DataFrame:
     """One row per (anchor date, horizon) with the standardized error z.
+
+    At each past anchor the model is fitted on the data that existed then, and
+    the outcome ``horizon`` years later is scored against its cone. The loop
+    runs in Rust (investa_core.walk_forward): each window's returns are a prefix
+    of one array instead of being re-derived through pandas per anchor.
 
     Args:
         twr_series: Wealth index to back-check (the portfolio TWR series, or a
@@ -259,55 +219,31 @@ def walk_forward_errors(
     if len(wealth) < 30 or not horizons:
         return pd.DataFrame(columns=cols)
 
-    periods_per_year = infer_periods_per_year(wealth.index, default=_TRADING_DAYS)
-    step = step or max(1, int(round(periods_per_year / 12.0)))
-    start = int(round(periods_per_year * min_history_years))
-    if start >= len(wealth):
-        return pd.DataFrame(columns=cols)
-
+    is_dated = isinstance(wealth.index, pd.DatetimeIndex)
+    ticks = (
+        np.ascontiguousarray(wealth.index.asi8, dtype=np.int64) if is_dated else None
+    )
     bench = None
     if benchmark_series is not None:
-        bench = (
+        bench = np.ascontiguousarray(
             pd.to_numeric(benchmark_series, errors="coerce")
             .reindex(wealth.index)
             .ffill()
+            .to_numpy(dtype=np.float64, na_value=np.nan)
         )
-
-    rows = []
-    for t in range(start, len(wealth), step):
-        anchor = t - 1
-        # Once the shortest horizon runs past the end of the data, so does every
-        # later anchor — nothing left to verify against.
-        if (
-            _future_position(wealth.index, anchor, horizons[0], periods_per_year)
-            is None
-        ):
-            break
-
-        window = wealth.iloc[:t]
-        v0 = float(window.iloc[-1])
-        prior = _benchmark_prior(
-            None if bench is None else bench.iloc[:t], periods_per_year
-        )
-        proj = compute_projection(
-            window, v0, horizons=horizons, benchmark_log_return=prior
-        )
-        if not proj.get("available"):
-            continue
-
-        for point in proj["horizons"]:
-            h = point["years"]
-            fut = _future_position(wealth.index, anchor, h, periods_per_year)
-            if fut is None:
-                continue
-            moments = _predictive_moments(point, v0)
-            if moments is None:
-                continue
-            mu, sd = moments
-            actual = math.log(float(wealth.iloc[fut]) / v0)
-            rows.append((h, wealth.index[anchor], (actual - mu) / sd, actual, mu))
-
-    return pd.DataFrame(rows, columns=cols)
+    rows = investa_core.walk_forward(
+        np.ascontiguousarray(wealth.to_numpy(dtype=np.float64)),
+        ticks,
+        bench,
+        [float(h) for h in horizons],
+        float(min_history_years),
+        step or None,
+    )
+    by_value = {float(h): h for h in horizons}
+    return pd.DataFrame(
+        [(by_value[h], wealth.index[a], z, actual, mu) for h, a, z, actual, mu in rows],
+        columns=cols,
+    )
 
 
 def summarize_errors(
@@ -317,7 +253,8 @@ def summarize_errors(
 
     ``std_z`` 1.0 / ``in_band_pct`` 80 / ``below_p10_pct`` 10 / ``mean_u`` 0.5 are
     the ideal values: bands the right width, outcomes inside them as often as
-    advertised, and no systematic over- or under-shoot of the drift.
+    advertised, and no systematic over- or under-shoot of the drift. The
+    statistics run in Rust (investa_core.summarize_errors).
     """
     if errors is None or errors.empty:
         return []
@@ -327,9 +264,19 @@ def summarize_errors(
         g = errors[errors["years"] == h]
         if len(g) < 3:
             continue
-        z = g["z"].to_numpy(dtype=float)
-        u = _norm_cdf(z)
-        std_z = float(np.std(z, ddof=1))
+        (
+            std_z,
+            in_band_pct,
+            below_p10_pct,
+            above_p90_pct,
+            mean_u,
+            median_actual_return_pct,
+            median_projected_return_pct,
+        ) = investa_core.summarize_errors(
+            g["z"].to_numpy(dtype=float).tolist(),
+            g["actual_log"].to_numpy(dtype=float).tolist(),
+            g["median_log"].to_numpy(dtype=float).tolist(),
+        )
         verdict = "calibrated"
         if std_z > _CALIBRATED_BAND[1]:
             verdict = "narrow"
@@ -340,18 +287,14 @@ def summarize_errors(
                 "years": int(h),
                 "samples": int(len(g)),
                 "std_z": std_z,
-                "in_band_pct": float(np.mean((u > 0.1) & (u < 0.9)) * 100.0),
-                "below_p10_pct": float(np.mean(u < 0.1) * 100.0),
-                "above_p90_pct": float(np.mean(u > 0.9) * 100.0),
-                "mean_u": float(u.mean()),
+                "in_band_pct": in_band_pct,
+                "below_p10_pct": below_p10_pct,
+                "above_p90_pct": above_p90_pct,
+                "mean_u": mean_u,
                 # Median realized vs projected growth over the horizon, in the
                 # units a reader actually thinks in.
-                "median_actual_return_pct": float(
-                    (math.exp(float(np.median(g["actual_log"]))) - 1.0) * 100.0
-                ),
-                "median_projected_return_pct": float(
-                    (math.exp(float(np.median(g["median_log"]))) - 1.0) * 100.0
-                ),
+                "median_actual_return_pct": median_actual_return_pct,
+                "median_projected_return_pct": median_projected_return_pct,
                 "verdict": verdict,
             }
         )

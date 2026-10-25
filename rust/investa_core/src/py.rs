@@ -1082,3 +1082,99 @@ pub fn weighted_renormalised<'py>(
         crate::rank::weighted_renormalised(&cols, &weights),
     ))
 }
+
+// --- projection.rs: portfolio projections ----------------------------------
+
+/// (annual_return_pct, annual_volatility_pct, per-horizon (median, median
+/// return %, expected, p10, p25, p75, p90)).
+type ProjectionOut = (f64, f64, Vec<(f64, f64, f64, f64, f64, f64, f64)>);
+
+/// `compute_projection` on prepared returns; None where it is unavailable.
+#[pyfunction]
+#[pyo3(signature = (returns, periods_per_year, current_value, horizons, benchmark_log_return=None))]
+pub fn projection(
+    returns: PyReadonlyArray1<'_, f64>,
+    periods_per_year: f64,
+    current_value: f64,
+    horizons: Vec<f64>,
+    benchmark_log_return: Option<f64>,
+) -> Option<ProjectionOut> {
+    let p = crate::projection::project(
+        &view(&returns),
+        periods_per_year,
+        current_value,
+        &horizons,
+        benchmark_log_return,
+    )?;
+    let rows = p
+        .points
+        .iter()
+        .map(|pt| {
+            let b = pt.bands;
+            (
+                pt.median_value,
+                pt.median_return_pct,
+                pt.expected_value,
+                b[0],
+                b[1],
+                b[2],
+                b[3],
+            )
+        })
+        .collect();
+    Some((p.annual_return_pct, p.annual_volatility_pct, rows))
+}
+
+/// `walk_forward_errors`: rows of (years, anchor position, z, actual_log,
+/// median_log).
+#[pyfunction]
+#[pyo3(signature = (wealth, ticks, bench, horizons, min_history_years, step=None))]
+pub fn walk_forward(
+    py: Python<'_>,
+    wealth: PyReadonlyArray1<'_, f64>,
+    ticks: Option<PyReadonlyArray1<'_, i64>>,
+    bench: Option<PyReadonlyArray1<'_, f64>>,
+    horizons: Vec<f64>,
+    min_history_years: f64,
+    step: Option<usize>,
+) -> PyResult<Vec<crate::projection::ErrorRow>> {
+    let w = view(&wealth);
+    let t = ticks.as_ref().map(view);
+    let b = bench.as_ref().map(view);
+    for len in [t.as_ref().map(|x| x.len()), b.as_ref().map(|x| x.len())]
+        .into_iter()
+        .flatten()
+    {
+        if len != w.len() {
+            return Err(PyValueError::new_err(
+                "walk_forward: ticks/bench must match wealth",
+            ));
+        }
+    }
+    Ok(py.detach(|| {
+        crate::projection::walk_forward_errors(
+            &w,
+            t.as_deref(),
+            b.as_deref(),
+            &horizons,
+            min_history_years,
+            step,
+        )
+    }))
+}
+
+/// `summarize_errors`' per-horizon statistics.
+#[pyfunction]
+pub fn summarize_errors(
+    z: Vec<f64>,
+    actual_log: Vec<f64>,
+    median_log: Vec<f64>,
+) -> PyResult<(f64, f64, f64, f64, f64, f64, f64)> {
+    if z.len() < 3 || z.len() != actual_log.len() || z.len() != median_log.len() {
+        return Err(PyValueError::new_err(
+            "summarize_errors: needs 3+ equal-length rows",
+        ));
+    }
+    let s = crate::projection::summarize(&z, &actual_log, &median_log);
+    Ok((s[0], s[1], s[2], s[3], s[4], s[5], s[6]))
+}

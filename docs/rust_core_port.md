@@ -45,7 +45,7 @@ The crate builds in four places:
 | 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
 | 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
 | 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
-| 5 | `projections`, `valuation_history`, `strategies` math | To do |
+| 5 | (a) `projections`, **done**; (b) `valuation_history`, `strategies`, `track_record` | In progress |
 | 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
 
 ## Phase 1 results (24 Oct 2026)
@@ -195,7 +195,28 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 - Scoring speed: 9 → 3 ms for value, 93 → 45 ms for quality. A full metrics pass over the universe takes 75 s, nearly all of it EDGAR loads.
 - Full suite: 1,213 tests pass.
 
+## Phase 5a (25 Oct 2026): projections
+
+**What moved** (`projection.rs`):
+- `compute_projection`'s fit and cone: log returns, moments, drift shrinkage, and the parameter-uncertainty spread `σ²·t·(1 + t/n)`;
+- the whole of `walk_forward_errors`;
+- `summarize_errors`' statistics.
+- The dead helpers `_future_position`, `_predictive_moments` and `_norm_cdf` are deleted.
+- What stays Python: preparing the returns (pandas `pct_change`/`clip`), and `_build_replay` and `backtest_projection`, which are date arithmetic and orchestration.
+
+**Semantics measured:**
+- `np.log1p`, `math.log1p` and `math.erf` are the C library's here. `math.erf` has no Rust equivalent, so the port calls the C library's `erf` directly.
+- Python's `round` ties to even: ten years is `round(3652.5)` = 3,652 days.
+
+**Speed:** the walk-forward originally refitted the projection on a growing window at every monthly anchor, re-deriving that window's returns through pandas each time, which is quadratic in the history. In Rust each window's returns are a prefix of one array. The moments are still recomputed per window from scratch, so every number is the original's. `backtest_projection` on 20 years of daily closes drops from about 150 ms to about 7 ms, 20× faster.
+
+**Parity:**
+- Random wealth series (calendar-daily, business-daily and weekly dates, a plain integer index, gaps, crashes past the clip, partial benchmarks) match bitwise.
+- On the real 2005–2026 histories of SPY, AAPL, KO, BRK-B, MSFT and XOM, with SPY as the prior, the projection and the full backtest (four horizons plus the replay) are identical.
+
 ## Found while porting
+
+- **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.
 
 - **Fixed 24 Oct 2026: tax rows were booked twice whenever the Auto-cash block skipped them.** That covered every Manual-mode tax row and every tax row on `$CASH`.
   - **Cause:** the original tax branch (Apr 2026) was stranded when taxes moved into the Fees/Tax branch (May 2026). Once the Auto-cash block was inserted above it, it became an `elif` of that block.
