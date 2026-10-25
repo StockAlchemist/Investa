@@ -8,6 +8,7 @@
 pub mod analyzer;
 pub mod asof;
 pub mod buffett;
+pub mod ca;
 pub mod cashflows;
 pub mod db_portfolio;
 pub mod db_screener;
@@ -20,6 +21,7 @@ pub mod irr;
 mod irr_grid;
 pub mod mc;
 pub mod mdb;
+pub mod pa_small;
 pub mod projection;
 mod py;
 pub mod pyconn;
@@ -300,5 +302,18 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dl::dl_write_csv, m)?)?;
     m.add_function(wrap_pyfunction!(dl::dl_write_excel, m)?)?;
     m.add_function(wrap_pyfunction!(db_portfolio::db_migrate_csv_to_db, m)?)?;
+    m.add_function(wrap_pyfunction!(ca::ca_apply_return_of_capital, m)?)?;
+    m.add_function(wrap_pyfunction!(ca::ca_apply_stock_dividend, m)?)?;
+    m.add_function(wrap_pyfunction!(ca::ca_apply_spin_off, m)?)?;
+    m.add_function(wrap_pyfunction!(ca::ca_parse_spinoff_description, m)?)?;
+    m.add_function(wrap_pyfunction!(ca::ca_build_spinoff_legs, m)?)?;
+    m.add_function(wrap_pyfunction!(ca::ca_deduplicate_split_transactions, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_small::pa_get_type_id, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_small::pa_correlation_matrix, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_small::pa_run_scenario_analysis, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_small::pa_rebalancing_trades, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_small::pa_calculate_hhi, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_small::pa_health_score, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_small::pa_cash_interest_events, m)?)?;
     Ok(())
 }

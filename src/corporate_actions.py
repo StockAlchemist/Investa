@@ -13,10 +13,10 @@ them straightforward to unit-test in isolation.
 
 from __future__ import annotations
 
+import investa_core
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
 
@@ -89,16 +89,10 @@ def apply_return_of_capital(
 
     Returns: (new_qty, new_cost, realised_excess_gain).
     """
-    if current_qty <= 1e-9:
-        # No position to reduce basis against; the entire distribution is a gain.
-        return current_qty, current_cost, cash_distributed
-
-    if cash_distributed <= current_cost:
-        return current_qty, current_cost - cash_distributed, 0.0
-
-    # Distribution exceeds basis — basis goes to zero, the remainder is gain.
-    excess = cash_distributed - current_cost
-    return current_qty, 0.0, excess
+    # Ported to Rust: rust/investa_core/src/ca.rs
+    return investa_core.ca_apply_return_of_capital(
+        current_qty, current_cost, cash_distributed
+    )
 
 
 def apply_stock_dividend(
@@ -115,9 +109,10 @@ def apply_stock_dividend(
 
     Returns: (new_qty, new_cost).
     """
-    if current_qty <= 1e-9 or shares_received <= 1e-9:
-        return current_qty, current_cost
-    return current_qty + shares_received, current_cost
+    # Ported to Rust: rust/investa_core/src/ca.rs
+    return investa_core.ca_apply_stock_dividend(
+        current_qty, current_cost, shares_received
+    )
 
 
 def apply_spin_off(
@@ -143,12 +138,10 @@ def apply_spin_off(
 
     Returns: (new_parent_qty, new_parent_cost, new_child_qty, new_child_cost).
     """
-    moved = allocated_basis
-    if moved < 0.0:
-        moved = 0.0
-    if moved > parent_cost:
-        moved = parent_cost
-    return parent_qty, parent_cost - moved, child_qty, moved
+    # Ported to Rust: rust/investa_core/src/ca.rs
+    return investa_core.ca_apply_spin_off(
+        parent_qty, parent_cost, child_qty, allocated_basis
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -173,29 +166,8 @@ def parse_spinoff_description(desc: str) -> Optional[Tuple[str, str, str]]:
     The child symbol is the first token of the final "(TICKER, NAME, ISIN)"
     group; the parent is the leading token before its CUSIP parenthesis.
     """
-    if not desc:
-        return None
-    low = desc.lower().replace("-", " ")
-    if "spin" not in low or "off" not in low:
-        return None
-
-    m_parent = _SPINOFF_PARENT_RE.match(desc)
-    if not m_parent:
-        return None
-    parent = m_parent.group(1)
-
-    child = None
-    for group in reversed(_SPINOFF_PAREN_GROUP_RE.findall(desc)):
-        first = group.split(",")[0].strip()
-        if re.fullmatch(r"[A-Z0-9.]{1,6}", first):
-            child = first
-            break
-    if not child or child == parent:
-        return None
-
-    ratio_m = _SPINOFF_RATIO_RE.search(desc)
-    ratio = ratio_m.group(1) if ratio_m else "spin-off"
-    return parent, child, ratio
+    # Ported to Rust: rust/investa_core/src/ca.rs
+    return investa_core.ca_parse_spinoff_description(desc)
 
 
 def build_spinoff_legs(
@@ -221,45 +193,18 @@ def build_spinoff_legs(
     allocation is unknown (0), only the child receipt is emitted so the received
     shares are never silently dropped.
     """
-    if child_qty <= 1e-9:
-        return []
-    allocated = float(allocated_basis or 0.0)
-    if allocated < 0.0:
-        allocated = 0.0
-    per_share = (allocated / child_qty) if child_qty > 1e-9 else 0.0
-
-    legs: List[Dict[str, Any]] = [
-        {
-            "Date": date_str,
-            "Type": "Spin-off",
-            "Symbol": child,
-            "Quantity": child_qty,
-            "Price/Share": per_share,
-            "Total Amount": allocated,
-            "Commission": 0.0,
-            "Account": account,
-            "Note": f"Spinoff {ratio} from {parent}"[:100],
-            "Local Currency": currency,
-            "user_id": user_id,
-        }
-    ]
-    if allocated > 1e-9:
-        legs.append(
-            {
-                "Date": date_str,
-                "Type": "Spin-off",
-                "Symbol": parent,
-                "Quantity": 0.0,
-                "Price/Share": 0.0,
-                "Total Amount": allocated,
-                "Commission": 0.0,
-                "Account": account,
-                "Note": f"Spinoff basis reallocation to {child}"[:100],
-                "Local Currency": currency,
-                "user_id": user_id,
-            }
-        )
-    return legs
+    # Ported to Rust: rust/investa_core/src/ca.rs
+    return investa_core.ca_build_spinoff_legs(
+        parent,
+        child,
+        child_qty,
+        date_str,
+        account,
+        user_id,
+        allocated_basis,
+        ratio,
+        currency,
+    )
 
 
 def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
@@ -276,81 +221,5 @@ def deduplicate_split_transactions(df: pd.DataFrame) -> pd.DataFrame:
     event can survive even if recorded across multiple days, while two
     distinct ratios in the same month are kept separate.
     """
-    if df is None or df.empty:
-        return df
-
-    type_col = "Type"
-    if type_col not in df.columns:
-        return df
-
-    is_split = df[type_col].str.lower().str.strip().isin(["split", "stock split"])
-    if not is_split.any():
-        return df
-
-    # Safely de-fragment the DataFrame before ANY slicing or copying.
-    # The incoming DataFrame often arrives with "Gaps in blk ref_locs" block manager
-    # corruption from upstream concatenations, which causes ~is_split or .copy() to crash.
-    try:
-        df = pd.DataFrame({c: df[c].to_numpy() for c in df.columns}, index=df.index)
-    except Exception:
-        original_index = df.index
-        df = pd.DataFrame(df.to_dict("records"))
-        df.index = original_index
-
-    other_txs = df[~is_split]
-    splits_df = df[is_split].copy()
-
-    # Priority: 'All Accounts' (0) > Others (1)
-    acc_col = "Account"
-    if acc_col in splits_df.columns:
-        splits_df["__split_priority"] = np.where(
-            splits_df[acc_col].astype(str).str.lower().str.strip() == "all accounts",
-            0,
-            1,
-        )
-    else:
-        splits_df["__split_priority"] = 1
-
-    # Fuzzy grouping by month
-    splits_df["__split_ym"] = pd.to_datetime(splits_df["Date"]).dt.to_period("M")
-
-    # Normalize Split Ratio so 7.0 and 7 don't get treated as different splits.
-    if "Split Ratio" in splits_df.columns:
-        splits_df["Split Ratio"] = (
-            pd.to_numeric(splits_df["Split Ratio"], errors="coerce")
-            .fillna(1.0)
-            .round(6)
-        )
-    else:
-        splits_df["Split Ratio"] = 1.0
-
-    sort_cols = ["Symbol", "__split_ym", "__split_priority"]
-    if "original_index" in splits_df.columns:
-        sort_cols.append("original_index")
-    splits_df = splits_df.sort_values(by=sort_cols)
-
-    # Drop duplicates by Symbol + Month. Ratio included to keep distinct events.
-    deduped_splits = splits_df.drop_duplicates(
-        subset=["Symbol", "__split_ym", "Split Ratio"], keep="first"
-    )
-
-    # We must explicitly select original columns and make a deep copy, since
-    # dropping columns can again cause block manager issues during concat.
-    deduped_splits = deduped_splits[list(df.columns)].copy()
-    other_txs = other_txs.copy()
-
-    # Re-combine, preserving order as much as possible
-    frames = [f for f in [other_txs, deduped_splits] if not f.empty]
-    if not frames:
-        return df.iloc[:0].copy()
-
-    if len(frames) == 1:
-        result = frames[0].copy()
-    else:
-        result = pd.concat(frames)
-
-    if "original_index" in result.columns:
-        result = result.sort_values(by="original_index")
-    else:
-        result = result.sort_index()
-    return result
+    # Ported to Rust: rust/investa_core/src/ca.rs
+    return investa_core.ca_deduplicate_split_transactions(df)

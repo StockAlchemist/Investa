@@ -53,7 +53,7 @@ The crate builds in four places:
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
-| 13 | Summary engine: the rest of `portfolio_analyzer`, the computational parts of `portfolio_logic`, `corporate_actions` | Planned |
+| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | In progress |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
@@ -602,6 +602,14 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
   - The three real books load identically.
 - All 1,415 tests pass.
 
+## Phase 13a (26 Oct 2026): `corporate_actions` and the analyzer's standalone helpers
+
+`corporate_actions` (the deferred-action arithmetic, IBKR spin-off parsing and leg building, split deduplication) and seven `portfolio_analyzer` helpers (`get_type_id`, the correlation matrix, scenario impact, rebalancing trades, HHI, the health score, projected cash interest) are now Rust (`ca.rs`, `pa_small.rs`).
+- The arithmetic is Python's own number operations, in the original's operand order (so `100 * x` dispatches from `int`, and a NumPy scalar's reflected methods win as they do in Python). `sum`, `round`, `max`, `min` and `format` are the builtins, so results keep their types.
+- The spin-off parser uses the module's compiled patterns, so the regex semantics stay Python's.
+- `generate_cash_interest_events` still anchors on `date.today()`; that is flagged, not changed.
+- **Parity:** 320 random rounds of the arithmetic, the parser, the leg builder and split deduplication, and 160 of the analyzer helpers, match the frozen originals type for type, with logs and warnings.
+
 ## Found while porting
 
 - **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
@@ -609,6 +617,7 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
   - An account name with parentheses, like `IBKR (1)`, is a regex group: pandas warns about it, and `(1)` matches a bare `1`.
   - The ledger keeps the original's expression, so the behaviour is unchanged. Fixing it needs `regex=False`, a deliberate change with its own before-and-after check.
 - **Fixed 25 Oct 2026: the summary's account rows came out in a different order in every server process.** Account ids were assigned in the iteration order of a set of account names, and Python seeds string hashing per process, so two runs of the same book disagreed on row order and on the holdings dict's order; the values were the same. `_process_transactions_to_holdings` now sorts the accounts by name, the order the account picker already uses. All three books' summaries are identical under different seeds and, once aligned, identical to before. `tests/test_account_order.py` runs four seeds in separate interpreters and fails without the fix.
+- **`portfolio_analyzer.generate_cash_interest_events` anchors its projection on `date.today()`** (not changed), so on the Bangkok host it can start a month ahead of the US market's.
 - **`market_db` reads dates off the server's clock in two places** (not changed). `get_share_counts` ages entries with `date.today()`, and `check_integrity` falls back to it if `utils_time` fails. Both predate the market-time rule. The share-count cutoff can therefore be a day ahead of the US market on the Bangkok host.
 - **Known type corner, not reached by real data:** in an MWR transfer into the scope, `-(abs(qty) * price)` stays a NumPy *integer* when both cells were text holding integers, such as "3" and "5". The port makes it a NumPy float with the same value. The loader never produces text-typed numeric columns.
 - **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.

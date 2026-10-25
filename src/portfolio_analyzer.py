@@ -120,34 +120,8 @@ if _rust_mismatch:
 
 # --- Helper to map string types to ints ---
 def get_type_id(t):
-    t = str(t).lower().strip()
-    if t == "buy":
-        return TYPE_BUY
-    if t == "sell":
-        return TYPE_SELL
-    if t == "deposit":
-        return TYPE_DEPOSIT
-    if t == "withdrawal":
-        return TYPE_WITHDRAWAL
-    if t == "dividend":
-        return TYPE_DIVIDEND
-    if t in ["fee", "fees"]:
-        return TYPE_FEES
-    if t in ["split", "stock split"]:
-        return TYPE_SPLIT
-    if t == "transfer":
-        return TYPE_TRANSFER
-    if t == "short sell":
-        return TYPE_SHORT_SELL
-    if t == "buy to cover":
-        return TYPE_BUY_TO_COVER
-    if t in ["tax", "withholding tax"]:
-        return TYPE_TAX
-    if t == "interest":
-        return TYPE_INTEREST
-    if t in ["spin off", "spin-off", "spinoff"]:
-        return TYPE_SPIN_OFF
-    return TYPE_UNKNOWN
+    # Ported to Rust: rust/investa_core/src/pa_small.rs
+    return investa_core.pa_get_type_id(t)
 
 
 def _process_numba_core(
@@ -2610,22 +2584,8 @@ def calculate_correlation_matrix(historical_returns_df: pd.DataFrame) -> pd.Data
     Returns:
         pd.DataFrame: The correlation matrix.
     """
-    if historical_returns_df.empty:
-        logging.warning(
-            "Input historical_returns_df is empty. Cannot calculate correlation matrix."
-        )
-        return pd.DataFrame()
-
-    # Ensure all columns are numeric
-    numeric_df = historical_returns_df.select_dtypes(include=[np.number])
-    if numeric_df.empty:
-        logging.warning(
-            "No numeric columns found in historical_returns_df. Cannot calculate correlation matrix."
-        )
-        return pd.DataFrame()
-
-    correlation_matrix = numeric_df.corr()
-    return correlation_matrix
+    # Ported to Rust: rust/investa_core/src/pa_small.rs
+    return investa_core.pa_correlation_matrix(historical_returns_df)
 
 
 def run_scenario_analysis(
@@ -2644,17 +2604,8 @@ def run_scenario_analysis(
     Returns:
         Dict[str, float]: A dictionary containing the estimated portfolio return and impact.
     """
-    estimated_portfolio_return = 0.0
-    for factor, shock in scenario_shocks.items():
-        beta = factor_betas.get(factor, 0.0)
-        estimated_portfolio_return += beta * shock
-
-    estimated_portfolio_impact = portfolio_value * estimated_portfolio_return
-
-    return {
-        "estimated_portfolio_return": estimated_portfolio_return,
-        "estimated_portfolio_impact": estimated_portfolio_impact,
-    }
+    # Ported to Rust: rust/investa_core/src/pa_small.rs
+    return investa_core.pa_run_scenario_analysis(factor_betas, scenario_shocks, portfolio_value)
 
 
 def extract_dividend_history(
@@ -3352,97 +3303,10 @@ def calculate_rebalancing_trades(
             - pd.DataFrame: Suggested trades to execute.
             - dict: Summary metrics of the rebalancing plan.
     """
-    if holdings_df.empty:
-        return pd.DataFrame(), {}
-
-    mkt_val_col = f"Market Value ({display_currency})"
-    price_col = f"Price ({display_currency})"
-
-    # Get current cash holding
-    current_cash_row = holdings_df[holdings_df["Symbol"] == CASH_SYMBOL_CSV]
-    current_cash_value = (
-        current_cash_row[mkt_val_col].iloc[0] if not current_cash_row.empty else 0.0
+    # Ported to Rust: rust/investa_core/src/pa_small.rs
+    return investa_core.pa_rebalancing_trades(
+        holdings_df, target_alloc_pct, new_cash, display_currency
     )
-
-    # Calculate total portfolio value including new cash injection/withdrawal
-    # This is the total value we are rebalancing towards
-    current_total_market_value_excluding_cash = holdings_df[
-        holdings_df["Symbol"] != CASH_SYMBOL_CSV
-    ][mkt_val_col].sum()
-    total_rebalance_value = (
-        current_total_market_value_excluding_cash + current_cash_value + new_cash
-    )
-
-    trades = []
-    summary = {
-        "Total Portfolio Value (After Rebalance)": total_rebalance_value,
-        "Total Value to Sell": 0.0,
-        "Total Value to Buy": 0.0,
-        "Net Cash Change": 0.0,  # This will be calculated based on target cash
-        "Estimated Number of Trades": 0,
-    }
-
-    # Create a dictionary for quick lookup of current holdings (excluding cash for now)
-    current_holdings_values = (
-        holdings_df[holdings_df["Symbol"] != CASH_SYMBOL_CSV]
-        .set_index("Symbol")[mkt_val_col]
-        .to_dict()
-    )
-    current_holdings_prices = (
-        holdings_df[holdings_df["Symbol"] != CASH_SYMBOL_CSV]
-        .set_index("Symbol")[price_col]
-        .to_dict()
-    )
-    current_holdings_accounts = (
-        holdings_df[holdings_df["Symbol"] != CASH_SYMBOL_CSV]
-        .set_index("Symbol")["Account"]
-        .to_dict()
-    )
-
-    # Process each symbol in the target allocation
-    for symbol, target_pct in target_alloc_pct.items():
-        target_dollar_value = total_rebalance_value * (target_pct / 100.0)
-
-        if symbol == CASH_SYMBOL_CSV:
-            # For CASH, calculate the required cash movement
-            cash_movement_needed = target_dollar_value - current_cash_value
-            summary["Net Cash Change"] = (
-                cash_movement_needed  # This is the final cash adjustment
-            )
-            # No trade record for CASH itself
-        else:
-            current_dollar_value = current_holdings_values.get(symbol, 0.0)
-            trade_value = target_dollar_value - current_dollar_value
-
-            if (
-                abs(trade_value) > 0.01
-            ):  # Only consider trades above a certain threshold
-                action = "BUY" if trade_value > 0 else "SELL"
-                price = current_holdings_prices.get(symbol, 0.0)
-                account = current_holdings_accounts.get(symbol, "N/A")
-
-                # If price is 0, quantity will be 0. This is a safe fallback.
-                quantity = trade_value / price if price > 0 else 0
-
-                trades.append(
-                    {
-                        "Action": action,
-                        "Symbol": symbol,
-                        "Account": account,
-                        "Quantity": quantity,
-                        "Current Price": price,
-                        "Trade Value": trade_value,
-                        "Note": f"Rebalance to {target_pct:.2f}%",
-                    }
-                )
-
-                if action == "BUY":
-                    summary["Total Value to Buy"] += trade_value
-                else:
-                    summary["Total Value to Sell"] += abs(trade_value)
-
-    summary["Estimated Number of Trades"] = len(trades)
-    return pd.DataFrame(trades), summary
 
 
 # --- Portfolio Health Analysis ---
@@ -3454,17 +3318,8 @@ def calculate_hhi(weights: List[float]) -> float:
     HHI = sum(w_i^2) where w_i are fractions (0 to 1).
     Returns value between 1/N (perfectly diversified) and 1.0 (concentrated).
     """
-    if not weights:
-        return 1.0
-
-    # Ensure weights are normalized sum to 1
-    total_w = sum(weights)
-    if total_w == 0:
-        return 0.0
-
-    normalized_weights = [w / total_w for w in weights]
-    hhi = sum(w**2 for w in normalized_weights)
-    return hhi
+    # Ported to Rust: rust/investa_core/src/pa_small.rs
+    return investa_core.pa_calculate_hhi(weights)
 
 
 def calculate_health_score(
@@ -3480,124 +3335,8 @@ def calculate_health_score(
     2. Efficiency (Sharpe Ratio).
     3. Volatility Check (Penalty if too high).
     """
-    _score_breakdown = {}
-
-    # 1. Diversification Score (0-100)
-    # HHI Approach: Lower is better.
-    # HHI < 1500 (0.15) is Competitive (Good)
-    # HHI 1500-2500 (0.15-0.25) is Moderately Concentrated
-    # HHI > 2500 (0.25) is Highly Concentrated
-
-    relevant_holdings = pd.DataFrame()
-
-    # Identify the Market Value column (it usually has currency like "Market Value (USD)")
-    mv_col = next(
-        (c for c in summary_df.columns if c.startswith("Market Value (")), None
-    )
-
-    if not summary_df.empty and "Symbol" in summary_df.columns and mv_col:
-        # Robustly handle is_total if it doesn't exist
-        if "is_total" in summary_df.columns:
-            is_total_mask = summary_df["is_total"].fillna(False)
-        else:
-            is_total_mask = pd.Series(False, index=summary_df.index)
-
-        relevant_holdings = summary_df[
-            (summary_df["Symbol"] != "Total")
-            & (summary_df[mv_col] > 0)
-            & (~is_total_mask)
-        ]
-
-    if relevant_holdings.empty:
-        return {"overall_score": 0, "components": {}, "rating": "N/A"}
-
-    weights = relevant_holdings[mv_col].tolist()
-    hhi = calculate_hhi(weights)
-
-    # Convert HHI to Score (Inverse).
-    # Current HHI range is [1/N to 1.0].
-    # Logic:
-    # HHI 0.1 (10 equal stocks) -> 90 Score
-    # HHI 0.2 (5 equal stocks) -> 70 Score
-    # HHI 1.0 (1 stock) -> 10 Score
-    # Formula: 100 * (1 - hhi^0.4) approx?
-    # 0.1^0.4 = 0.39 -> 100*(1-0.39)=61. Too low.
-    # Let's use: 100 * (1.0 - (hhi ** 0.5)) but shift it.
-    # Actually, a simple linear-ish curve or adjusted power:
-    div_score = 100 * (1.0 - (hhi**0.6)) + 10
-    div_score = max(0, min(100, div_score))
-
-    # 2. Efficiency Score (Sharpe)
-    # New Logic:
-    # Sharpe 0.0 -> Score 30 (Poor, matching risk-free isn't 'fair' for stocks)
-    # Sharpe 1.0 -> Score 80 (Good)
-    # Sharpe 1.5 -> Score 100 (Excellent)
-    sharpe = risk_metrics.get("Sharpe Ratio", 0.0)
-    if sharpe <= 0:
-        eff_score = max(0, 30 + (sharpe * 10))  # Penalize negative sharpe
-    else:
-        # Scale 0 to 1.0 -> 30 to 80
-        # Scale 1.0 to 1.5 -> 80 to 100
-        if sharpe <= 1.0:
-            eff_score = 30 + (sharpe * 50)
-        else:
-            eff_score = 80 + ((sharpe - 1.0) * 40)
-
-    eff_score = max(0, min(100, eff_score))
-
-    # 3. Volatility Penalty / Score
-    # Volatility logic:
-    # Vol 0.0 -> Score 50 (Neutral/Insufficient Data)
-    # Vol 10-20% -> Score 100 (Healthy active range)
-    # Vol > 30% -> Penalty
-    vol = risk_metrics.get("Volatility (Ann.)", 0.0)
-    if vol == 0:
-        vol_score = 50.0
-    elif vol < 0.05:
-        vol_score = 70.0  # Extreme low vol (cash-like)
-    elif vol <= 0.25:
-        vol_score = 100.0  # Ideal range
-    else:
-        # Penalty for high vol
-        vol_score = max(0, 100 - (vol - 0.25) * 200)  # 35% vol -> 80 score
-
-    # Composite Score
-    # Weighted average: Div 40%, Eff 40%, Vol 20%
-    overall = (div_score * 0.4) + (eff_score * 0.4) + (vol_score * 0.2)
-
-    # Rating
-    if overall >= 80:
-        rating = "Excellent"
-    elif overall >= 60:
-        rating = "Good"
-    elif overall >= 40:
-        rating = "Fair"
-    elif overall >= 20:
-        rating = "Poor"
-    else:
-        rating = "Critical"
-
-    return {
-        "overall_score": round(overall, 1),
-        "rating": rating,
-        "components": {
-            "diversification": {
-                "score": round(div_score, 1),
-                "metric": round(hhi, 3),
-                "label": "HHI (Concentration)",
-            },
-            "efficiency": {
-                "score": round(eff_score, 1),
-                "metric": round(sharpe, 2),
-                "label": "Sharpe Ratio",
-            },
-            "stability": {
-                "score": round(vol_score, 1),
-                "metric": f"{round(vol * 100, 1)}%",
-                "label": "Volatility",
-            },
-        },
-    }
+    # Ported to Rust: rust/investa_core/src/pa_small.rs
+    return investa_core.pa_health_score(summary_df, risk_metrics, risk_free_rate)
 
 
 # --- ADDED: Helper to calculate monthly cash interest events (Shared) ---
@@ -3612,85 +3351,7 @@ def generate_cash_interest_events(
     """
     Generates estimated monthly cash interest events using pre-calculated summary rows.
     """
-    events = []
-
-    # 1. Aggregate Cash Balances by Account (from Summary Rows)
-    # The summary rows are already in Display Currency (USD) and netted correctly.
-    account_usd_balances = defaultdict(float)
-
-    logging.info(
-        f"GenCashInterest: Processing {len(portfolio_summary_rows)} summary rows. Interest Rates keys: {list(interest_rates.keys())}"
+    # Ported to Rust: rust/investa_core/src/pa_small.rs
+    return investa_core.pa_cash_interest_events(
+        portfolio_summary_rows, interest_rates, thresholds, start_date, end_date, display_currency
     )
-
-    for row in portfolio_summary_rows:
-        # Check if it's a cash row
-        sym = row.get("Symbol", "")
-        # Add simpler check for safety in case of formatting changes
-        is_cash = (
-            sym == "$CASH"
-            or sym.startswith("Cash ")
-            or row.get("Name") == "Cash"
-            or "Cash (" in sym
-        )
-
-        if is_cash:
-            account = row.get("Account")
-            if account:
-                # ROBUST LOOKUP: Find 'Market Value (...)' key
-                mv = 0.0
-                for k, v in row.items():
-                    if k.startswith("Market Value (") and isinstance(v, (int, float)):
-                        mv = v
-                        break
-
-                account_usd_balances[account] += mv
-                logging.info(
-                    f"GenCashInterest: Found cash row for {account}: {sym}, MV={mv}"
-                )
-
-    logging.info(f"GenCashInterest: Aggregated Balances: {dict(account_usd_balances)}")
-
-    today = date.today()
-
-    # --- Generate Events per Account (Consolidated) ---
-    for account, balance_usd in account_usd_balances.items():
-        # Apply Account Settings
-        rate = interest_rates.get(account)
-        if not rate or rate <= 0:
-            continue
-
-        # Apply Threshold (Global per Account)
-        threshold = thresholds.get(account, 0.0)
-        effective_balance_usd = max(0, balance_usd - threshold)
-
-        if effective_balance_usd <= 0:
-            continue
-
-        # Calculate Annual Interest (USD)
-        annual_income_usd = effective_balance_usd * (rate / 100.0)
-        monthly_payment_usd = annual_income_usd / 12.0
-
-        if monthly_payment_usd > 0.01:
-            # Anchor to the current month to ensure we cover all 12 months of the projection window
-            iter_date = today.replace(day=1)
-
-            logging.info(
-                f"GenCashInterest: Projecting for {account}: Rate={rate}%, Bal={balance_usd}, Monthly={monthly_payment_usd:.2f}, Start={iter_date}"
-            )
-
-            # Generate monthly events
-            while iter_date <= end_date:
-                events.append(
-                    {
-                        "symbol": "$CASH",
-                        "dividend_date": str(iter_date),
-                        "ex_dividend_date": "",
-                        "amount": monthly_payment_usd,
-                        "status": "estimated",
-                        "account": account,
-                        "name": f"Cash Interest ({account})",  # Consolidated Name
-                    }
-                )
-                iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
-
-    return events
