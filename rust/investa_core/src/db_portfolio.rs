@@ -2085,3 +2085,202 @@ pub fn db_connect_readonly<'py>(
         Err(e) => Err(e),
     }
 }
+
+/// `migrate_csv_to_db`: a cleaned CSV ledger inserted row by row;
+/// (migrated, errors).
+#[pyfunction]
+pub fn db_migrate_csv_to_db<'py>(
+    py: Python<'py>,
+    csv_file_path: &Bound<'py, PyAny>,
+    db_conn: &Bound<'py, PyAny>,
+    account_currency_map: &Bound<'py, PyAny>,
+    default_currency: &Bound<'py, PyAny>,
+) -> PyResult<(i64, i64)> {
+    let loader = match py
+        .import("data_loader")
+        .and_then(|m| m.getattr("load_and_clean_transactions"))
+    {
+        Ok(f) => f,
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyImportError>(py) => {
+            log(
+                py,
+                "error",
+                "CRITICAL: data_loader.load_and_clean_transactions could not be imported in migrate_csv_to_db. Migration failed.",
+            )?;
+            return Ok((0, 1));
+        }
+        Err(e) => return Err(e),
+    };
+    log(
+        py,
+        "info",
+        format!("Starting migration from CSV: {}", s(csv_file_path)?),
+    )?;
+    let mut migrated: i64 = 0;
+    let mut errors: i64 = 0;
+    let run = (|| -> PyResult<Option<(i64, i64)>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("is_db_source", false)?;
+        let loaded = loader.call(
+            (csv_file_path, account_currency_map, default_currency),
+            Some(&kwargs),
+        )?;
+        let items: Vec<Bound<'py, PyAny>> = loaded.try_iter()?.collect::<PyResult<_>>()?;
+        if items.len() != 7 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                if items.len() > 7 {
+                    "too many values to unpack (expected 7)".to_string()
+                } else {
+                    format!(
+                        "not enough values to unpack (expected 7, got {})",
+                        items.len()
+                    )
+                },
+            ));
+        }
+        let (df, load_error) = (items[0].clone(), items[4].clone());
+        if load_error.is_truthy()? || df.is_none() {
+            log(
+                py,
+                "error",
+                format!(
+                    "Failed to load or clean CSV '{}' for migration.",
+                    s(csv_file_path)?
+                ),
+            )?;
+            return Ok(Some((0, 1)));
+        }
+        if df.getattr("empty")?.is_truthy()? {
+            log(
+                py,
+                "info",
+                format!(
+                    "CSV file '{}' is empty. Nothing to migrate.",
+                    s(csv_file_path)?
+                ),
+            )?;
+            return Ok(Some((0, 0)));
+        }
+        let pc = PyConn::new(db_conn)?;
+        let pd = py.import("pandas")?;
+        if df.getattr("columns")?.contains("Date")?
+            && pd
+                .getattr("api")?
+                .getattr("types")?
+                .call_method1("is_datetime64_any_dtype", (df.get_item("Date")?,))?
+                .is_truthy()?
+        {
+            let text = df
+                .get_item("Date")?
+                .getattr("dt")?
+                .call_method1("strftime", ("%Y-%m-%d",))?;
+            crate::pyhelp::setitem(&df, "Date", text)?;
+        }
+        let columns = [
+            "Date",
+            "Type",
+            "Symbol",
+            "Quantity",
+            "Price/Share",
+            "Total Amount",
+            "Commission",
+            "Account",
+            "Split Ratio",
+            "Note",
+            "Local Currency",
+            "Tags",
+        ];
+        let reindex_kw = PyDict::new(py);
+        reindex_kw.set_item("columns", PyList::new(py, columns)?)?;
+        let for_insert = df.call_method("reindex", (), Some(&reindex_kw))?;
+        let quoted: Vec<String> = columns
+            .iter()
+            .map(|c| {
+                if c.contains('/') || c.contains(' ') {
+                    format!("\"{c}\"")
+                } else {
+                    (*c).to_string()
+                }
+            })
+            .collect();
+        let sql = pystr(
+            py,
+            &format!(
+                "INSERT INTO transactions ({}) VALUES ({});",
+                quoted.join(", "),
+                vec!["?"; columns.len()].join(", ")
+            ),
+        );
+        for pair in for_insert.call_method0("iterrows")?.try_iter()? {
+            let row = pair?.get_item(1)?;
+            let inserted = (|| -> PyResult<()> {
+                let mut cells = Vec::new();
+                for x in row.call_method0("tolist")?.try_iter()? {
+                    let x = x?;
+                    cells.push(if isna(py, &x)? {
+                        py.None().into_bound(py)
+                    } else {
+                        x
+                    });
+                }
+                pc.execute(&sql, PyTuple::new(py, cells)?.as_any())?;
+                Ok(())
+            })();
+            match inserted {
+                Ok(()) => migrated += 1,
+                Err(e) if crate::pyhelp::is_sqlite(py, &e, "Error")? => {
+                    log_exc(
+                        py,
+                        "error",
+                        format!(
+                            "Error inserting row into database: {} - Error: {}",
+                            s(&row.call_method0("to_dict")?)?,
+                            es(py, &e)
+                        ),
+                        &e,
+                    )?;
+                    errors += 1;
+                }
+                Err(e) if e.is_instance_of::<pyo3::exceptions::PyException>(py) => {
+                    log_exc(
+                        py,
+                        "error",
+                        format!(
+                            "General error processing row for DB insert: {} - Error: {}",
+                            s(&row.call_method0("to_dict")?)?,
+                            es(py, &e)
+                        ),
+                        &e,
+                    )?;
+                    errors += 1;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        pc.commit()?;
+        log(
+            py,
+            "info",
+            format!("Migration complete. Migrated: {migrated}, Errors: {errors}"),
+        )?;
+        Ok(None)
+    })();
+    match run {
+        Ok(Some(early)) => Ok(early),
+        Ok(None) => Ok((migrated, errors)),
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyException>(py) => {
+            log_exc(
+                py,
+                "error",
+                format!(
+                    "Critical error during CSV migration process: {}",
+                    es(py, &e)
+                ),
+                &e,
+            )?;
+            let _ = db_conn.call_method0("rollback");
+            Ok((migrated, errors + 1))
+        }
+        Err(e) => Err(e),
+    }
+}

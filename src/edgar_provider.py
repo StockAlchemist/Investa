@@ -50,6 +50,7 @@ import numpy as np
 import pandas as pd
 
 import config
+import investa_core
 from db_utils import get_db_connection
 from edgar_concepts import (
     BALANCE_CONCEPTS,
@@ -177,7 +178,8 @@ def as_of(date: Optional[str]):
 
 
 def _effective_as_of(explicit: Optional[str]) -> Optional[str]:
-    return explicit if explicit is not None else _as_of_var.get()
+    # Ported to Rust: rust/investa_core/src/ef_store.rs
+    return investa_core.ef_effective_as_of(explicit)
 
 
 # --- per-company read session -------------------------------------------------
@@ -212,30 +214,18 @@ _session_var: contextvars.ContextVar[Optional[_CompanySession]] = (
 
 
 def _session_for(cik: str) -> Optional[_CompanySession]:
-    session = _session_var.get()
-    if (
-        session is not None
-        and session.cik == cik
-        and session.thread == threading.get_ident()
-    ):
-        return session
-    return None
+    # Ported to Rust: rust/investa_core/src/ef_store.rs
+    return investa_core.ef_session_for(cik)
 
 
-@contextlib.contextmanager
 def company_session(cik: str):
-    """Share one connection and each tag's rows across this block's reads of `cik`."""
-    if _session_for(cik) is not None:  # nested: the outer block's session serves
-        yield
-        return
-    session = _CompanySession(cik)
-    token = _session_var.set(session)
-    try:
-        yield
-    finally:
-        _session_var.reset(token)
-        for conn in session.connections.values():
-            conn.close()
+    """Share one connection and each tag's rows across this block's reads of `cik`.
+
+    A context manager (rust/investa_core/src/ef_store.rs): inside an open
+    session for the same company it does nothing; on exit it resets the
+    session variable and closes the session's connections.
+    """
+    return investa_core.CompanySession(cik)
 
 
 def _db_path() -> str:
@@ -267,137 +257,33 @@ class EdgarFactStore:
             )
         return conn
 
-    def _read_tags(self, reader: str, cik: str, tag_list, as_of, fetch, prefetch, copy):
-        """
-        `fetch(conn, tags)` for `tag_list`, through the company session if one
-        is open: tags it has not loaded yet (with `prefetch`, the rest of what
-        the session's company will ask for) are queried once, and the answer is
-        a copy of the loaded rows for `tag_list`.
-        """
-        session = _session_for(cik)
-        if session is None:
-            with self._connect() as conn:
-                return fetch(conn, tag_list)
-        loaded, rows = session.loaded.setdefault(
-            (reader, self.db_path, as_of), (set(), {})
-        )
-        wanted = set(tag_list)
-        if not wanted <= loaded:
-            missing = [
-                t for t in dict.fromkeys([*tag_list, *prefetch()]) if t not in loaded
-            ]
-            conn = session.connections.get(self.db_path)
-            if conn is None:
-                conn = session.connections[self.db_path] = self._connect()
-            rows.update(fetch(conn, missing))
-            loaded.update(missing)
-        return {tag: copy(value) for tag, value in rows.items() if tag in wanted}
-
     def _init_db(self) -> None:
-        with self._write_lock, self._connect() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS facts (
-                    cik TEXT NOT NULL,
-                    tag TEXT NOT NULL,
-                    period_end TEXT NOT NULL,
-                    period_start TEXT,
-                    val REAL,
-                    unit TEXT,
-                    form TEXT,
-                    accn TEXT NOT NULL,
-                    filed TEXT,
-                    PRIMARY KEY (cik, tag, period_end, accn)
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_facts_cik_tag ON facts (cik, tag)"
-            )
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS ingest_log (
-                    cik TEXT PRIMARY KEY,
-                    ingested_at TEXT,
-                    fact_count INTEGER
-                )
-            """)
-            # Quarterly facts, kept apart from the annual ones: the period start
-            # is part of the key here (a 10-Q files the three-month and the
-            # year-to-date figure under one accession), and a fiscal Q4 shares
-            # its end date with the fiscal year it closes.
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS quarterly_facts (
-                    cik TEXT NOT NULL,
-                    tag TEXT NOT NULL,
-                    period_start TEXT NOT NULL,
-                    period_end TEXT NOT NULL,
-                    val REAL,
-                    unit TEXT,
-                    form TEXT,
-                    accn TEXT NOT NULL,
-                    filed TEXT,
-                    PRIMARY KEY (cik, tag, period_start, period_end, accn)
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_quarterly_cik_tag ON quarterly_facts (cik, tag)"
-            )
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS quarterly_ingest_log (
-                    cik TEXT PRIMARY KEY,
-                    ingested_at TEXT,
-                    fact_count INTEGER
-                )
-            """)
-            conn.commit()
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        investa_core.ef_init_db(self)
 
     # --- writing ----------------------------------------------------------
 
     def upsert_facts(self, rows: List[Tuple]) -> int:
-        if not rows:
-            return 0
-        with self._write_lock, self._connect() as conn:
-            conn.executemany(
-                """INSERT OR REPLACE INTO facts
-                   (cik, tag, period_end, period_start, val, unit, form, accn, filed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                rows,
-            )
-            conn.commit()
-        return len(rows)
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_upsert_facts(self, rows)
 
     def mark_ingested(self, cik: str, fact_count: int) -> None:
-        with self._write_lock, self._connect() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO ingest_log (cik, ingested_at, fact_count) VALUES (?, ?, ?)",
-                (cik, datetime.now().isoformat(), fact_count),
-            )
-            conn.commit()
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        investa_core.ef_mark_ingested(self, cik, fact_count)
 
     def ingested_ciks(self) -> set:
-        with self._connect() as conn:
-            return {row[0] for row in conn.execute("SELECT cik FROM ingest_log")}
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_ingested_ciks(self)
 
     # --- quarterly writing/reading ----------------------------------------
 
     def upsert_quarterly_facts(self, rows: List[Tuple]) -> int:
-        if not rows:
-            return 0
-        with self._write_lock, self._connect() as conn:
-            conn.executemany(
-                """INSERT OR REPLACE INTO quarterly_facts
-                   (cik, tag, period_start, period_end, val, unit, form, accn, filed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                rows,
-            )
-            conn.commit()
-        return len(rows)
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_upsert_quarterly_facts(self, rows)
 
     def mark_quarterly_ingested(self, cik: str, fact_count: int) -> None:
-        with self._write_lock, self._connect() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO quarterly_ingest_log (cik, ingested_at, fact_count) VALUES (?, ?, ?)",
-                (cik, datetime.now().isoformat(), fact_count),
-            )
-            conn.commit()
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        investa_core.ef_mark_quarterly_ingested(self, cik, fact_count)
 
     def quarterly_ingest_state(self, cik: str) -> Optional[Tuple[datetime, int]]:
         """
@@ -407,17 +293,8 @@ class EdgarFactStore:
         a filer with no quarterly XBRL or a request that failed, and neither
         should be treated like a good load a week old.
         """
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT ingested_at, fact_count FROM quarterly_ingest_log WHERE cik = ?",
-                (cik,),
-            ).fetchone()
-        if not row or not row[0]:
-            return None
-        try:
-            return datetime.fromisoformat(row[0]), int(row[1] or 0)
-        except ValueError:
-            return None
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_quarterly_ingest_state(self, cik)
 
     def get_many_tag_spans(
         self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
@@ -431,28 +308,8 @@ class EdgarFactStore:
         apart is what makes a real quarterly series derivable. Instants (balance
         sheet) carry an empty start.
         """
-        tag_list = list(tags)
-        if not tag_list:
-            return {}
-        as_of = _effective_as_of(as_of)
-        placeholders = ",".join("?" * len(tag_list))
-        query = f"""
-            SELECT tag, period_start, period_end, val, unit FROM quarterly_facts
-            WHERE cik = ? AND tag IN ({placeholders})
-        """
-        params: List[Any] = [cik, *tag_list]
-        if as_of:
-            query += " AND filed <= ?"
-            params.append(as_of)
-        query += " ORDER BY period_end, filed"
-
-        result: Dict[str, Dict[Tuple[str, str], Tuple[float, str]]] = {}
-        with self._connect() as conn:
-            for tag, start, end, val, unit in conn.execute(query, params):
-                if val is not None:
-                    # Rows arrive filed-ascending, so the last write wins.
-                    result.setdefault(tag, {})[(start or "", end)] = (val, unit)
-        return result
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_get_many_tag_spans(self, cik, tags, as_of)
 
     def get_many_tag_spans_by_filing(
         self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
@@ -477,38 +334,8 @@ class EdgarFactStore:
         0001628280, then its own 0000320193 — so sorting the accessions
         descending puts 2017 first and 2026 last.
         """
-        tag_list = list(tags)
-        if not tag_list:
-            return {}
-        as_of = _effective_as_of(as_of)
-        placeholders = ",".join("?" * len(tag_list))
-        query = f"""
-            SELECT tag, filed, accn, period_start, period_end, val, unit
-            FROM quarterly_facts
-            WHERE cik = ? AND tag IN ({placeholders})
-        """
-        params: List[Any] = [cik, *tag_list]
-        if as_of:
-            query += " AND filed <= ?"
-            params.append(as_of)
-        # Newest filing first; the accession breaks a tie inside one day.
-        query += " ORDER BY filed DESC, accn DESC"
-
-        grouped: Dict[
-            str, Dict[Tuple[str, str], Dict[Tuple[str, str], Tuple[float, str]]]
-        ] = {}
-        for_tag: Dict[str, List[Filing]] = {}
-        with self._connect() as conn:
-            for tag, filed, accn, start, end, val, unit in conn.execute(query, params):
-                if val is None:
-                    continue
-                filings = grouped.setdefault(tag, {})
-                key = (filed or "", accn or "")
-                if key not in filings:
-                    filings[key] = {}
-                    for_tag.setdefault(tag, []).append((key, filings[key]))
-                filings[key][(start or "", end)] = (val, unit)
-        return for_tag
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_get_many_tag_spans_by_filing(self, cik, tags, as_of)
 
     # --- reading ----------------------------------------------------------
 
@@ -522,59 +349,20 @@ class EdgarFactStore:
         With `as_of`, only facts filed on or before that date are visible, so
         the answer is the originally-reported one rather than a later restatement.
         """
-        as_of = _effective_as_of(as_of)
-        query = """
-            SELECT period_end, val, unit, filed FROM facts
-            WHERE cik = ? AND tag = ?
-        """
-        params: List[Any] = [cik, tag]
-        if as_of:
-            query += " AND filed <= ?"
-            params.append(as_of)
-        query += " ORDER BY period_end, filed"
-
-        result: Dict[str, Tuple[float, str]] = {}
-        with self._connect() as conn:
-            for period_end, val, unit, _filed in conn.execute(query, params):
-                if val is not None:
-                    # Rows arrive filed-ascending, so the last write wins.
-                    result[period_end] = (val, unit)
-        return result
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_get_tag_series(self, cik, tag, as_of)
 
     @staticmethod
     def _many_tag_series_query(cik, tag_list, as_of):
-        placeholders = ",".join("?" * len(tag_list))
-        query = f"""
-            SELECT tag, period_end, val, unit FROM facts
-            WHERE cik = ? AND tag IN ({placeholders})
-        """
-        params: List[Any] = [cik, *tag_list]
-        if as_of:
-            query += " AND filed <= ?"
-            params.append(as_of)
-        query += " ORDER BY period_end, filed"
-        return query, params
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_many_tag_series_query(cik, tag_list, as_of)
 
     def get_many_tag_series(
         self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
     ) -> Dict[str, Dict[str, Tuple[float, str]]]:
         """Batched `get_tag_series` — one query instead of one per tag."""
-        tag_list = list(tags)
-        if not tag_list:
-            return {}
-        as_of = _effective_as_of(as_of)
-
-        def fetch(conn, tags):
-            query, params = self._many_tag_series_query(cik, tags, as_of)
-            result: Dict[str, Dict[str, Tuple[float, str]]] = {}
-            for tag, period_end, val, unit in conn.execute(query, params):
-                if val is not None:
-                    result.setdefault(tag, {})[period_end] = (val, unit)
-            return result
-
-        return self._read_tags(
-            "series", cik, tag_list, as_of, fetch, _all_chain_tags, dict
-        )
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_get_many_tag_series(self, cik, tags, as_of)
 
     def get_tag_revisions(
         self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
@@ -587,27 +375,8 @@ class EdgarFactStore:
         is what makes "they said 1.2bn in 2020 and 1.1bn in 2022" answerable at
         all — no vendor feed carries it, because a feed serves the current view.
         """
-        tag_list = list(tags)
-        if not tag_list:
-            return {}
-        as_of = _effective_as_of(as_of)
-        placeholders = ",".join("?" * len(tag_list))
-        query = f"""
-            SELECT tag, period_end, filed, val, form FROM facts
-            WHERE cik = ? AND tag IN ({placeholders}) AND val IS NOT NULL
-        """
-        params: List[Any] = [cik, *tag_list]
-        if as_of:
-            query += " AND filed <= ?"
-            params.append(as_of)
-        query += " ORDER BY period_end, filed"
-
-        result: Dict[Tuple[str, str], List[Tuple[str, float, str]]] = {}
-        with self._connect() as conn:
-            for tag, period_end, filed, val, form in conn.execute(query, params):
-                if filed:
-                    result.setdefault((tag, period_end), []).append((filed, val, form))
-        return result
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_get_tag_revisions(self, cik, tags, as_of)
 
     def get_tag_series_by_filing(
         self, cik: str, tags: Iterable[str], as_of: Optional[str] = None
@@ -633,53 +402,12 @@ class EdgarFactStore:
         filing the newest when the newest was from 2025, and the caller's "most
         authoritative filing first" was neither.
         """
-        tag_list = list(tags)
-        if not tag_list:
-            return {}
-        as_of = _effective_as_of(as_of)
-
-        def fetch(conn, tags):
-            placeholders = ",".join("?" * len(tags))
-            query = f"""
-                SELECT tag, filed, accn, period_end, val FROM facts
-                WHERE cik = ? AND tag IN ({placeholders})
-            """
-            params: List[Any] = [cik, *tags]
-            if as_of:
-                query += " AND filed <= ?"
-                params.append(as_of)
-            # Newest filing first; the accession breaks a tie inside one day.
-            query += " ORDER BY filed DESC, accn DESC"
-
-            seen: Dict[str, Dict[Tuple[str, str], Dict[str, float]]] = {}
-            for_tag: Dict[str, List[Dict[str, float]]] = {}
-            for tag, filed, accn, period_end, val in conn.execute(query, params):
-                if val is None:
-                    continue
-                filings = seen.setdefault(tag, {})
-                key = (filed or "", accn or "")
-                if key not in filings:
-                    filings[key] = {}
-                    for_tag.setdefault(tag, []).append(filings[key])
-                filings[key][period_end] = val
-            return for_tag
-
-        return self._read_tags(
-            "by_filing",
-            cik,
-            tag_list,
-            as_of,
-            fetch,
-            lambda: _tags_for(_SHARE_SCALED + _PER_SHARE_SCALED),
-            lambda filings: [dict(f) for f in filings],
-        )
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_get_tag_series_by_filing(self, cik, tags, as_of)
 
     def has_data(self, cik: str) -> bool:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT 1 FROM facts WHERE cik = ? LIMIT 1", (cik,)
-            ).fetchone()
-        return row is not None
+        # Ported to Rust: rust/investa_core/src/ef_store.rs
+        return investa_core.ef_has_data(self, cik)
 
 
 _shared_store: Optional[EdgarFactStore] = None

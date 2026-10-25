@@ -11,6 +11,8 @@ pub mod buffett;
 pub mod cashflows;
 pub mod db_portfolio;
 pub mod db_screener;
+pub mod dl;
+pub mod ef_store;
 pub mod fifo;
 pub mod history;
 pub mod holdings;
@@ -269,5 +271,34 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rank_store::rs_get_run, m)?)?;
     m.add_function(wrap_pyfunction!(rank_store::rs_get_scores_frame, m)?)?;
     m.add_function(wrap_pyfunction!(rank_store::rs_get_symbol_history, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_effective_as_of, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_session_for, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_get_many_tag_spans, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        ef_store::ef_get_many_tag_spans_by_filing,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_get_tag_series, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_many_tag_series_query, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_get_many_tag_series, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_get_tag_series_by_filing, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_get_tag_revisions, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_has_data, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_init_db, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_upsert_facts, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_upsert_quarterly_facts, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_mark_ingested, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_mark_quarterly_ingested, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_ingested_ciks, m)?)?;
+    m.add_function(wrap_pyfunction!(ef_store::ef_quarterly_ingest_state, m)?)?;
+    m.add_class::<ef_store::CompanySession>()?;
+    m.add_function(wrap_pyfunction!(dl::dl_normalize_header, m)?)?;
+    m.add_function(wrap_pyfunction!(dl::dl_map_headers, m)?)?;
+    m.add_function(wrap_pyfunction!(dl::dl_parse_date_robustly, m)?)?;
+    m.add_function(wrap_pyfunction!(dl::dl_load_and_clean, m)?)?;
+    m.add_function(wrap_pyfunction!(dl::dl_convert_csv_headers, m)?)?;
+    m.add_function(wrap_pyfunction!(dl::dl_write_csv, m)?)?;
+    m.add_function(wrap_pyfunction!(dl::dl_write_excel, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_migrate_csv_to_db, m)?)?;
     Ok(())
 }

@@ -15,6 +15,7 @@
 SPDX-License-Identifier: MIT
 """
 
+import investa_core
 import pandas as pd
 import csv
 import logging
@@ -84,97 +85,8 @@ def convert_csv_headers_to_cleaned_format(
     Returns:
         Tuple[bool, str]: (success_status, message)
     """
-    logging.info(
-        f"Attempting to standardize CSV headers for '{input_csv_path}' -> '{output_csv_path}'"
-    )
-    try:
-        # Read the CSV, treating all data as strings to preserve original values
-        # keep_default_na=False ensures empty strings are read as such, not NaN
-        df = pd.read_csv(
-            input_csv_path, dtype=str, keep_default_na=False, skipinitialspace=True
-        )
-        if df.empty and not list(df.columns):
-            logging.warning(
-                f"Input CSV '{input_csv_path}' is empty or has no headers. No conversion performed."
-            )
-            # Create an empty CSV with desired headers if output is different or if overwriting an empty file
-            # Ensure DESIRED_CLEANED_COLUMN_ORDER includes all necessary fields
-            final_headers_for_empty_csv = DESIRED_CLEANED_COLUMN_ORDER[:]
-            if "Local Currency" not in final_headers_for_empty_csv:  # Should be there
-                final_headers_for_empty_csv.append("Local Currency")
-
-            pd.DataFrame(columns=final_headers_for_empty_csv).to_csv(
-                output_csv_path,
-                index=False,
-                encoding="utf-8",
-                quoting=csv.QUOTE_MINIMAL,
-            )
-            return (
-                True,
-                "Input CSV was empty; output CSV (if different) created with standard headers.",
-            )
-
-        # Normalize original column headers from the DataFrame for mapping
-        # The keys in STANDARD_ORIGINAL_TO_CLEANED_MAP should be compared against these normalized headers.
-        df_columns_normalized_map = {
-            _col.strip(): _col for _col in df.columns
-        }  # map normalized to original raw
-
-        rename_map: Dict[str, str] = {}  # from original_raw_header -> cleaned_name
-
-        for (
-            normalized_header_from_df,
-            original_raw_header,
-        ) in df_columns_normalized_map.items():
-            # Check if this normalized_header_from_df exists as a key in our standard map
-            if normalized_header_from_df in STANDARD_ORIGINAL_TO_CLEANED_MAP:
-                cleaned_name = STANDARD_ORIGINAL_TO_CLEANED_MAP[
-                    normalized_header_from_df
-                ]
-                rename_map[original_raw_header] = cleaned_name
-            # If the normalized_header_from_df is already a cleaned name, no rename needed for this column
-            elif normalized_header_from_df in DESIRED_CLEANED_COLUMN_ORDER:
-                pass  # It's already in the desired format, will be kept
-            else:
-                # This column is not in our mapping and not already a cleaned name.
-                # It will be kept if it's not dropped by the reordering step.
-                logging.debug(
-                    f"Column '{original_raw_header}' (normalized: '{normalized_header_from_df}') not in standard map or desired order. Will be kept if not explicitly dropped."
-                )
-
-        df.rename(columns=rename_map, inplace=True)
-        logging.info(f"Applied column renames based on standard map: {rename_map}")
-
-        # Reorder columns: desired ones first (from DESIRED_CLEANED_COLUMN_ORDER),
-        # then any other columns that were in the df (e.g., custom user columns).
-        final_column_order = []
-        present_cleaned_columns = set(df.columns)
-
-        for desired_col in DESIRED_CLEANED_COLUMN_ORDER:
-            if desired_col in present_cleaned_columns:
-                final_column_order.append(desired_col)
-
-        other_columns = [col for col in df.columns if col not in final_column_order]
-        final_column_order.extend(other_columns)
-
-        df = df[final_column_order]
-
-        # Save the modified DataFrame
-        df.to_csv(
-            output_csv_path, index=False, encoding="utf-8", quoting=csv.QUOTE_MINIMAL
-        )
-        msg = f"Successfully standardized CSV headers and saved to '{output_csv_path}'"
-        logging.info(msg)
-        return True, msg
-
-    except FileNotFoundError:
-        msg = f"Error: Input CSV file not found at '{input_csv_path}'"
-        logging.error(msg)
-        return False, msg
-    except Exception as e:
-        msg = f"An unexpected error occurred during CSV header conversion: {e}"
-        logging.exception(msg)  # Log full traceback for unexpected errors
-        return False, msg
+    # Ported to Rust: rust/investa_core/src/dl.rs
+    return investa_core.dl_convert_csv_headers(input_csv_path, output_csv_path)
 
 
 if __name__ == "__main__":

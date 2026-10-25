@@ -51,8 +51,8 @@ The crate builds in four places:
 | 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
 | 9 | The summary's per-holding and per-account filters, selected once (Python) | **Done** |
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
-| 11 | Storage modules: (a) `db_utils` **done**; (b) `market_db` **done**; (c) `buffett_store` **done**; (d) the EDGAR fact store | In progress |
-| 12 | Import: `data_loader` and CSV cleaning | Planned |
+| 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
+| 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: the rest of `portfolio_analyzer`, the computational parts of `portfolio_logic`, `corporate_actions` | Planned |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
@@ -581,6 +581,26 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
 - **Parity:**
   - 480 random calls on twin stores (runs started, finished and pruned at every `keep` and staleness; score frames with NumPy scalars, NaN, text, missing columns and integer labels; paged readers with LIKE wildcards in the search) agree on return values, tables, logs and warnings.
   - The live store (256 runs, 1,219 ranked rows in the latest) reads identically through every reader.
+
+## Phase 11d (26 Oct 2026): the EDGAR fact store and the company session
+
+`EdgarFactStore`'s readers, writes and ingest logs, `_effective_as_of`, `_session_for`, and `company_session` (now a Rust context-manager class) live in `ef_store.rs`. The session cache that `_read_tags` kept is folded into the two cached readers.
+- **Order of results.** The readers' row loops fill the nested dicts the concept resolution reads in row order, so last-write-wins and insertion order are the original's.
+- **What stays in Python.** `_CompanySession` stays a Python data holder, and the context variables stay where they were, so the session machinery is reached the same way.
+- **Parity:**
+  - 400 random calls on twin stores (restatements, same-day ties, NULLs, quarterly spans; random tag sets and as-of dates; inside, outside and nested in sessions; writes) agree on return values with their dict order, and on tables, logs and warnings.
+  - On the live store, every reader for all 5,561 filers at two dates is identical.
+  - The whole ranking metrics pass is identical whether it reads through the Rust store or the frozen original. It takes about 37 s either way: the cost is still SQLite and pandas.
+
+## Phase 12 (26 Oct 2026): import
+
+`data_loader.load_and_clean_transactions` and its helpers, `csv_utils.convert_csv_headers_to_cleaned_format`, the `io_handlers` writers and `db_utils.migrate_csv_to_db` are now Rust (`dl.rs`, `db_portfolio.rs`).
+- **What stays pandas.** The CSV parse stays `pd.read_csv`, because its float parsing and type inference are pandas' own; the cleaning is the same pandas operations in the original's order.
+- **Parity:**
+  - 120 random CSV ledgers load identically through both versions (all seven results, logs, warnings). They carry header aliases, unknown and missing columns, every date shape including ordinals and invalid ones, numeric text, cash spellings, spin-off spellings, reserved types, and bad currencies.
+  - So do database sources (populated, empty, unreachable), 20 header standardisations (compared on the file written), the export writers, and 10 CSV migrations.
+  - The three real books load identically.
+- All 1,415 tests pass.
 
 ## Found while porting
 

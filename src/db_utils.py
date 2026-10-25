@@ -17,7 +17,6 @@ SPDX-License-Identifier: MIT
 import sqlite3
 import json
 import numpy as np
-import logging
 from typing import Optional, Dict, Any, Tuple, List
 import pandas as pd
 import threading
@@ -138,97 +137,10 @@ def migrate_csv_to_db(
     """
     Migrates transaction data from a CSV file to the SQLite database.
     """
-    # --- MODIFIED: Removed global DATA_LOADER_AVAILABLE flag and its usage ---
-    try:
-        from data_loader import load_and_clean_transactions
-    except ImportError:
-        logging.error(
-            "CRITICAL: data_loader.load_and_clean_transactions could not be imported in migrate_csv_to_db. Migration failed."
-        )
-        return 0, 1  # Return error if import fails
-
-    logging.info(f"Starting migration from CSV: {csv_file_path}")
-    migrated_count = 0
-    error_count = 0
-
-    try:
-        transactions_df, _, _, _, load_error, _, _ = load_and_clean_transactions(
-            csv_file_path,
-            account_currency_map,
-            default_currency,
-            is_db_source=False,
-        )
-
-        if load_error or transactions_df is None:
-            logging.error(
-                f"Failed to load or clean CSV '{csv_file_path}' for migration."
-            )
-            return 0, 1
-
-        if transactions_df.empty:
-            logging.info(f"CSV file '{csv_file_path}' is empty. Nothing to migrate.")
-            return 0, 0
-
-        cursor = db_conn.cursor()
-        if "Date" in transactions_df.columns and pd.api.types.is_datetime64_any_dtype(
-            transactions_df["Date"]
-        ):
-            transactions_df["Date"] = transactions_df["Date"].dt.strftime("%Y-%m-%d")
-
-        db_columns = [
-            "Date",
-            "Type",
-            "Symbol",
-            "Quantity",
-            "Price/Share",
-            "Total Amount",
-            "Commission",
-            "Account",
-            "Split Ratio",
-            "Note",
-            "Local Currency",  # "To Account" is not in the CSV standard
-            "Tags",
-        ]
-        df_for_insert = transactions_df.reindex(columns=db_columns)
-        placeholders = ", ".join(["?"] * len(db_columns))
-        quoted_db_columns = [
-            f'"{col}"' if "/" in col or " " in col else col for col in db_columns
-        ]
-        sql_insert = f"INSERT INTO transactions ({', '.join(quoted_db_columns)}) VALUES ({placeholders});"
-
-        for _, row_series in df_for_insert.iterrows():
-            try:
-                data_tuple = tuple(
-                    None if pd.isna(x) else x for x in row_series.tolist()
-                )
-                cursor.execute(sql_insert, data_tuple)
-                migrated_count += 1
-            except sqlite3.Error as e:
-                logging.error(
-                    f"Error inserting row into database: {row_series.to_dict()} - Error: {e}",
-                    exc_info=True,
-                )
-                error_count += 1
-            except Exception as ex:
-                logging.error(
-                    f"General error processing row for DB insert: {row_series.to_dict()} - Error: {ex}",
-                    exc_info=True,
-                )
-                error_count += 1
-        db_conn.commit()
-        logging.info(
-            f"Migration complete. Migrated: {migrated_count}, Errors: {error_count}"
-        )
-    except Exception as e:
-        logging.error(
-            f"Critical error during CSV migration process: {e}", exc_info=True
-        )
-        try:
-            db_conn.rollback()
-        except Exception:
-            pass
-        return migrated_count, error_count + 1
-    return migrated_count, error_count
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_migrate_csv_to_db(
+        csv_file_path, db_conn, account_currency_map, default_currency
+    )
 
 
 def load_all_transactions_from_db(
