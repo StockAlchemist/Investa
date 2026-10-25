@@ -1,6 +1,6 @@
 # Rust Calculation Core: Port Plan and Status
 
-**Status:** Phases 1–4 done (the Numba kernels; IRR/NPV and risk metrics; the intrinsic-value models; the Buffett ranking). Phases 5–6 to do.
+**Status:** Phases 1–5 done (the Numba kernels; IRR/NPV and risk metrics; the intrinsic-value models; the Buffett ranking; projections and the reader-facing records). Phase 6 to do.
 **Branch:** `feat/rust-core`. One long-lived branch, merged to `main` when the whole port is verified.
 **Started:** 24 Oct 2026
 **Scope:** every calculation module in `src/` moves into one Rust crate, `rust/investa_core`. Python calls it through PyO3. These stay Python:
@@ -45,7 +45,7 @@ The crate builds in four places:
 | 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
 | 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
 | 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
-| 5 | (a) `projections`, **done**; (b) `valuation_history`, `strategies`, `track_record` | In progress |
+| 5 | `projections`; the aggregations in `valuation_history`, `strategies` and `track_record` | **Done** |
 | 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
 
 ## Phase 1 results (24 Oct 2026)
@@ -213,6 +213,22 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 **Parity:**
 - Random wealth series (calendar-daily, business-daily and weekly dates, a plain integer index, gaps, crashes past the clip, partial benchmarks) match bitwise.
 - On the real 2005–2026 histories of SPY, AAPL, KO, BRK-B, MSFT and XOM, with SPY as the prior, the projection and the full backtest (four horizons plus the replay) are identical.
+
+## Phase 5b (25 Oct 2026): valuation bands, trend signal, stress response
+
+**What moved** (`records.rs`):
+- `valuation_history.bands`' statistics: median, quartiles, range, and today's percentile;
+- `strategies.evaluate_trend_signal`'s averages: the active and provisional SMAs, the flip price and the per-month history;
+- `track_record.stress_response`'s peak, trough and recovery search.
+- What stays Python: the EDGAR point-in-time reads, the price loads, `_apply_sector_cap`'s selection over a pandas sort, position sizing (one expression per position), and the result dictionaries.
+
+**Found during parity:**
+- **Iterating a pandas Series yields Python floats, not NumPy scalars,** so `sum(list(series))` takes CPython's compensated path. The provisional SMA was 1 ulp off until that was corrected.
+- **A one-month average's `iloc[-(1 - 1):]` is `iloc[0:]`, the whole history.** The port reproduces it.
+
+**Parity:**
+- Fuzz: random populations, month-end histories (window lengths 1–12) and annual series with gaps, losses, NaN and ties match bitwise.
+- Real data: bands and stress response for 253 real companies are identical (86 had enough history for bands), as is the trend signal on SPY, QQQ, IWM and EFA at 1-, 10- and 12-month windows.
 
 ## Found while porting
 

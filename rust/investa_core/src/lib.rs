@@ -14,6 +14,7 @@ pub mod mc;
 pub mod projection;
 mod py;
 pub mod rank;
+pub mod records;
 pub mod stats;
 pub mod util;
 pub mod valuation;
@@ -83,6 +84,9 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::projection, m)?)?;
     m.add_function(wrap_pyfunction!(py::walk_forward, m)?)?;
     m.add_function(wrap_pyfunction!(py::summarize_errors, m)?)?;
+    m.add_function(wrap_pyfunction!(py::band_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(py::trend_sma, m)?)?;
+    m.add_function(wrap_pyfunction!(py::stress_window, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;

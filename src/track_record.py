@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional
 
 import buffett_metrics
 import buffett_rank
+import investa_core
 
 # Human titles for the five quality pillars, in the order they are scored.
 PILLAR_TITLES: Dict[str, str] = {
@@ -272,41 +273,22 @@ def stress_response(
         items: List[Dict[str, Any]] = []
         for concept, label in _STRESS_METRICS:
             annual = by_metric.get(concept) or {}
-            peaks = {y: annual[y] for y in window["peak_years"] if y in annual}
-            if not peaks:
+            # The peak, the trough strictly after it, and the recovery run in
+            # Rust (investa_core.stress_window). A fall measured from a loss is
+            # not a fall — Delta lost $8.9bn in 2008 and $1.2bn in 2009, which
+            # would read as net income "+86%" — so a non-positive peak is
+            # skipped; and a trough must come strictly after the peak, or a
+            # company with only a 2008 reading would "fall" 0% against itself.
+            # Recovery is measured from the trough forward: a company that never
+            # fell reports None rather than 0.
+            found = investa_core.stress_window(
+                [(int(y), float(v)) for y, v in annual.items()],
+                [int(y) for y in window["peak_years"]],
+                [int(y) for y in window["trough_years"]],
+            )
+            if found is None:
                 continue
-            peak_year = max(peaks, key=lambda y: peaks[y])
-            peak = peaks[peak_year]
-            # A fall measured from a loss is not a fall. Delta lost $8.9bn in
-            # 2008 and $1.2bn in 2009, which this arithmetic would report as
-            # net income "+86%" — read as growth through the crisis by anyone
-            # looking. A company with no positive peak has nothing to fall from.
-            if not peak or peak <= 0:
-                continue
-
-            # Strictly after the peak. The windows overlap by a year, so without
-            # this a company whose only observation is 2008 compares that year
-            # with itself and reports a 0% fall — which reads as "sailed through
-            # it" when the truth is "there is one year of data here".
-            troughs = {
-                y: annual[y]
-                for y in window["trough_years"]
-                if y in annual and y > peak_year
-            }
-            if not troughs:
-                continue
-            trough_year = min(troughs, key=lambda y: troughs[y])
-            trough = troughs[trough_year]
-
-            change = (trough - peak) / abs(peak) * 100.0
-            # Recovery is measured from the trough forward, so a company that
-            # never fell has nothing to recover and reports None rather than 0.
-            recovered = None
-            if trough < peak:
-                for year in sorted(y for y in annual if y > trough_year):
-                    if annual[year] >= peak:
-                        recovered = year
-                        break
+            peak_year, trough_year, peak, trough, change, recovered = found
 
             items.append(
                 {

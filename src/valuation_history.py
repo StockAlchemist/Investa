@@ -37,6 +37,7 @@ import logging
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
+import investa_core
 import numpy as np
 
 # Years of history a band spans. The filed record reaches ~19, but the earliest
@@ -71,7 +72,11 @@ def _describe(current: float, history: List[float]) -> str:
     Phrased as a comparison and never as advice: this is what the company's own
     record says about the price, not a claim that the price is wrong.
     """
-    pct = _percentile_of(current, history)
+    return _describe_percentile(_percentile_of(current, history))
+
+
+def _describe_percentile(pct: float) -> str:
+    """`_describe` from an already computed percentile."""
     if pct >= 90:
         return "dearer than almost all of its own history"
     if pct >= 65:
@@ -220,21 +225,25 @@ def bands(symbol: str, cik: str, today: Optional[date] = None) -> List[Dict[str,
         now = current.get(key)
         if len(population) < MIN_OBSERVATIONS or not now or not np.isfinite(now):
             continue
+        # The median, quartiles, range and today's percentile run in Rust.
+        median, p25, p75, low, high, percentile = investa_core.band_stats(
+            [float(v) for v in population], float(now)
+        )
         results.append(
             {
                 "metric": key,
                 "label": label,
                 "current": float(now),
-                "median": float(np.median(population)),
-                "p25": float(np.percentile(population, 25)),
-                "p75": float(np.percentile(population, 75)),
-                "low": float(np.min(population)),
-                "high": float(np.max(population)),
-                "percentile": float(_percentile_of(now, population)),
+                "median": median,
+                "p25": p25,
+                "p75": p75,
+                "low": low,
+                "high": high,
+                "percentile": percentile,
                 "observations": len(population),
                 "display": f"{now:.1f}x",
-                "median_display": f"{float(np.median(population)):.1f}x",
-                "summary": _describe(now, population),
+                "median_display": f"{median:.1f}x",
+                "summary": _describe_percentile(percentile),
             }
         )
     return results

@@ -1178,3 +1178,57 @@ pub fn summarize_errors(
     let s = crate::projection::summarize(&z, &actual_log, &median_log);
     Ok((s[0], s[1], s[2], s[3], s[4], s[5], s[6]))
 }
+
+// --- records.rs: valuation bands, trend signal, stress response -----------
+
+/// `valuation_history.bands`' statistics: (median, p25, p75, low, high,
+/// percentile of `now`).
+#[pyfunction]
+pub fn band_stats(population: Vec<f64>, now: f64) -> PyResult<(f64, f64, f64, f64, f64, f64)> {
+    if population.is_empty() || population.iter().any(|v| !v.is_finite()) {
+        return Err(PyValueError::new_err(
+            "band_stats needs a finite, non-empty population",
+        ));
+    }
+    Ok(crate::records::band_stats(&population, now))
+}
+
+/// `strategies.evaluate_trend_signal`'s averages: (sma, provisional_sma,
+/// flip_close, per-month moving average or None).
+#[pyfunction]
+pub fn trend_sma(
+    completed: Vec<f64>,
+    sma_months: usize,
+    latest_close: f64,
+) -> PyResult<(f64, f64, f64, Vec<Option<f64>>)> {
+    if sma_months == 0 || completed.len() < sma_months {
+        return Err(PyValueError::new_err(
+            "trend_sma needs at least sma_months >= 1 closes",
+        ));
+    }
+    Ok(crate::records::trend_sma(
+        &completed,
+        sma_months,
+        latest_close,
+    ))
+}
+
+/// `track_record.stress_response` for one metric and window: (peak_year,
+/// trough_year, peak, trough, change_pct, recovered_year), or None.
+#[pyfunction]
+pub fn stress_window(
+    annual: Vec<(i64, f64)>,
+    peak_years: Vec<i64>,
+    trough_years: Vec<i64>,
+) -> Option<(i64, i64, f64, f64, f64, Option<i64>)> {
+    crate::records::stress_window(&annual, &peak_years, &trough_years).map(|s| {
+        (
+            s.peak_year,
+            s.trough_year,
+            s.peak,
+            s.trough,
+            s.change_pct,
+            s.recovered_year,
+        )
+    })
+}

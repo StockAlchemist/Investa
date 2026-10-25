@@ -57,6 +57,8 @@ Both are returned, labelled, and the API never collapses them into one field.
 from __future__ import annotations
 
 import logging
+
+import investa_core
 import math
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -401,8 +403,12 @@ def evaluate_trend_signal(
     if len(completed) < sma_months:
         return None
 
-    window = completed.iloc[-sma_months:]
-    sma = float(window.mean())
+    # The averages run in Rust (investa_core.trend_sma): the active SMA, the
+    # provisional one, the flip price and the per-month history.
+    latest_close = float(prices.dropna().iloc[-1])
+    sma, provisional_sma, flip_close, smas = investa_core.trend_sma(
+        completed.to_numpy(dtype=float).tolist(), int(sma_months), latest_close
+    )
     decision_close = float(completed.iloc[-1])
     decision_stamp = completed.index[-1]
     state = "in" if decision_close >= sma else "out"
@@ -410,29 +416,20 @@ def evaluate_trend_signal(
     # Provisional: replace the oldest month of the window with the running
     # month's latest close, which is what the comparison will use if the month
     # ended right now.
-    latest_close = float(prices.dropna().iloc[-1])
     latest_stamp = prices.dropna().index[-1]
-    provisional_window = list(completed.iloc[-(sma_months - 1) :]) + [latest_close]
-    provisional_sma = float(sum(provisional_window) / len(provisional_window))
     provisional_state = "in" if latest_close >= provisional_sma else "out"
 
     # The close at which the next decision flips. Solving
     #   p = (sum(previous sma_months-1 month-ends) + p) / sma_months
     # for p gives the mean of the *other* months in the window — the price at
     # which today's close equals the average that includes it.
-    previous = list(completed.iloc[-(sma_months - 1) :])
-    flip_close = float(sum(previous) / len(previous)) if previous else sma
     distance_pct = (latest_close / flip_close - 1.0) * 100.0 if flip_close else None
 
     history = [
         {
             "date": str(stamp.date() if hasattr(stamp, "date") else stamp),
             "close": float(close),
-            "sma": (
-                float(completed.iloc[max(0, i - sma_months + 1) : i + 1].mean())
-                if i + 1 >= sma_months
-                else None
-            ),
+            "sma": smas[i],
         }
         for i, (stamp, close) in enumerate(completed.items())
     ][-36:]
