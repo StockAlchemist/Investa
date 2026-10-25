@@ -113,7 +113,8 @@ def test_single_metrics_match_reference():
 def test_pandas_reductions_match_pandas():
     rng = np.random.default_rng(1000)
     for _ in range(2000):
-        n = int(rng.integers(0, 700))
+        # Past 8192 NumPy reduces buffer by buffer; long arrays must agree too.
+        n = int(rng.integers(0, 700)) if rng.random() < 0.8 else int(rng.integers(8000, 30000))
         v = rng.normal(0, 10 ** float(rng.integers(-6, 9)), n)
         if rng.random() < 0.3 and n:
             v[rng.random(n) < 0.2] = np.nan
@@ -123,3 +124,7 @@ def test_pandas_reductions_match_pandas():
         assert _same(investa_core.pd_std(v, 0), s.std(ddof=0))
         assert _same(investa_core.pd_min(v), s.min())
         assert _same(investa_core.np_sum(v), np.add.reduce(v))
+    for v in ([-0.0], [-0.0] * 9, [-0.0] * 9000, [-0.0, 1.0, -1.0]):
+        a = np.array(v)
+        assert _same(investa_core.np_sum(a), np.add.reduce(a))
+        assert _same(investa_core.pd_mean(a), pd.Series(a).mean())

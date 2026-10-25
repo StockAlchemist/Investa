@@ -43,7 +43,7 @@ The crate builds in four places:
 |---|---|---|
 | 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. | **Done** |
 | 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
-| 3 | Intrinsic-value Monte Carlo models in `financial_ratios` (random draws stay NumPy-generated, so outputs stay identical) | To do |
+| 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics, **done**; (b) WACC, growth estimation, FCF normalization, the deterministic models and the blend, to do | In progress |
 | 4 | Buffett ranking: `buffett_metrics` (including its helpers), `buffett_value`, `buffett_rank` | To do |
 | 5 | `projections`, `valuation_history`, `strategies` math | To do |
 | 6 | Pandas-heavy portfolio engine: FIFO lots and realized gains, `portfolio_cashflows`, history valuation | To do |
@@ -100,6 +100,24 @@ The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are 
 - No alternative linker works: `-ld_classic` is gone, and rust-lld cannot read the macOS 27 SDK's `.tbd` stubs.
 - `rust/investa_core/.cargo/config.toml` routes macOS links through `build-support/macos_linker.py`. It links with `cc`, then, only when the pool is misaligned, drops the signature, inserts the missing padding, shifts the affected offsets, and ad-hoc signs again.
 - The release profile sets `strip = false`, because rustc's post-link `strip -S` re-lays-out LINKEDIT and undoes the fix.
+
+## Phase 3a results (25 Oct 2026): Monte Carlo models
+
+**What moved:** `_generate_mc_stats` and the twelve `run_monte_carlo_*` models (`mc.rs`).
+- **The draws stay NumPy's.** Each shim calls `np.random.normal` exactly as before, same order and arguments, and every operation that can raise stays on the same side of the draws. The models share one seeded stream per valuation, so drawing one sample more or less would shift every model after it.
+- **Everything after the draw is Rust:** clipping, the faded projection with mid-year discounting, terminal values, and the percentiles, standard deviation and histogram.
+- **`np.convolve` (the histogram smoothing) stays NumPy,** under the BLAS rule: its edges go through `ddot`.
+
+**NumPy semantics the port had to reproduce**, each measured on the installed NumPy 2.0:
+- **`array ** scalar` fast paths, by value:** an exponent of 2 squares, -1 takes the reciprocal, 0.5 the square root. Apple's `pow` is not correctly rounded for those, so the results differ from `pow`. Python's `float ** float` never takes a fast path. The port has `np_pow_scalar` for the first and `libm_pow` for the second, the latter kept out of LLVM's reach because LLVM folds a constant `pow(x, 2.0)` into `x * x`.
+- **`np.clip` is `MIN(MAX(x, lo), hi)`,** NaN passing through, and `hi` wins when `lo > hi` (negative EPS).
+- **`np.add.reduce` reduces in 8,192-element buffers:** `0.0 + pairwise(buffer 1) + pairwise(buffer 2) + …`. This was found here: a 10,000-sample standard deviation was 1 ulp off. It also corrects the Phase 2 reductions for series longer than 8,192 points, and negative zeros now sum to +0.0 as in NumPy.
+- **`np.percentile`** uses NumPy's two-sided `_lerp`. **`np.histogram`** uses `linspace` edges and NumPy's index corrections.
+
+**Parity**
+- Seeded fuzz over all twelve models: projection lengths -1 to 10, negative EPS, missing or zero shares, NaN inputs, and 10 to 10,000 iterations. Results are bitwise equal, *and NumPy's generator ends in the same state*.
+- Real data: a full intrinsic-value run for AAPL, KO, JPM, NVDA, MSFT, XOM, O and BRK-B has zero differences in the complete result, every model's Monte Carlo statistics, histogram and the blend included.
+- Full suite: 1,180 tests pass.
 
 ## Found while porting
 

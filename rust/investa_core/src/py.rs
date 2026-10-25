@@ -572,3 +572,246 @@ pub fn scoreboard_stats(
 ) -> (f64, f64, f64, f64, f64) {
     crate::stats::scoreboard_stats(&view(&rp), &view(&rb), ppy)
 }
+
+// --- mc.rs: Monte Carlo valuation models ---------------------------------
+
+fn to_py_vec<'py>(py: Python<'py>, v: Vec<f64>) -> Bound<'py, PyArray1<f64>> {
+    Array1::from_vec(v).into_pyarray(py)
+}
+
+fn same_len(what: &str, a: usize, b: usize) -> PyResult<()> {
+    if a == b {
+        Ok(())
+    } else {
+        Err(PyValueError::new_err(format!(
+            "{what}: sample arrays differ in length ({a} vs {b})"
+        )))
+    }
+}
+
+fn discounted_params(
+    g_lo: f64,
+    g_hi: f64,
+    d_lo: f64,
+    d_hi: f64,
+    projection_years: i64,
+    terminal_growth: f64,
+) -> crate::mc::Discounted {
+    crate::mc::Discounted {
+        growth: crate::mc::Bounds { lo: g_lo, hi: g_hi },
+        discount: crate::mc::Bounds { lo: d_lo, hi: d_hi },
+        projection_years,
+        terminal_growth,
+    }
+}
+
+/// `run_monte_carlo_dcf` after the draws: equity value per share per sample.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn mc_dcf<'py>(
+    py: Python<'py>,
+    growth: PyReadonlyArray1<'py, f64>,
+    discount: PyReadonlyArray1<'py, f64>,
+    g_lo: f64,
+    g_hi: f64,
+    d_lo: f64,
+    d_hi: f64,
+    projection_years: i64,
+    terminal_growth: f64,
+    base_fcf: f64,
+    cash: f64,
+    debt: f64,
+    shares: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (g, d) = (view(&growth), view(&discount));
+    same_len("mc_dcf", g.len(), d.len())?;
+    let m = discounted_params(g_lo, g_hi, d_lo, d_hi, projection_years, terminal_growth);
+    Ok(to_py_vec(
+        py,
+        crate::mc::dcf(&g, &d, &m, base_fcf, cash, debt, shares),
+    ))
+}
+
+/// `run_monte_carlo_dcfo` / `_dni` / `_ddm` after the draws.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (growth, discount, g_lo, g_hi, d_lo, d_hi, projection_years, terminal_growth, base_per_share, net_cash_per_share=None))]
+pub fn mc_discounted<'py>(
+    py: Python<'py>,
+    growth: PyReadonlyArray1<'py, f64>,
+    discount: PyReadonlyArray1<'py, f64>,
+    g_lo: f64,
+    g_hi: f64,
+    d_lo: f64,
+    d_hi: f64,
+    projection_years: i64,
+    terminal_growth: f64,
+    base_per_share: f64,
+    net_cash_per_share: Option<f64>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (g, d) = (view(&growth), view(&discount));
+    same_len("mc_discounted", g.len(), d.len())?;
+    let m = discounted_params(g_lo, g_hi, d_lo, d_hi, projection_years, terminal_growth);
+    Ok(to_py_vec(
+        py,
+        crate::mc::discounted_per_share(&g, &d, &m, base_per_share, net_cash_per_share),
+    ))
+}
+
+/// `run_monte_carlo_mean_pe` / `_mean_pb` / `_mean_ps` after the draws.
+#[pyfunction]
+pub fn mc_base_times_multiple<'py>(
+    py: Python<'py>,
+    base: PyReadonlyArray1<'py, f64>,
+    multiple: PyReadonlyArray1<'py, f64>,
+    base_lo: f64,
+    base_hi: f64,
+    multiple_lo: f64,
+    multiple_hi: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (b, m) = (view(&base), view(&multiple));
+    same_len("mc_base_times_multiple", b.len(), m.len())?;
+    Ok(to_py_vec(
+        py,
+        crate::mc::base_times_multiple(
+            &b,
+            &m,
+            crate::mc::Bounds {
+                lo: base_lo,
+                hi: base_hi,
+            },
+            crate::mc::Bounds {
+                lo: multiple_lo,
+                hi: multiple_hi,
+            },
+        ),
+    ))
+}
+
+/// `run_monte_carlo_peg` after the draws.
+#[pyfunction]
+pub fn mc_peg<'py>(
+    py: Python<'py>,
+    eps: PyReadonlyArray1<'py, f64>,
+    growth: PyReadonlyArray1<'py, f64>,
+    peg: PyReadonlyArray1<'py, f64>,
+    eps_hi: f64,
+    dividend_yield_pct: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (e, g, p) = (view(&eps), view(&growth), view(&peg));
+    same_len("mc_peg", e.len(), g.len())?;
+    same_len("mc_peg", e.len(), p.len())?;
+    Ok(to_py_vec(
+        py,
+        crate::mc::peg(&e, &g, &p, eps_hi, dividend_yield_pct),
+    ))
+}
+
+/// `run_monte_carlo_psg` after the draws.
+#[pyfunction]
+pub fn mc_psg<'py>(
+    py: Python<'py>,
+    sps: PyReadonlyArray1<'py, f64>,
+    growth: PyReadonlyArray1<'py, f64>,
+    margin: PyReadonlyArray1<'py, f64>,
+    target: PyReadonlyArray1<'py, f64>,
+    sps_hi: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (s, g, m, t) = (view(&sps), view(&growth), view(&margin), view(&target));
+    for len in [g.len(), m.len(), t.len()] {
+        same_len("mc_psg", s.len(), len)?;
+    }
+    Ok(to_py_vec(py, crate::mc::psg(&s, &g, &m, &t, sps_hi)))
+}
+
+/// `run_monte_carlo_graham` after the draws.
+#[pyfunction]
+pub fn mc_graham<'py>(
+    py: Python<'py>,
+    growth: PyReadonlyArray1<'py, f64>,
+    bond_yield: PyReadonlyArray1<'py, f64>,
+    eps: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (g, y) = (view(&growth), view(&bond_yield));
+    same_len("mc_graham", g.len(), y.len())?;
+    Ok(to_py_vec(py, crate::mc::graham(&g, &y, eps)))
+}
+
+/// `run_monte_carlo_epv` after the draws.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn mc_epv<'py>(
+    py: Python<'py>,
+    ebit: PyReadonlyArray1<'py, f64>,
+    discount: PyReadonlyArray1<'py, f64>,
+    ebit_hi: f64,
+    d_lo: f64,
+    d_hi: f64,
+    tax_rate: f64,
+    cash: f64,
+    debt: f64,
+    shares: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (e, d) = (view(&ebit), view(&discount));
+    same_len("mc_epv", e.len(), d.len())?;
+    Ok(to_py_vec(
+        py,
+        crate::mc::epv(
+            &e,
+            &d,
+            ebit_hi,
+            crate::mc::Bounds { lo: d_lo, hi: d_hi },
+            tax_rate,
+            cash,
+            debt,
+            shares,
+        ),
+    ))
+}
+
+/// `run_monte_carlo_lynch` after the draws.
+#[pyfunction]
+pub fn mc_lynch<'py>(
+    py: Python<'py>,
+    eps: PyReadonlyArray1<'py, f64>,
+    growth: PyReadonlyArray1<'py, f64>,
+    eps_hi: f64,
+    dividend_yield_pct: f64,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (e, g) = (view(&eps), view(&growth));
+    same_len("mc_lynch", e.len(), g.len())?;
+    Ok(to_py_vec(
+        py,
+        crate::mc::lynch(&e, &g, eps_hi, dividend_yield_pct),
+    ))
+}
+
+type McStatsOut<'py> = (
+    f64,
+    f64,
+    f64,
+    f64,
+    f64,
+    Bound<'py, PyArray1<i64>>,
+    Bound<'py, PyArray1<f64>>,
+);
+
+/// `_generate_mc_stats` before smoothing: (bear, conservative, base, bull,
+/// std_dev, counts[40], midpoints[40]), or None under 50 valid samples.
+#[pyfunction]
+pub fn mc_stats<'py>(
+    py: Python<'py>,
+    values: PyReadonlyArray1<'py, f64>,
+) -> Option<McStatsOut<'py>> {
+    crate::mc::mc_stats(&view(&values)).map(|s| {
+        (
+            s.bear,
+            s.conservative,
+            s.base,
+            s.bull,
+            s.std_dev,
+            Array1::from_vec(s.counts).into_pyarray(py),
+            Array1::from_vec(s.midpoints).into_pyarray(py),
+        )
+    })
+}

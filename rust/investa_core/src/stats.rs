@@ -3,18 +3,34 @@
 //! Exactness rests on two facts measured against the installed stack
 //! (NumPy 2.0, pandas 2.3, no bottleneck/numexpr):
 //!
-//! * `np.add.reduce` over a contiguous float64 array is NumPy's pairwise sum
-//!   of the *whole* array ([`np_sum`]); pandas' `mean`/`var`/`std` call it on a
-//!   copy with NaN replaced by 0, then divide by the non-NaN count.
+//! * `np.add.reduce` over a contiguous float64 array starts from +0.0 and adds
+//!   NumPy's pairwise sum of each 8192-element buffer in turn ([`np_sum`]);
+//!   pandas' `mean`/`var`/`std` call it on a copy with NaN replaced by 0, then
+//!   divide by the non-NaN count.
 //! * `np.minimum` returns -0.0 for a {0.0, -0.0} pair in either order.
 //!
 //! `np.cov`'s BLAS dot product cannot be reproduced (Accelerate on macOS,
 //! OpenBLAS on Linux: the summation order is theirs), so `calculate_beta`
 //! keeps pandas' covariance and only its variance comes from here.
 
-/// NumPy's `pairwise_sum` for a contiguous float64 array — what
-/// `np.add.reduce`, `ndarray.sum()` and `ndarray.mean()` add with.
+/// NumPy's reduction buffer: `np.add.reduce` hands the inner loop at most
+/// this many elements at a time.
+const REDUCE_BUFFER: usize = 8192;
+
+/// `np.add.reduce` over a contiguous float64 array — what `ndarray.sum()`,
+/// `ndarray.mean()` and pandas' reductions add with. The reduction starts
+/// from the identity +0.0 (so negative zeros sum to +0.0) and adds the
+/// [`pairwise_sum`] of each 8192-element buffer in turn.
 pub fn np_sum(a: &[f64]) -> f64 {
+    let mut acc = 0.0_f64;
+    for block in a.chunks(REDUCE_BUFFER) {
+        acc += pairwise_sum(block);
+    }
+    acc
+}
+
+/// NumPy's `pairwise_sum` inner loop for one buffer of float64.
+pub fn pairwise_sum(a: &[f64]) -> f64 {
     const BLOCK: usize = 128;
     let n = a.len();
     if n < 8 {
@@ -41,7 +57,7 @@ pub fn np_sum(a: &[f64]) -> f64 {
     } else {
         let mut n2 = n / 2;
         n2 -= n2 % 8;
-        np_sum(&a[..n2]) + np_sum(&a[n2..])
+        pairwise_sum(&a[..n2]) + pairwise_sum(&a[n2..])
     }
 }
 
@@ -315,6 +331,12 @@ pub fn scoreboard_stats(rp: &[f64], rb: &[f64], ppy: f64) -> (f64, f64, f64, f64
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn negative_zeros_sum_to_positive_zero() {
+        assert!(!np_sum(&[-0.0; 9]).is_sign_negative());
+        assert!(!np_sum(&[-0.0]).is_sign_negative());
+    }
 
     #[test]
     fn pairwise_sum_small_and_large() {

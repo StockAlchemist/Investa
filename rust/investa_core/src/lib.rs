@@ -9,6 +9,7 @@ pub mod analyzer;
 pub mod holdings;
 pub mod irr;
 mod irr_grid;
+pub mod mc;
 mod py;
 pub mod stats;
 pub mod util;
@@ -48,6 +49,15 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py::sharpe_ratio, m)?)?;
     m.add_function(wrap_pyfunction!(py::sortino_ratio, m)?)?;
     m.add_function(wrap_pyfunction!(py::scoreboard_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_dcf, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_discounted, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_base_times_multiple, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_peg, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_psg, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_graham, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_epv, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_lynch, m)?)?;
+    m.add_function(wrap_pyfunction!(py::mc_stats, m)?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;
