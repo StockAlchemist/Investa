@@ -260,7 +260,11 @@ def _process_transactions_to_holdings(
         all_accounts.update(
             transactions_df["To Account"].dropna().astype(str).str.strip().unique()
         )
-    all_accounts = list(all_accounts)
+    # Sorted, not set order: account ids decide the order of the holdings, so
+    # of the summary's rows and its per-account metrics, and a set of strings
+    # iterates differently in every process (hash seeding). Name order is also
+    # the order the account picker shows (`_available_accounts`).
+    all_accounts = sorted(all_accounts)
     all_currencies = (
         transactions_df["Local Currency"].astype(str).str.strip().str.upper().unique()
     )
