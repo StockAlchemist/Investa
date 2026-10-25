@@ -204,6 +204,18 @@ impl<'py> PyConn<'py> {
     /// Python's own methods. Raises what `conn.execute` would raise first
     /// (wrong thread, closed).
     pub fn new(obj: &Bound<'py, PyAny>) -> PyResult<PyConn<'py>> {
+        Self::open(obj, false)
+    }
+
+    /// For ported code that consumes the rows itself and never hands them
+    /// on: a `row_factory` does not send the statement to Python, because the
+    /// caller reproduces what it read through the factory (see
+    /// `row_dict` for `sqlite3.Row`).
+    pub fn new_internal(obj: &Bound<'py, PyAny>) -> PyResult<PyConn<'py>> {
+        Self::open(obj, true)
+    }
+
+    fn open(obj: &Bound<'py, PyAny>, any_row_factory: bool) -> PyResult<PyConn<'py>> {
         let py = obj.py();
         let python = |obj: &Bound<'py, PyAny>| PyConn {
             py,
@@ -216,7 +228,7 @@ impl<'py> PyConn<'py> {
         }
         obj.call_method0("cursor")?; // Python's thread and closed checks
         let str_type = py.import("builtins")?.getattr("str")?;
-        if !obj.getattr("row_factory")?.is_none()
+        if (!any_row_factory && !obj.getattr("row_factory")?.is_none())
             || !obj.getattr("text_factory")?.is(&str_type)
             || !obj
                 .getattr("autocommit")?
@@ -727,4 +739,34 @@ pub fn conn_read_frame<'py>(
     parse_dates: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Bound<'py, PyAny>> {
     read_frame(conn, sql, params, parse_dates)
+}
+
+/// `dict(row)` for a `sqlite3.Row` over `columns`: each name maps to the
+/// value of the *first* column whose name matches it case-insensitively
+/// (ASCII), which is how `Row.__getitem__` resolves a key.
+pub fn row_dict<'py>(
+    py: Python<'py>,
+    columns: &[String],
+    row: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    for name in columns {
+        let first = columns
+            .iter()
+            .position(|c| c.eq_ignore_ascii_case(name))
+            .unwrap_or(0);
+        d.set_item(name, row.get_item(first)?)?;
+    }
+    Ok(d)
+}
+
+impl SqlRows {
+    /// The column names of the result (`description[i][0]`).
+    pub fn column_names(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+        let d = self.description.bind(py);
+        if d.is_none() {
+            return Ok(Vec::new());
+        }
+        d.try_iter()?.map(|c| c?.get_item(0)?.extract()).collect()
+    }
 }

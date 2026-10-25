@@ -51,7 +51,7 @@ The crate builds in four places:
 | 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
 | 9 | The summary's per-holding and per-account filters, selected once (Python) | **Done** |
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
-| 11 | Storage modules: (a) `db_utils` **done**; (b) `market_db` **done**; (c) `buffett_store`; (d) the EDGAR fact store | In progress |
+| 11 | Storage modules: (a) `db_utils` **done**; (b) `market_db` **done**; (c) `buffett_store` **done**; (d) the EDGAR fact store | In progress |
 | 12 | Import: `data_loader` and CSV cleaning | Planned |
 | 13 | Summary engine: the rest of `portfolio_analyzer`, the computational parts of `portfolio_logic`, `corporate_actions` | Planned |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
@@ -573,6 +573,14 @@ The storage modules keep their `sqlite3.Connection` objects: connection caching,
 - **Helpers:** 240 random indexes (ns/us/s, 1599–10000, NaT, tz-aware, unsorted) give the same `_iso_days`, split factors and dividend factors.
 - **Real data:** the live 3.2 GB archive reads identically for every symbol at the split basis; for 250 symbols with corporate actions under all three adjustments; for single-symbol reads; and for FX, latest closes (now and as of a date), share counts, bases, actions, data quality, fund NAVs, first and last dates and sync stamps. 95 integrity checks on real frames, half of them perturbed, match. The archive holds no raw-basis symbols yet, so the raw-to-split conversion is covered by the fuzz alone.
 - All 1,390 tests pass.
+
+## Phase 11c (26 Oct 2026): `buffett_store`
+
+Every `BuffettRankStore` method except `__init__` and `_connect`, and the helpers `_escape_like` and `_coerce`, are now Rust (`rank_store.rs`); `buffett_store.py` is 260 lines, down from 501.
+- **`sqlite3.Row`.** The store's connections set `row_factory = sqlite3.Row`, which would normally send a statement to Python. These rows never leave the store, though: they are read as `dict(row)`, `row["run_id"]` or `row[0]`. So `PyConn::new_internal` runs them in Rust, and `pyconn::row_dict` reproduces the Row lookups: each name resolves to the first column matching it case-insensitively, as `Row.__getitem__` does.
+- **Parity:**
+  - 480 random calls on twin stores (runs started, finished and pruned at every `keep` and staleness; score frames with NumPy scalars, NaN, text, missing columns and integer labels; paged readers with LIKE wildcards in the search) agree on return values, tables, logs and warnings.
+  - The live store (256 runs, 1,219 ranked rows in the latest) reads identically through every reader.
 
 ## Found while porting
 

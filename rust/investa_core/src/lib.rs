@@ -23,6 +23,7 @@ mod py;
 pub mod pyconn;
 pub mod pyhelp;
 pub mod rank;
+pub mod rank_store;
 pub mod ratios;
 pub mod records;
 pub mod sql;
@@ -252,5 +253,21 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mdb::mdb_get_sync_metadata_batch, m)?)?;
     m.add_function(wrap_pyfunction!(mdb::mdb_check_integrity, m)?)?;
     m.add_function(wrap_pyfunction!(mdb::mdb_init_db, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_escape_like, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_coerce, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_init_db, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_start_run, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_finish_run, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_prune_runs, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_save_scores, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_save_exclusions, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_latest_run_id, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_get_ranked, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_count_ranked, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_get_exclusions, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_count_exclusions, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_get_run, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_get_scores_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(rank_store::rs_get_symbol_history, m)?)?;
     Ok(())
 }
