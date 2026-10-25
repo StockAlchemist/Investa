@@ -9,6 +9,7 @@ pub mod analyzer;
 pub mod asof;
 pub mod buffett;
 pub mod cashflows;
+pub mod db_portfolio;
 pub mod fifo;
 pub mod history;
 pub mod holdings;
@@ -18,6 +19,7 @@ pub mod mc;
 pub mod projection;
 mod py;
 pub mod pyconn;
+pub mod pyhelp;
 pub mod rank;
 pub mod ratios;
 pub mod records;
@@ -113,6 +115,34 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(pyconn::conn_execute, m)?)?;
     m.add_function(wrap_pyfunction!(pyconn::conn_executemany, m)?)?;
     m.add_class::<pyconn::SqlRows>()?;
+    m.add_function(wrap_pyfunction!(pyconn::conn_read_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_apply_total_amount_sign,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_add_transaction, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_update_transaction, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_delete_transaction, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_get_all_watchlists, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_create_watchlist, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_get_or_create_favorites,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_watchlist_ids_for_symbol,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_rename_watchlist, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_delete_watchlist, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_add_to_watchlist, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_remove_from_watchlist, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_get_watchlist, m)?)?;
+    m.add_function(wrap_pyfunction!(db_portfolio::db_load_all_transactions, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        db_portfolio::db_check_empty_and_csv_exists,
+        m
+    )?)?;
 
     // portfolio_analyzer's TYPE_* constants, so Python can check they agree.
     let types = PyModule::new(m.py(), "analyzer_types")?;

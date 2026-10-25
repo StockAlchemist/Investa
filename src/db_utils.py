@@ -16,7 +16,7 @@ SPDX-License-Identifier: MIT
 
 import sqlite3
 import json
-from datetime import datetime, date
+from datetime import datetime
 import numpy as np
 import os
 import logging
@@ -24,6 +24,7 @@ from typing import Optional, Dict, Any, Tuple, List
 import pandas as pd
 import threading
 import config
+import investa_core
 
 DB_FILENAME = "portfolio.db"
 # Must match the highest migration applied in create_tables() below (currently the
@@ -301,7 +302,10 @@ def get_db_connection(
 
 def create_transactions_table(conn: sqlite3.Connection):
     """Creates the transactions table and schema_version table if they don't exist."""
-    is_new = conn.execute("SELECT 1 FROM sqlite_master WHERE name='transactions'").fetchone() is None
+    is_new = (
+        conn.execute("SELECT 1 FROM sqlite_master WHERE name='transactions'").fetchone()
+        is None
+    )
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -808,32 +812,8 @@ def create_transactions_table(conn: sqlite3.Connection):
 def check_if_db_empty_and_csv_exists(
     db_conn: sqlite3.Connection, csv_file_path: str
 ) -> bool:
-    if not db_conn:
-        return False
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM transactions")
-        count_result = cursor.fetchone()
-        count = count_result[0] if count_result else 0
-
-        csv_exists = os.path.exists(csv_file_path) and os.path.isfile(csv_file_path)
-        if count == 0 and csv_exists:
-            logging.info(
-                f"Database is empty and CSV '{csv_file_path}' exists. Migration may be needed."
-            )
-            return True
-        elif count > 0:
-            logging.info(
-                f"Database is not empty (contains {count} transactions). Migration prompt for '{csv_file_path}' might be skipped."
-            )
-        elif not csv_exists:
-            logging.info(
-                f"Migration CSV '{csv_file_path}' does not exist. No migration prompt."
-            )
-
-    except sqlite3.Error as e:
-        logging.error(f"Error checking database count: {e}", exc_info=True)
-    return False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_check_empty_and_csv_exists(db_conn, csv_file_path)
 
 
 def migrate_csv_to_db(
@@ -943,52 +923,10 @@ def load_all_transactions_from_db(
     account_currency_map: Dict[str, str],
     default_currency: str,
 ) -> Tuple[Optional[pd.DataFrame], bool]:
-    logging.info("Loading all transactions from the database.")
-    try:
-        query = """
-        SELECT id as original_index, Date, Type, Symbol, Quantity, "Price/Share",
-               "Total Amount", Commission, Account, "Split Ratio", Note, "Local Currency", "To Account", Tags, ExternalID, user_id
-        FROM transactions
-        ORDER BY Date, original_index;
-        """
-        df = pd.read_sql_query(query, db_conn, parse_dates=["Date"])
-
-        if "Local Currency" in df.columns and "Account" in df.columns:
-            is_empty_local_currency = df["Local Currency"].isin(
-                [None, np.nan, pd.NA, ""]
-            )
-            if pd.api.types.is_string_dtype(df["Local Currency"]):
-                is_empty_local_currency |= (
-                    df["Local Currency"].astype(str).str.upper().str.strip() == "<NA>"
-                )
-
-            if is_empty_local_currency.any():
-                df.loc[is_empty_local_currency, "Local Currency"] = (
-                    df.loc[is_empty_local_currency, "Account"]
-                    .map(account_currency_map)
-                    .fillna(default_currency)
-                )
-            df["Local Currency"] = df["Local Currency"].str.upper()
-
-        if "original_index" in df.columns:
-            df["original_index"] = pd.to_numeric(
-                df["original_index"], errors="coerce"
-            ).astype("Int64")
-        numeric_cols = [
-            "Quantity",
-            "Price/Share",
-            "Total Amount",
-            "Commission",
-            "Split Ratio",
-        ]
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-        logging.info(f"Successfully loaded {len(df)} transactions from the database.")
-        return df, True
-    except Exception as e:
-        logging.error(f"Error loading transactions from database: {e}", exc_info=True)
-        return None, False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_load_all_transactions(
+        db_conn, account_currency_map, default_currency
+    )
 
 
 _OUTFLOW_TYPES = frozenset(
@@ -1014,253 +952,32 @@ def _apply_total_amount_sign(transaction_data: Dict[str, Any]) -> Dict[str, Any]
     This is idempotent — already-signed values from the web manual-add form are unaffected
     because we always start from abs() and then re-apply the direction.
     """
-    total = transaction_data.get("Total Amount")
-    if total is None:
-        return transaction_data
-    try:
-        total_f = float(total)
-    except (TypeError, ValueError):
-        return transaction_data
-    if pd.isna(total_f) or abs(total_f) < 1e-9:
-        return transaction_data
-    tx_type = str(transaction_data.get("Type", "")).lower().strip()
-    signed = -abs(total_f) if tx_type in _OUTFLOW_TYPES else abs(total_f)
-    if signed == total_f:
-        return transaction_data
-    result = dict(transaction_data)
-    result["Total Amount"] = signed
-    return result
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_apply_total_amount_sign(transaction_data)
 
 
 def add_transaction_to_db(
-    db_conn: sqlite3.Connection, transaction_data: Dict[str, Any], *, commit: bool = True
+    db_conn: sqlite3.Connection,
+    transaction_data: Dict[str, Any],
+    *,
+    commit: bool = True,
 ) -> Tuple[bool, Optional[int]]:
-    db_column_order = [
-        "Date",
-        "Type",
-        "Symbol",
-        "Quantity",
-        "Price/Share",
-        "Total Amount",
-        "Commission",
-        "Account",
-        "Split Ratio",
-        "Note",
-        "Local Currency",
-        "To Account",
-        "Tags",
-        "ExternalID",
-        "user_id",
-    ]
-
-    transaction_data = _apply_total_amount_sign(transaction_data)
-
-    # --- Deduplication Check ---
-    external_id = transaction_data.get("ExternalID")
-    if external_id:
-        try:
-            cursor = db_conn.cursor()
-            cursor.execute(
-                "SELECT id FROM transactions WHERE ExternalID = ?", (external_id,)
-            )
-            existing = cursor.fetchone()
-            if existing:
-                logging.info(
-                    f"Transaction with ExternalID {external_id} already exists (ID: {existing[0]}). Skipping."
-                )
-                return True, existing[0]
-        except sqlite3.Error as e:
-            logging.warning(
-                f"Error checking for existing ExternalID {external_id}: {e}"
-            )
-
-    quoted_db_columns = [
-        f'"{col}"' if "/" in col or " " in col else col for col in db_column_order
-    ]
-    placeholders_list = []
-    data_for_sql_ordered = []
-
-    for col_name in db_column_order:
-        placeholder_name = (
-            col_name.replace("/", "_per_").replace(" ", "_").replace(".", "_")
-        )
-        placeholders_list.append(f":{placeholder_name}")
-        value = transaction_data.get(col_name)
-        if col_name == "Type" and isinstance(value, str):
-            data_for_sql_ordered.append(value.strip().title())
-        elif col_name == "Date":
-            if isinstance(value, (datetime, date)):
-                data_for_sql_ordered.append(value.strftime("%Y-%m-%d"))
-            elif isinstance(value, str):
-                # Allow both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS
-                valid = False
-                for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-                    try:
-                        datetime.strptime(value, fmt)
-                        valid = True
-                        break
-                    except ValueError:
-                        continue
-
-                if valid:
-                    # Truncate to YYYY-MM-DD to maintain DB standard
-                    data_for_sql_ordered.append(value[:10])
-                else:
-                    logging.error(f"Invalid date string for DB: {value}")
-                    return False, None
-            else:
-                data_for_sql_ordered.append(None)
-        elif pd.isna(value):
-            data_for_sql_ordered.append(None)
-        else:
-            data_for_sql_ordered.append(value)
-
-    data_for_sql_dict = {
-        ph.lstrip(":"): val for ph, val in zip(placeholders_list, data_for_sql_ordered)
-    }
-
-    sql_insert = f"INSERT INTO transactions ({', '.join(quoted_db_columns)}) VALUES ({', '.join(placeholders_list)});"
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql_insert, data_for_sql_dict)
-        if commit:
-            db_conn.commit()
-        new_id = cursor.lastrowid
-        logging.info(f"Successfully added transaction with ID: {new_id}.")
-        return True, new_id
-    except sqlite3.Error as e:
-        logging.error(
-            f"Error adding transaction to database. Data: {transaction_data} - Error: {e}",
-            exc_info=True,
-        )
-        try:
-            if commit:
-                db_conn.rollback()
-        except Exception:
-            pass
-        return False, None
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_add_transaction(db_conn, transaction_data, commit)
 
 
 def update_transaction_in_db(
     db_conn: sqlite3.Connection, transaction_id: int, new_data_dict: Dict[str, Any]
 ) -> bool:
-    new_data_dict = _apply_total_amount_sign(new_data_dict)
-    set_clauses = []
-    values_for_sql: Dict[str, Any] = {}
-
-    db_columns = {
-        "Date",
-        "Type",
-        "Symbol",
-        "Quantity",
-        "Price/Share",
-        "Total Amount",
-        "Commission",
-        "Account",
-        "Split Ratio",
-        "Note",
-        "Local Currency",
-        "To Account",
-        "Tags",
-        "ExternalID",
-        "user_id",
-    }
-
-    for key, value in new_data_dict.items():
-        if key not in db_columns:
-            continue
-
-        placeholder = key.replace("/", "_per_").replace(" ", "_").replace(".", "_")
-        set_clauses.append(f'"{key}" = :{placeholder}')
-
-        if key == "Type" and isinstance(value, str):
-            values_for_sql[placeholder] = value.strip().title()
-        elif key == "Date":
-            if isinstance(value, (datetime, date)):
-                values_for_sql[placeholder] = value.strftime("%Y-%m-%d")
-            elif isinstance(value, str):
-                # Allow both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS
-                valid = False
-                for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-                    try:
-                        datetime.strptime(value, fmt)
-                        valid = True
-                        break
-                    except ValueError:
-                        continue
-
-                if valid:
-                    values_for_sql[placeholder] = value
-                else:
-                    logging.error(f"Invalid date string for update: {value}")
-                    return False
-            else:
-                values_for_sql[placeholder] = None
-        elif pd.isna(value):
-            values_for_sql[placeholder] = None
-        else:
-            values_for_sql[placeholder] = value
-
-    if not set_clauses:
-        logging.warning("Update transaction: No data provided.")
-        return False
-
-    sql_update = (
-        f"UPDATE transactions SET {', '.join(set_clauses)} WHERE id = :id_placeholder"
-    )
-    values_for_sql["id_placeholder"] = transaction_id
-
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql_update, values_for_sql)
-        db_conn.commit()
-        if cursor.rowcount == 0:
-            logging.warning(
-                f"Update transaction: No row found with ID: {transaction_id}"
-            )
-            return False
-        logging.info(f"Successfully updated transaction ID: {transaction_id}.")
-        # A transfer is one row carrying "To Account", so there is no other side
-        # to update. This used to rewrite Date/Total Amount/Note on every row
-        # sharing the edited transfer's Note — unrelated deposits included — and
-        # only escaped corrupting them because that write was never committed.
-        return True
-    except sqlite3.Error as e:
-        logging.error(
-            f"Error updating transaction ID {transaction_id}. Data: {new_data_dict} - Error: {e}",
-            exc_info=True,
-        )
-        try:
-            db_conn.rollback()
-        except Exception:
-            pass
-        return False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_update_transaction(db_conn, transaction_id, new_data_dict)
 
 
 def delete_transaction_from_db(
     db_conn: sqlite3.Connection, transaction_id: int
 ) -> bool:
-    sql_delete = "DELETE FROM transactions WHERE id = ?"
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql_delete, (transaction_id,))
-        db_conn.commit()
-        if cursor.rowcount == 0:
-            logging.warning(
-                f"Delete transaction: No row found with ID: {transaction_id}"
-            )
-            return False
-        logging.info(f"Successfully deleted transaction ID: {transaction_id}")
-        return True
-    except sqlite3.Error as e:
-        logging.error(
-            f"Error deleting transaction ID {transaction_id}: {e}", exc_info=True
-        )
-        try:
-            db_conn.rollback()
-        except Exception:
-            pass
-        return False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_delete_transaction(db_conn, transaction_id)
 
 
 # The one built-in list. It is an ordinary watchlist found by name rather than a
@@ -1282,67 +999,30 @@ def get_or_create_favorites_watchlist(
     The oldest list with the reserved name wins, so a stray duplicate can never
     split one user's favourites across two lists.
     """
-    for watchlist in get_all_watchlists(db_conn):
-        if is_favorites_name(watchlist["name"]):
-            return watchlist
-    new_id = create_watchlist(db_conn, FAVORITES_WATCHLIST_NAME, user_id=user_id)
-    if not new_id:
-        return None
-    return {
-        "id": new_id,
-        "name": FAVORITES_WATCHLIST_NAME,
-        "created_at": datetime.now().isoformat(),
-    }
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_get_or_create_favorites(db_conn, user_id)
 
 
 def get_watchlist_ids_for_symbol(db_conn: sqlite3.Connection, symbol: str) -> List[int]:
     """Ids of every watchlist that holds `symbol`."""
-    # Joined to `watchlists` so items orphaned by an older delete (see
-    # `delete_watchlist`) never read as membership in a list that is gone.
-    sql = (
-        "SELECT DISTINCT i.watchlist_id FROM watchlist_items i "
-        "JOIN watchlists w ON w.id = i.watchlist_id WHERE i.symbol = ?"
-    )
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql, (symbol.strip().upper(),))
-        return sorted(int(r[0]) for r in cursor.fetchall())
-    except sqlite3.Error as e:
-        logging.error(f"Error fetching watchlist membership for {symbol}: {e}")
-        return []
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_watchlist_ids_for_symbol(db_conn, symbol)
 
 
 def get_all_watchlists(
     db_conn: sqlite3.Connection, user_id: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """Fetches all available watchlists in the user-isolated database."""
-    sql = "SELECT id, name, created_at FROM watchlists ORDER BY created_at ASC"
-
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-        return [{"id": r[0], "name": r[1], "created_at": r[2]} for r in rows]
-    except sqlite3.Error as e:
-        logging.error(f"Error fetching watchlists: {e}")
-        return []
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_get_all_watchlists(db_conn, user_id)
 
 
 def create_watchlist(
     db_conn: sqlite3.Connection, name: str, user_id: Optional[int] = None
 ) -> Optional[int]:
     """Creates a new watchlist in the user-isolated database."""
-    sql = "INSERT INTO watchlists (name, created_at, user_id) VALUES (?, ?, ?)"
-    try:
-        cursor = db_conn.cursor()
-        # We still store user_id if provided but it's no longer used for filtering
-        cursor.execute(sql, (name, datetime.now().isoformat(), user_id))
-        db_conn.commit()
-        logging.info(f"Created watchlist '{name}' with ID {cursor.lastrowid}")
-        return cursor.lastrowid
-    except sqlite3.Error as e:
-        logging.error(f"Error creating watchlist '{name}': {e}")
-        return None
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_create_watchlist(db_conn, name, user_id)
 
 
 def rename_watchlist(
@@ -1352,112 +1032,40 @@ def rename_watchlist(
     user_id: Optional[int] = None,
 ) -> bool:
     """Renames an existing watchlist in the user-isolated database."""
-    sql = "UPDATE watchlists SET name = ? WHERE id = ?"
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql, (new_name, watchlist_id))
-        db_conn.commit()
-        return cursor.rowcount > 0
-    except sqlite3.Error as e:
-        logging.error(f"Error renaming watchlist {watchlist_id}: {e}")
-        return False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_rename_watchlist(db_conn, watchlist_id, new_name, user_id)
 
 
 def delete_watchlist(
     db_conn: sqlite3.Connection, watchlist_id: int, user_id: Optional[int] = None
 ) -> bool:
     """Deletes a watchlist and all its items in the user-isolated database."""
-    try:
-        cursor = db_conn.cursor()
-        sql = "DELETE FROM watchlists WHERE id = ?"
-        cursor.execute(sql, (watchlist_id,))
-        deleted = cursor.rowcount > 0
-        # Explicit, not left to the schema's ON DELETE CASCADE: SQLite only
-        # honours that with `PRAGMA foreign_keys = ON`, which these connections
-        # do not set, so the items used to outlive their list.
-        cursor.execute(
-            "DELETE FROM watchlist_items WHERE watchlist_id = ?", (watchlist_id,)
-        )
-        db_conn.commit()
-        return deleted
-    except sqlite3.Error as e:
-        logging.error(f"Error deleting watchlist {watchlist_id}: {e}")
-        return False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_delete_watchlist(db_conn, watchlist_id, user_id)
 
 
 def add_to_watchlist(
     db_conn: sqlite3.Connection, symbol: str, note: str = "", watchlist_id: int = 1
 ) -> bool:
     """Adds a symbol to a specific watchlist."""
-    # Check if symbol exists in this watchlist
-    # Use INSERT OR REPLACE on (watchlist_id, symbol) if unique constraint existed.
-    # Currently we don't strictly enforce unique constraint in CREATE TABLE above,
-    # but we should probably avoid duplicates.
-    # Let's check first.
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(
-            "SELECT id FROM watchlist_items WHERE watchlist_id = ? AND symbol = ?",
-            (watchlist_id, symbol),
-        )
-        if cursor.fetchone():
-            # Update existing
-            sql = "UPDATE watchlist_items SET note = ?, added_on = ? WHERE watchlist_id = ? AND symbol = ?"
-            cursor.execute(
-                sql, (note, datetime.now().isoformat(), watchlist_id, symbol)
-            )
-        else:
-            # Insert new
-            sql = "INSERT INTO watchlist_items (watchlist_id, symbol, note, added_on) VALUES (?, ?, ?, ?)"
-            cursor.execute(
-                sql, (watchlist_id, symbol, note, datetime.now().isoformat())
-            )
-
-        db_conn.commit()
-        logging.info(
-            f"Successfully added/updated {symbol} in watchlist {watchlist_id}."
-        )
-        return True
-    except sqlite3.Error as e:
-        logging.error(f"Error adding {symbol} to watchlist {watchlist_id}: {e}")
-        return False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_add_to_watchlist(db_conn, symbol, note, watchlist_id)
 
 
 def remove_from_watchlist(
     db_conn: sqlite3.Connection, symbol: str, watchlist_id: int = 1
 ) -> bool:
     """Removes a symbol from a specific watchlist."""
-    sql = "DELETE FROM watchlist_items WHERE watchlist_id = ? AND symbol = ?"
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql, (watchlist_id, symbol))
-        db_conn.commit()
-        logging.info(f"Successfully removed {symbol} from watchlist {watchlist_id}.")
-        return True
-    except sqlite3.Error as e:
-        logging.error(f"Error removing {symbol} from watchlist {watchlist_id}: {e}")
-        return False
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_remove_from_watchlist(db_conn, symbol, watchlist_id)
 
 
 def get_watchlist(
     db_conn: sqlite3.Connection, watchlist_id: int = 1
 ) -> List[Dict[str, Any]]:
     """Fetches all items in a specific watchlist."""
-    # We fallback to fetching items from old table ONLY if migration failed?
-    # No, migration should have handled it. We assume watchlist_items table exists.
-
-    # Check if watchlist_items table exists (safety check during dev/migration)
-    # But for prod code, we modify the query.
-    sql = "SELECT symbol, note, added_on FROM watchlist_items WHERE watchlist_id = ? ORDER BY added_on DESC"
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute(sql, (watchlist_id,))
-        rows = cursor.fetchall()
-        return [{"Symbol": r[0], "Note": r[1], "AddedOn": r[2]} for r in rows]
-    except sqlite3.Error as e:
-        # Fallback for transient state or error
-        logging.error(f"Error fetching watchlist {watchlist_id}: {e}")
-        return []
+    # Ported to Rust: rust/investa_core/src/db_portfolio.rs
+    return investa_core.db_get_watchlist(db_conn, watchlist_id)
 
 
 def upsert_screener_results(

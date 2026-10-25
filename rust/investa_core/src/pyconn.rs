@@ -645,3 +645,86 @@ pub fn conn_executemany<'py>(
 ) -> PyResult<SqlRows> {
     PyConn::new(conn)?.executemany(sql, seq_of_params)
 }
+
+/// `pd.read_sql_query(sql, conn, params=params, parse_dates=parse_dates)`.
+///
+/// pandas' `SQLiteDatabase.read_query`, step for step: a non-string query
+/// and a connection Rust must not touch go to pandas itself; otherwise
+/// `cursor()` runs outside the error handling, a failed statement rolls the
+/// connection back and raises pandas' `DatabaseError` chained to it, the
+/// description is iterated as is (None raises), and the frame is built by
+/// pandas' own `_wrap_result`.
+pub fn read_frame<'py>(
+    conn: &Bound<'py, PyAny>,
+    sql: &Bound<'py, PyAny>,
+    params: Option<&Bound<'py, PyAny>>,
+    parse_dates: Option<&Bound<'py, PyAny>>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = conn.py();
+    let pd = py.import("pandas")?;
+    let via_pandas = || -> PyResult<Bound<'py, PyAny>> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("params", params)?;
+        kwargs.set_item("parse_dates", parse_dates)?;
+        pd.call_method("read_sql_query", (sql, conn), Some(&kwargs))
+    };
+    let Ok(wrap) = py
+        .import("pandas.io.sql")
+        .and_then(|m| m.getattr("_wrap_result"))
+    else {
+        return via_pandas();
+    };
+    if !sql.is_exact_instance_of::<PyString>() {
+        return via_pandas();
+    }
+    let pc = PyConn::new(conn)?;
+    if matches!(pc.route, Route::Python) {
+        return via_pandas();
+    }
+    let empty = PyTuple::empty(py).into_any();
+    let mut rows = match pc.execute(sql, params.unwrap_or(&empty)) {
+        Ok(rows) => rows,
+        Err(exc) => {
+            let database_error = pd.getattr("errors")?.getattr("DatabaseError")?;
+            let exc_text = exc.value(py).str()?.to_string();
+            let sql_text = sql.str()?.to_string();
+            if let Err(inner) = pc.rollback() {
+                let ex = PyErr::from_value(database_error.call1((format!(
+                    "Execution failed on sql: {sql_text}\n{exc_text}\nunable to rollback"
+                ),))?);
+                ex.set_cause(py, Some(inner));
+                return Err(ex);
+            }
+            let ex = PyErr::from_value(
+                database_error
+                    .call1((format!("Execution failed on sql '{sql_text}': {exc_text}"),))?,
+            );
+            ex.set_cause(py, Some(exc));
+            return Err(ex);
+        }
+    };
+    let mut columns = Vec::new();
+    for col_desc in rows.description(py).try_iter()? {
+        columns.push(col_desc?.get_item(0)?);
+    }
+    let data = PyList::new(py, rows.fetchall(py))?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("index_col", py.None())?;
+    kwargs.set_item("coerce_float", true)?;
+    kwargs.set_item("parse_dates", parse_dates)?;
+    kwargs.set_item("dtype", py.None())?;
+    kwargs.set_item("dtype_backend", "numpy")?;
+    wrap.call((data, PyList::new(py, columns)?), Some(&kwargs))
+}
+
+/// `pd.read_sql_query` through `read_frame` (`rust_sql.read_frame`).
+#[pyfunction]
+#[pyo3(signature = (conn, sql, params=None, parse_dates=None))]
+pub fn conn_read_frame<'py>(
+    conn: &Bound<'py, PyAny>,
+    sql: &Bound<'py, PyAny>,
+    params: Option<&Bound<'py, PyAny>>,
+    parse_dates: Option<&Bound<'py, PyAny>>,
+) -> PyResult<Bound<'py, PyAny>> {
+    read_frame(conn, sql, params, parse_dates)
+}
