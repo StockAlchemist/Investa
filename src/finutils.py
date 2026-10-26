@@ -17,8 +17,7 @@ SPDX-License-Identifier: MIT
 import pandas as pd
 import numpy as np
 from datetime import date, datetime, timedelta
-import hashlib
-import os
+import hashlib  # noqa: F401 -- read by the Rust port at call time
 import weakref
 import config
 import logging
@@ -53,11 +52,8 @@ def infer_periods_per_year(index, default: float = 252.0) -> float:
     both the projection model and the risk metrics infer the spacing from the
     actual dates. Returns ``default`` when the index isn't a usable DatetimeIndex.
     """
-    if isinstance(index, pd.DatetimeIndex) and len(index) > 1:
-        span_years = (index[-1] - index[0]).days / 365.25
-        if span_years > 0:
-            return len(index) / span_years
-    return float(default)
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_infer_periods_per_year(index, default)
 
 
 # --- Constants for _get_file_hash ---
@@ -77,51 +73,8 @@ def _get_file_hash(filepath: str) -> str:
     If found, their hashes are combined with the main file hash to ensure
     any pending changes in the WAL are captured in the cache key.
     """
-    hasher = hashlib.sha256()
-
-    # Helper to hash a single file into the main hasher
-    def _update_hash_with_file(path: str):
-        try:
-            with open(path, "rb") as file:
-                while chunk := file.read(HASH_CHUNK_SIZE):
-                    hasher.update(chunk)
-            return True
-        except FileNotFoundError:
-            return False  # Ignore if disappeared (e.g. checkpointed)
-
-    try:
-        # 1. Hash the main file
-        if not _update_hash_with_file(filepath):
-            # Main file not found or error
-            logging.warning(f"Warning: Main file not found for hashing: {filepath}")
-            return HASH_ERROR_NOT_FOUND
-
-        # 2. Check for SQLite companion files if applicable
-        # (Naive check based on extension, strictly redundant but safe)
-        lower_path = filepath.lower()
-        if lower_path.endswith((".db", ".sqlite", ".sqlite3")):
-            wal_path = filepath + "-wal"
-            shm_path = filepath + "-shm"
-
-            if os.path.exists(wal_path):
-                _update_hash_with_file(wal_path)
-                # logging.debug(f"Hashed WAL file: {wal_path}")
-
-            if os.path.exists(shm_path):
-                _update_hash_with_file(shm_path)
-                # logging.debug(f"Hashed SHM file: {shm_path}")
-
-        return hasher.hexdigest()
-
-    except PermissionError:
-        logging.error(f"Permission denied accessing file {filepath} for hashing.")
-        return HASH_ERROR_PERMISSION
-    except IOError as e:
-        logging.error(f"I/O error hashing file {filepath}: {e}")
-        return HASH_ERROR_IO
-    except Exception:
-        logging.exception(f"Unexpected error hashing file {filepath}")
-        return HASH_ERROR_UNEXPECTED
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_get_file_hash(filepath)
 
 
 # --- ADDED: Currency Symbol Helper ---
@@ -130,9 +83,8 @@ def get_currency_symbol_from_code(currency_code: str) -> str:
     Returns the currency symbol for a given currency code.
     Falls back to the code itself if no symbol is mapped.
     """
-    if not currency_code or not isinstance(currency_code, str):
-        return ""
-    return CURRENCY_SYMBOLS.get(currency_code.upper(), currency_code.upper())
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_currency_symbol_from_code(currency_code)
 
 
 # --- END ADDED ---
@@ -144,67 +96,8 @@ def get_dividend_details(info: Dict[str, Any]) -> Dict[str, Any]:
     Calculates dividend details: frequency_months and indicated_annual_rate.
     Unifies logic between summary metrics and projected income charts.
     """
-    if not info:
-        return {"frequency_months": 3, "indicated_annual_rate": 0.0}
-
-    last_div_val = float(info.get("lastDividendValue", 0.0) or 0.0)
-
-    try:
-        div_rate = float(info.get("dividendRate", 0.0) or 0.0)
-    except (ValueError, TypeError):
-        div_rate = 0.0
-
-    try:
-        trailing_rate = float(info.get("trailingAnnualDividendRate", 0.0) or 0.0)
-    except (ValueError, TypeError):
-        trailing_rate = 0.0
-
-    if div_rate <= 0:
-        div_rate = trailing_rate if trailing_rate else 0.0
-
-    if last_div_val <= 0 and div_rate <= 0:
-        return {"frequency_months": 3, "indicated_annual_rate": 0.0}
-
-    freq = 4
-    consistent = False
-    if last_div_val > 0 and div_rate > 0:
-        ratio = div_rate / last_div_val
-        # Map the annual-rate / last-paid ratio to a payment cadence. A match
-        # also means the two fields agree; no match means they disagree (e.g. a
-        # recent dividend change) and we keep the default quarterly cadence.
-        for lo, hi, f in (
-            (10.0, 14.5, 12),
-            (3.4, 5.8, 4),
-            (1.4, 2.6, 2),
-            (0.7, 1.3, 1),
-        ):
-            if lo <= ratio <= hi:
-                freq = f
-                consistent = True
-                break
-
-    # Indicated (forward-looking) annual rate.
-    #   - When `dividendRate` (Yahoo's forward annual figure) and the last paid
-    #     dividend agree, either basis works; use lastDividendValue × freq so a
-    #     just-announced raise still shows once `dividendRate` lags.
-    #   - When they DISAGREE, trust `dividendRate`: it updates as soon as a new
-    #     dividend is declared, whereas `lastDividendValue` reflects only the
-    #     last *paid* dividend and lags an increase/cut. e.g. NVDA raised its
-    #     quarterly from $0.01 to $0.25 (dividendRate=1.0 captures the $1.00/yr
-    #     run-rate; lastDividendValue=0.01 is stale).
-    if div_rate > 0 and (not consistent or last_div_val <= 0):
-        indicated_rate = float(div_rate)
-    elif last_div_val > 0:
-        indicated_rate = float(last_div_val * freq)
-    else:
-        indicated_rate = float(div_rate)
-    freq_months = 12 // freq
-
-    return {
-        "frequency_months": freq_months,
-        "indicated_annual_rate": indicated_rate,
-        "last_dividend_value": last_div_val,
-    }
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_dividend_details(info)
 
 
 def calculate_indicated_dividend(info: Dict[str, Any]) -> float:
@@ -239,69 +132,15 @@ def robust_dividend_yield(info: Dict[str, Any]) -> Optional[float]:
     Returns ``None`` when there is no dividend or nothing usable, so callers
     can leave any existing value untouched.
     """
-    if not info:
-        return None
-
-    # Funds/ETFs sometimes carry an explicit 'yield' fraction.
-    explicit = info.get("yield")
-    if explicit is not None:
-        try:
-            v = float(explicit)
-            if v > 0:
-                return v if v < 1.0 else v / 100.0
-        except (TypeError, ValueError):
-            pass
-
-    # 1. Indicated annual rate / current price (most reliable).
-    indicated = get_dividend_details(info).get("indicated_annual_rate") or 0.0
-    price = info.get("currentPrice") or info.get("regularMarketPrice")
-    try:
-        price = float(price)
-    except (TypeError, ValueError):
-        price = 0.0
-    if indicated > 0 and price > 0:
-        return indicated / price
-
-    # 2. Trailing annual dividend yield (already a fraction).
-    try:
-        ty = float(info.get("trailingAnnualDividendYield"))
-        if ty > 0:
-            return ty
-    except (TypeError, ValueError):
-        pass
-
-    # 3. Last resort: raw Yahoo dividendYield. Steps 1 and 2 already failed, so
-    # there is no second signal left to corroborate against and the encoding has
-    # to be inferred from magnitude alone.
-    #
-    # Below the cutoff the fraction reading is the plausible one (0.05 -> 5%,
-    # versus a vanishingly rare 0.05%); above it the percent reading is
-    # (0.5 -> 0.5%, versus a 50% yield). Measured against the 1,479 cached
-    # records that *can* be settled, 0.10 misclassifies 0.5% of them where the
-    # previous 0.30 cutoff missed 4.1%; the best achievable single threshold
-    # (0.069) still misses 0.4%, because the two encodings genuinely overlap on
-    # [0.01, 3.08]. Only ~2% of records reach this branch.
-    try:
-        rv = float(info.get("dividendYield"))
-        if rv > 0:
-            return rv / 100.0 if rv > _RAW_YIELD_FRACTION_CUTOFF else rv
-    except (TypeError, ValueError):
-        pass
-
-    return None
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_robust_dividend_yield(info)
 
 
 # --- Cash Symbol Helpers ---
-
-
 def is_cash_symbol(symbol: str) -> bool:
     """Checks if a symbol is a cash symbol (e.g., '$CASH', 'Cash ($)')."""
-    if not isinstance(symbol, str):
-        return False
-    symbol_lower = symbol.lower()
-    return symbol_lower.startswith(CASH_SYMBOL_CSV.lower()) or symbol_lower.startswith(
-        "cash ("
-    )
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_is_cash_symbol(symbol)
 
 
 # --- External-Flow Classifier (Bookkeeping-Mode-Independent) ---
@@ -351,8 +190,6 @@ def is_cash_symbol(symbol: str) -> bool:
 # that semantically should NOT be external (e.g. broker commissions
 # miscategorized as Withdrawal), fix them at the data layer by retyping to
 # Type=Fees rather than adding string-prefix heuristics here.
-
-
 def is_external_flow_row(symbol: Any, tx_type: Any, note: Any = None) -> bool:
     """Returns True if a single transaction row represents an external portfolio flow.
 
@@ -362,11 +199,8 @@ def is_external_flow_row(symbol: Any, tx_type: Any, note: Any = None) -> bool:
     `note` is accepted for backward compatibility but no longer consulted;
     the classifier looks only at Symbol and Type.
     """
-    if not isinstance(symbol, str) or symbol.upper() != CASH_SYMBOL_CSV.upper():
-        return False
-    if not isinstance(tx_type, str):
-        return False
-    return tx_type.strip().lower() in ("deposit", "withdrawal")
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_is_external_flow_row(symbol, tx_type, note)
 
 
 def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
@@ -375,15 +209,8 @@ def compute_external_flow_mask(df: "pd.DataFrame") -> "pd.Series":
     Returns a boolean pd.Series aligned with df.index. Expects df to have
     'Symbol' and 'Type' columns. 'Note' is not consulted.
     """
-    if df.empty:
-        return pd.Series([], dtype=bool, index=df.index)
-
-    symbol_upper = df["Symbol"].astype(str).str.upper()
-    type_lower = df["Type"].astype(str).str.lower().str.strip()
-
-    return (symbol_upper == CASH_SYMBOL_CSV.upper()) & (
-        type_lower.isin(["deposit", "withdrawal"])
-    )
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_external_flow_mask(df)
 
 
 # --- IRR/MWR Calculation Functions ---
@@ -398,18 +225,8 @@ def _irr_date_ticks(dates):
     """The dates as int64 microsecond ticks, so `(d - start).days` can be taken
     in Rust exactly as Python takes it (datetimes keep their time of day, and
     the day count floors). None when Python could not subtract them either."""
-    if all(type(d) is date for d in dates):
-        return (
-            np.fromiter(
-                (d.toordinal() for d in dates), dtype=np.int64, count=len(dates)
-            )
-            * _DAY_US
-        )
-    try:
-        d0 = dates[0]
-        return np.array([(d - d0) // _ONE_US for d in dates], dtype=np.int64)
-    except Exception:
-        return None
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_irr_date_ticks(dates)
 
 
 def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> float:
@@ -425,26 +242,8 @@ def calculate_npv(rate: float, dates: List[date], cash_flows: List[float]) -> fl
     Raises:
         ValueError: If `dates` and `cash_flows` differ in length.
     """
-    if not isinstance(rate, (int, float)) or not np.isfinite(rate):
-        return np.nan
-    if len(dates) != len(cash_flows):
-        raise ValueError("The lengths of dates and cash_flows do not match.")
-    if len(dates) == 0:
-        return 0.0
-    if 1.0 + rate <= 1e-18:
-        return np.nan
-    try:
-        start = dates[0]
-        days = np.array([(d - start).days for d in dates], dtype=np.int64)
-        flows = np.asarray(cash_flows, dtype=np.float64)
-    except Exception:
-        return np.nan
-    value, negative_at = investa_core.npv(float(rate), days, flows)
-    if negative_at >= 0:
-        logging.warning(
-            f"NPV Calc Error: Invalid time delta ({days[negative_at] / 365.0}) at index {negative_at}."
-        )
-    return value
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_npv(rate, dates, cash_flows)
 
 
 def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
@@ -462,64 +261,8 @@ def calculate_irr(dates: List[date], cash_flows: List[float]) -> float:
     Brent's method — SciPy's algorithms, ported so the result matches the
     Python original bit for bit (frozen in tests/reference/finance.py).
     """
-    if len(dates) < 2 or len(cash_flows) < 2 or len(dates) != len(cash_flows):
-        logging.debug("DEBUG IRR: Fail - Length mismatch or < 2")
-        return np.nan
-    if any(not isinstance(cf, (int, float)) for cf in cash_flows):
-        logging.debug("DEBUG IRR: Fail - Non-numeric cash flows")
-        return np.nan
-    ticks = _irr_date_ticks(dates)
-    if ticks is None:
-        # Dates that cannot be subtracted from one another: every NPV the
-        # solver tries is NaN, so no root exists.
-        logging.debug("DEBUG IRR: Fail - dates are not mutually comparable")
-        return np.nan
-    flows = np.asarray(cash_flows, dtype=np.float64)
-    kinds = np.fromiter(
-        (
-            0 if type(cf) is float else 1 if isinstance(cf, int) else 2
-            for cf in cash_flows
-        ),
-        dtype=np.uint8,
-        count=len(cash_flows),
-    )
-    rate, status, first, last, scaled, unsorted = investa_core.calculate_irr(
-        ticks, flows, kinds
-    )
-    if unsorted:
-        logging.warning(
-            "NPV Calc Error: cash-flow dates are not sorted; "
-            "every NPV dated before the first flow returned NaN."
-        )
-    if status == _IRR_SOLVER_FAILED or (status == _IRR_OK and rate > 10.0):
-        used_dates = list(dates[first : last + 1])
-        used = [float(cf) for cf in cash_flows[first : last + 1]]
-        if scaled:
-            scale = max(abs(cf) for cf in used)
-            used = [cf / scale for cf in used]
-        if status == _IRR_SOLVER_FAILED:
-            readable_flows = [
-                f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in zip(used_dates, used)
-            ]
-            if len(readable_flows) > 100:
-                flow_str = f"[{', '.join(readable_flows[:10])} ... {', '.join(readable_flows[-10:])}] ({len(readable_flows)} flows)"
-            else:
-                flow_str = f"[{', '.join(readable_flows)}]"
-            logging.warning(f"IRR Calculation Failed. Flows used: {flow_str}")
-            return np.nan
-        logging.warning(
-            f"Extreme IRR detected ({rate * 100:.1f}%). Investigating flows..."
-        )
-        top_flows = sorted(
-            zip(used_dates, used), key=lambda x: abs(x[1]), reverse=True
-        )[:10]
-        readable_top = [f"{d.strftime('%Y-%m-%d')}: {f:,.2f}" for d, f in top_flows]
-        logging.warning(f"Top Flows contributing to IRR: [{', '.join(readable_top)}]")
-    elif status != _IRR_OK:
-        logging.debug(
-            f"DEBUG IRR: no IRR (status {status}) for {len(cash_flows)} flows"
-        )
-    return rate
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_calculate_irr(dates, cash_flows)
 
 
 # --- Cash Flow Helpers ---
@@ -551,32 +294,20 @@ def _numeric_column(df: pd.DataFrame, name: str, with_types: bool = False):
     `with_types`, also says which cells came back as NumPy scalars (to_numeric
     turns the text "12.5" into one), whose type the arithmetic carries on.
     """
-    n = len(df)
-    if name not in df.columns:
-        values, numpy_typed = np.full(n, np.nan), np.zeros(n, dtype=bool)
-    elif isinstance(df[name].dtype, np.dtype) and df[name].dtype.kind in "fiu":
-        values, numpy_typed = (
-            df[name].to_numpy(dtype=np.float64),
-            np.zeros(n, dtype=bool),
-        )
-    else:
-        values, numpy_typed = np.empty(n, dtype=np.float64), np.zeros(n, dtype=bool)
-        for i, v in enumerate(df[name].tolist()):
-            v = pd.to_numeric(v, errors="coerce")
-            values[i] = np.nan if v is None or pd.isna(v) else float(v)
-            numpy_typed[i] = isinstance(v, np.generic)
-    return (values, numpy_typed) if with_types else values
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_numeric_column(df, name, with_types)
 
 
 def _commission_column(df: pd.DataFrame) -> np.ndarray:
     """Commission with NaN read as 0.0, as both builders treat it."""
-    values = _numeric_column(df, "Commission")
-    return np.where(np.isnan(values), 0.0, values)
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_commission_column(df)
 
 
 def _cell_text(values: Optional[list], i: int, default: str = "") -> str:
     """`str(row.get(column, default))`: a missing column reads as the default."""
-    return default if values is None else str(values[i])
+    # Ported to Rust: rust/investa_core/src/fu.rs
+    return investa_core.fu_cell_text(values, i, default)
 
 
 class CashFlowLedger:

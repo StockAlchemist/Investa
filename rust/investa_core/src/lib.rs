@@ -23,6 +23,7 @@ pub mod fr;
 pub mod fr_blend;
 pub mod fr_growth;
 pub mod fr_models;
+pub mod fu;
 pub mod history;
 pub mod holdings;
 pub mod irr;
@@ -50,6 +51,7 @@ pub mod rank;
 pub mod rank_store;
 pub mod ratios;
 pub mod records;
+pub mod rm;
 pub mod sql;
 pub mod sqlite_read;
 pub mod st;
@@ -566,5 +568,30 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_class::<fr_blend::DeterministicDraws>()?;
+    m.add_function(wrap_pyfunction!(fu::fu_infer_periods_per_year, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_get_file_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_currency_symbol_from_code, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_dividend_details, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_robust_dividend_yield, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_is_cash_symbol, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_is_external_flow_row, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_external_flow_mask, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_irr_date_ticks, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_npv, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_calculate_irr, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_numeric_column, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_commission_column, m)?)?;
+    m.add_function(wrap_pyfunction!(fu::fu_cell_text, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_values, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_drawdown_series, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_max_drawdown, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_volatility, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_sharpe_ratio, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_sortino_ratio, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_beta, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_returns, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_all_risk_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(rm::rm_benchmark_scoreboard, m)?)?;
     Ok(())
 }

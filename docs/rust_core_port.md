@@ -56,7 +56,7 @@ The crate builds in four places:
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
-| 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
+| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; then the cash-flow ledger and builders, FX and historical prices, symbol mapping and formatting | In progress |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -871,6 +871,33 @@ Checks:
   - The comprehensive valuation runs end to end on 150 random cases from the same NumPy state. They include random overrides, ETFs and funds with and without a NAV, penny stocks and micro caps. Every valuation status is reached, and the caller's random stream is left where the original leaves it.
   - The per-symbol entry point runs against a fake provider and config manager. It sees sparse info, failing quotes and fetches, exclusions, and prefetched statements, and makes the same provider calls in the same order.
 - **Real data:** the comprehensive valuation of 400 cached companies is identical end to end, at 2,000 iterations with their price histories, and so are their recommendations and blends. The port took 3.5 s against 3.2 s.
+
+## Phase 16a (27 Oct 2026): `risk_metrics` and the first block of `finutils`
+
+The pandas side of `risk_metrics` now runs in Rust (`rm.rs`), and so does the first block of `finutils` (`fu.rs`).
+- **`risk_metrics`:** the value-array conversion, drawdowns, the annualized statistics' guards, beta's alignment, alpha, the returns series, all risk metrics, and the benchmark scoreboard. The reductions were already Rust. Beta's covariance stays pandas', as before, because its BLAS dot product cannot be reproduced bit for bit.
+- **`finutils`:**
+  - the periods-per-year inference, and the file hash with its SQLite sidecars;
+  - the currency symbol, the dividend details, and the robust yield;
+  - the cash and external-flow classifiers, row and vectorized;
+  - the NPV and IRR glue around the Rust solver: date ticks, flow kinds, and the failure and extreme-rate logs;
+  - the transaction-column readers.
+
+How it is done:
+- Strings are compared with Python's own `.lower()`, `.upper()` and `.strip()`, so non-ASCII symbols case-fold as before.
+- Files are read through Python's `open` and hashed by `hashlib`.
+- The dividend arithmetic, which the original does on Python floats after `float()`, is native.
+
+Checks:
+- **Parity:** random inputs match the frozen originals, logs included:
+  - value series with NaN, zeros, constants and spikes, on four kinds of index;
+  - plain, WAL-backed, missing, directory and unreadable files;
+  - profiles and symbols of every type;
+  - dates of six kinds, unsorted ones included, against int, float, NumPy, bool, text and NaN flows, plus a 150-flow solver failure.
+  - One test case was dropped: an int path makes `open` adopt and then close that file descriptor of the test process.
+- **Real data:** all identical.
+  - The spies saw 24,386 calls during real summaries and full histories of all three books: IRR, the cash classifiers, the column readers and the period inference.
+  - Direct comparisons: 12,398. They cover risk metrics and scoreboards on each book's real return series over three windows, the dividend helpers on 4,092 cached profiles, and the hashes of the real databases.
 
 ## Found while porting
 

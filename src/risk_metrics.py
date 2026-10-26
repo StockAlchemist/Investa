@@ -18,7 +18,7 @@ import numpy as np
 from typing import Dict, Optional
 
 import investa_core
-from finutils import infer_periods_per_year
+from finutils import infer_periods_per_year  # noqa: F401 -- read by the Rust port at call time
 
 # The arithmetic runs in Rust (rust/investa_core/src/stats.rs), reproducing
 # pandas' reductions bit for bit; this module keeps the pandas side — index
@@ -28,7 +28,8 @@ from finutils import infer_periods_per_year
 
 
 def _values(series: pd.Series) -> np.ndarray:
-    return np.ascontiguousarray(series.to_numpy(dtype=np.float64, na_value=np.nan))
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_values(series)
 
 
 def calculate_drawdown_series(series: pd.Series) -> pd.Series:
@@ -42,11 +43,8 @@ def calculate_drawdown_series(series: pd.Series) -> pd.Series:
         pd.Series: Series of drawdown values (negative percentages, e.g., -0.05 for 5% down).
                    Returns empty series if input is empty.
     """
-    if series.empty:
-        return pd.Series(dtype=float)
-    return pd.Series(
-        investa_core.drawdown_series(_values(series)), index=series.index, name=series.name
-    )
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_drawdown_series(series)
 
 
 def calculate_max_drawdown(series: pd.Series) -> float:
@@ -61,7 +59,8 @@ def calculate_max_drawdown(series: pd.Series) -> float:
         float: The maximum drawdown as a negative fraction (e.g., -0.20 for a 20% drawdown).
                Returns 0.0 if the series never falls, or is empty.
     """
-    return float(investa_core.max_drawdown(_values(series)))
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_max_drawdown(series)
 
 
 def calculate_volatility(
@@ -77,9 +76,8 @@ def calculate_volatility(
     Returns:
         float: Annualized volatility.
     """
-    if returns_series.empty or len(returns_series) < 2:
-        return 0.0
-    return float(investa_core.volatility(_values(returns_series), float(periods_per_year)))
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_volatility(returns_series, periods_per_year)
 
 
 def calculate_sharpe_ratio(
@@ -98,12 +96,9 @@ def calculate_sharpe_ratio(
     Returns:
         float: Sharpe Ratio.
     """
-    if returns_series.empty or len(returns_series) < 2:
-        return 0.0
-    return float(
-        investa_core.sharpe_ratio(
-            _values(returns_series), float(risk_free_rate), float(periods_per_year)
-        )
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_sharpe_ratio(
+        returns_series, risk_free_rate, periods_per_year
     )
 
 
@@ -129,15 +124,9 @@ def calculate_sortino_ratio(
         float: Sortino Ratio; infinite when no period fell short of the target
                and the mean excess return is positive.
     """
-    if returns_series.empty or len(returns_series) < 2:
-        return 0.0
-    return float(
-        investa_core.sortino_ratio(
-            _values(returns_series),
-            float(risk_free_rate),
-            float(periods_per_year),
-            float(target_return),
-        )
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_sortino_ratio(
+        returns_series, risk_free_rate, periods_per_year, target_return
     )
 
 
@@ -154,20 +143,8 @@ def calculate_beta(returns_series: pd.Series, benchmark_returns: pd.Series) -> f
         float: Portfolio Beta; 1.0 when there is too little overlap or the
                benchmark never moves.
     """
-    if returns_series.empty or benchmark_returns.empty:
-        return 1.0
-
-    # Align the series by date
-    aligned = pd.concat([returns_series, benchmark_returns], axis=1).dropna()
-    if len(aligned) < 2:
-        return 1.0
-    # The covariance stays pandas' (np.cov): its BLAS dot product sums in the
-    # BLAS's own order, which no port can reproduce. The variance is Rust.
-    cov = aligned.iloc[:, 0].cov(aligned.iloc[:, 1])
-    var = investa_core.pd_var(_values(aligned.iloc[:, 1]), 1)
-    if var == 0:
-        return 1.0
-    return float(cov / var)
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_beta(returns_series, benchmark_returns)
 
 
 def calculate_alpha(
@@ -189,15 +166,16 @@ def calculate_alpha(
     Returns:
         float: Portfolio Alpha.
     """
-    expected_return = risk_free_rate + beta * (benchmark_return_ann - risk_free_rate)
-    alpha = portfolio_return_ann - expected_return
-    return float(alpha)
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_alpha(
+        portfolio_return_ann, benchmark_return_ann, beta, risk_free_rate
+    )
 
 
 def _returns(values: pd.Series) -> pd.Series:
     """`pct_change(fill_method=None)` with infinities dropped as NaN, then dropna."""
-    r = pd.Series(investa_core.pct_change(_values(values)), index=values.index)
-    return r.dropna()
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_returns(values)
 
 
 def calculate_all_risk_metrics(
@@ -219,58 +197,10 @@ def calculate_all_risk_metrics(
     Returns:
         Dict[str, float]: Dictionary containing all calculated metrics.
     """
-    if portfolio_values.empty:
-        return {}
-
-    returns = _returns(portfolio_values)
-
-    # Daily returns > 100% or < -90% are almost always data artifacts (missing
-    # flows, splits), so they are clipped to keep them from ruining the metrics.
-    if not returns.empty:
-        returns = returns.clip(lower=-0.90, upper=1.0)
-
-    # MDD ignores returns and works on value series (more robust)
-    mdd = calculate_max_drawdown(portfolio_values)
-
-    # With very few points, Vol/Sharpe are statistically meaningless.
-    if len(returns) < 5:
-        return {
-            "Max Drawdown": mdd,
-            "Volatility (Ann.)": 0.0,
-            "Sharpe Ratio": 0.0,
-            "Sortino Ratio": 0.0,
-            "insufficient_data": True,
-        }
-
-    ppy = (
-        periods_per_year
-        if periods_per_year is not None
-        else infer_periods_per_year(returns.index)
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_all_risk_metrics(
+        portfolio_values, risk_free_rate, periods_per_year, benchmark_values
     )
-
-    metrics = {
-        "Max Drawdown": mdd,
-        "Volatility (Ann.)": calculate_volatility(returns, ppy),
-        "Sharpe Ratio": calculate_sharpe_ratio(returns, risk_free_rate, ppy),
-        "Sortino Ratio": calculate_sortino_ratio(returns, risk_free_rate, ppy),
-    }
-
-    # Add Alpha & Beta if benchmark provided
-    if benchmark_values is not None and not benchmark_values.empty:
-        bench_returns = _returns(benchmark_values)
-        if not bench_returns.empty:
-            beta = calculate_beta(returns, bench_returns)
-
-            # Annualized returns for Alpha
-            port_ann_ret = investa_core.pd_mean(_values(returns)) * ppy
-            bench_ann_ret = investa_core.pd_mean(_values(bench_returns)) * ppy
-
-            alpha = calculate_alpha(port_ann_ret, bench_ann_ret, beta, risk_free_rate)
-
-            metrics["Beta"] = beta
-            metrics["Alpha"] = alpha
-
-    return metrics
 
 
 def calculate_benchmark_scoreboard(
@@ -286,42 +216,5 @@ def calculate_benchmark_scoreboard(
     and identical across clients. ``benchmark_values`` maps a display name to that
     benchmark's accumulated-value (wealth) series.
     """
-    out = []
-    if portfolio_values is None or portfolio_values.empty:
-        return out
-
-    def _clipped_returns(s: pd.Series) -> pd.Series:
-        return _returns(s).clip(lower=-0.90, upper=1.0)
-
-    port_ret = _clipped_returns(portfolio_values)
-    if len(port_ret) < 20:
-        return out
-    ppy = infer_periods_per_year(port_ret.index)
-
-    for name, bvals in benchmark_values.items():
-        if bvals is None or bvals.empty:
-            continue
-        aligned = pd.concat(
-            [port_ret, _clipped_returns(bvals)], axis=1, join="inner"
-        ).dropna()
-        if len(aligned) < 20:
-            continue
-        alpha, beta, r2, te, ir = investa_core.scoreboard_stats(
-            _values(aligned.iloc[:, 0]), _values(aligned.iloc[:, 1]), float(ppy)
-        )
-        port_total = (
-            float(portfolio_values.iloc[-1]) / float(portfolio_values.iloc[0]) - 1.0
-        ) * 100.0
-        bench_total = (float(bvals.iloc[-1]) / float(bvals.iloc[0]) - 1.0) * 100.0
-        out.append(
-            {
-                "name": name,
-                "alpha": float(alpha),
-                "beta": float(beta),
-                "r2": float(r2),
-                "tracking_error": float(te),
-                "information_ratio": float(ir),
-                "excess_return": float(port_total - bench_total),
-            }
-        )
-    return out
+    # Ported to Rust: rust/investa_core/src/rm.rs
+    return investa_core.rm_benchmark_scoreboard(portfolio_values, benchmark_values)
