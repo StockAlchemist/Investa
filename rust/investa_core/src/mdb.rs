@@ -494,7 +494,7 @@ pub fn mdb_adjust_frame<'py>(
 /// `a, b = item` with Python's own errors: "cannot unpack non-iterable X
 /// object", "not enough values to unpack (expected 2, got N)", "too many
 /// values to unpack (expected 2)".
-fn unpack2<'py>(item: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+pub fn unpack2<'py>(item: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
     let mut it = match item.try_iter() {
         Ok(it) => it,
         Err(e) if e.is_instance_of::<pyo3::exceptions::PyTypeError>(item.py()) => {

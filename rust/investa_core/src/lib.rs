@@ -21,9 +21,11 @@ pub mod irr;
 mod irr_grid;
 pub mod mc;
 pub mod mdb;
+pub mod pa_aggregate;
 pub mod pa_fifo;
 pub mod pa_holdings;
 pub mod pa_reports;
+pub mod pa_rows;
 pub mod pa_small;
 pub mod projection;
 mod py;
@@ -326,5 +328,7 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(pa_fifo::pa_fifo_lots_and_gains, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_rows::pa_build_summary_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(pa_aggregate::pa_aggregate_metrics, m)?)?;
     Ok(())
 }

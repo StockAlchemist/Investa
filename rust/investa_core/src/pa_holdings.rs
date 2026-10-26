@@ -144,13 +144,15 @@ pub fn pa_transactions_to_holdings<'py>(
     };
     setitem(transactions_df, "Symbol", stripped("Symbol")?)?;
     let cash_for_closure = cash.clone().unbind();
+    let module_for_closure = m.clone().unbind();
     let normaliser =
         PyCFunction::new_closure(py, None, None, move |args, _| -> PyResult<Py<PyAny>> {
             let py = args.py();
             let x = args.get_item(0)?;
-            let is_cash = py
-                .import("portfolio_analyzer")?
-                .getattr("is_cash_symbol")?
+            // The name is read per row, as the lambda's global lookup was.
+            let is_cash = module_for_closure
+                .bind(py)
+                .getattr(pyo3::intern!(py, "is_cash_symbol"))?
                 .call1((&x,))?
                 .is_truthy()?;
             Ok(if is_cash {

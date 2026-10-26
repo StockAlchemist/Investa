@@ -11,6 +11,7 @@
 //! looked up on `portfolio_analyzer` at call time.
 
 use pyo3::exceptions::PyException;
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyFloat, PyList, PySet, PyString, PyTuple};
 
@@ -68,7 +69,7 @@ impl<'py> Holdings<'py> {
     fn symbol(&self, symbol: &Bound<'py, PyAny>) -> PyResult<usize> {
         let next = self.symbol_ids.len();
         self.symbol_ids
-            .call_method1("setdefault", (symbol, next))?
+            .call_method1(intern!(self.symbol_ids.py(), "setdefault"), (symbol, next))?
             .extract()
     }
 
@@ -86,7 +87,11 @@ impl<'py> Holdings<'py> {
 }
 
 struct Env<'py> {
-    pd: Bound<'py, PyModule>,
+    // `pd.isna`, `pd.notna` and `pd.to_numeric`, bound once per call: a
+    // lookup by name per row cost more than the rest of the row.
+    isna: Bound<'py, PyAny>,
+    notna: Bound<'py, PyAny>,
+    to_numeric: Bound<'py, PyAny>,
     float: Bound<'py, PyAny>,
     str_t: Bound<'py, PyAny>,
     coerce: Bound<'py, PyDict>,
@@ -94,14 +99,14 @@ struct Env<'py> {
 
 impl<'py> Env<'py> {
     fn isna(&self, v: &Bound<'py, PyAny>) -> PyResult<bool> {
-        self.pd.call_method1("isna", (v,))?.is_truthy()
+        self.isna.call1((v,))?.is_truthy()
     }
     fn notna(&self, v: &Bound<'py, PyAny>) -> PyResult<bool> {
-        self.pd.call_method1("notna", (v,))?.is_truthy()
+        self.notna.call1((v,))?.is_truthy()
     }
     /// `pd.to_numeric(v, errors="coerce")`
     fn numeric(&self, v: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-        self.pd.call_method("to_numeric", (v,), Some(&self.coerce))
+        self.to_numeric.call((v,), Some(&self.coerce))
     }
     /// `float(v)`
     fn f(&self, v: &Bound<'py, PyAny>) -> PyResult<f64> {
@@ -115,8 +120,8 @@ impl<'py> Env<'py> {
     fn upper_strip(&self, v: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         self.str_t
             .call1((v,))?
-            .call_method0("upper")?
-            .call_method0("strip")
+            .call_method0(intern!(v.py(), "upper"))?
+            .call_method0(intern!(v.py(), "strip"))
     }
     /// `v > bound` (or `<=`) with Python's comparison and truthiness.
     fn gt(&self, v: &Bound<'py, PyAny>, bound: f64) -> PyResult<bool> {
@@ -131,7 +136,7 @@ impl<'py> Env<'py> {
     }
     /// `abs(float(v))`
     fn abs_float(&self, v: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-        self.fobj(v)?.call_method0("__abs__")
+        self.fobj(v)?.call_method0(intern!(v.py(), "__abs__"))
     }
 }
 
@@ -154,20 +159,20 @@ fn parse<'py>(
     if env.isna(tx_date_dt)? {
         return Ok(None);
     }
-    let tx_date = tx_date_dt.call_method0("date")?;
+    let tx_date = tx_date_dt.call_method0(intern!(type_raw.py(), "date"))?;
 
     let symbol = env.upper_strip(symbol_raw)?;
     let account = env.upper_strip(account_raw)?;
     let tx_type = env
         .str_t
         .call1((type_raw,))?
-        .call_method0("lower")?
-        .call_method0("strip")?;
+        .call_method0(intern!(type_raw.py(), "lower"))?
+        .call_method0(intern!(type_raw.py(), "strip"))?;
     let use_raw = env.notna(local_curr_raw)?
         && env
             .str_t
             .call1((local_curr_raw,))?
-            .call_method0("strip")?
+            .call_method0(intern!(type_raw.py(), "strip"))?
             .is_truthy()?;
     let mut local_curr = env
         .str_t
@@ -176,9 +181,9 @@ fn parse<'py>(
         } else {
             default_currency
         },))?
-        .call_method0("upper")?;
+        .call_method0(intern!(type_raw.py(), "upper"))?;
     if !local_curr.is_truthy()? || local_curr.len()? != 3 {
-        local_curr = default_currency.call_method0("upper")?;
+        local_curr = default_currency.call_method0(intern!(type_raw.py(), "upper"))?;
     }
 
     let qty = env.numeric(qty_raw)?;
@@ -226,7 +231,9 @@ pub fn pa_fifo_lots_and_gains<'py>(
     let coerce = PyDict::new(py);
     coerce.set_item("errors", "coerce")?;
     let env = Env {
-        pd: pd.clone(),
+        isna: pd.getattr("isna")?,
+        notna: pd.getattr("notna")?,
+        to_numeric: pd.getattr("to_numeric")?,
         float: builtins.getattr("float")?,
         str_t: builtins.getattr("str")?,
         coerce,
@@ -329,7 +336,7 @@ pub fn pa_fifo_lots_and_gains<'py>(
      -> PyResult<()> {
         let h = hs.holding(key)?;
         let fx_f = env.fifo_float(&fx)?;
-        let day: i64 = tx_date.call_method0("toordinal")?.extract()?;
+        let day: i64 = tx_date.call_method0(intern!(py, "toordinal"))?.extract()?;
         let lot = Lot {
             qty: env.f(qty)?,
             cost_per_share_local_net: env.f(cps)?,

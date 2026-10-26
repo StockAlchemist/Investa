@@ -53,7 +53,7 @@ The crate builds in four places:
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
-| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors **done**; (c) the holdings pass and FIFO **done**; (d) the summary rows and totals; (e) `portfolio_logic` | In progress |
+| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors **done**; (c) the holdings pass and FIFO **done**; (d) the summary rows and totals **done**; (e) `portfolio_logic` | In progress |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
@@ -635,8 +635,26 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
 - **Real data:** for all three books, in USD and THB, the summaries, the FIFO output and the holdings pass are identical, and so is the frame the holdings pass leaves behind.
 - All 1,445 tests pass.
 
+## Phase 13d (26 Oct 2026): the summary rows and the totals
+
+`_build_summary_rows` (with `_HoldingRows`, now a memo inside the port) and `_calculate_aggregate_metrics` are now Rust (`pa_rows.rs`, `pa_aggregate.rs`). `portfolio_analyzer.py` is down to 529 lines of wrappers and constants.
+- **Every figure is Python's own arithmetic on the holding's objects**, in the original's operand order. A NumPy quantity therefore keeps the row's values NumPy scalars, `max(0, cost)` still returns the integer `0`, and `* 100` and `* 100.0` stay as the original wrote them. The intra-day flows were Python floats in the original, so they are native.
+- Every log message formats its values with Python's `format()`, so a float in a DEBUG line reads as Python prints it.
+- `safe_sum`, the FX, IRR and MWR helpers and the cash-flow ledger are looked up on `portfolio_analyzer` at call time, and their imports are marked as read by Rust.
+- **The frozen speedup reference now borrows the frozen module's helpers.** `tests/reference/summary_rows.py` copied its globals from the live `portfolio_analyzer`. Once the live module stopped importing `defaultdict`, the reference failed with a `NameError` and the old parity test reported a mismatch.
+- **Parity:**
+  - 300 random rounds of the rows match the frozen original, with logs down to DEBUG and the ledger left behind. The holdings are hand-built with NumPy, int and float values, NaN costs, shorts, and cash in four currencies. The market data has text, zero and NumPy-integer prices. The rounds also cover published NAVs, valid and invalid manual prices, missing FX, interest with thresholds, and account filters.
+  - So do 200 rounds of the totals: dropped and text columns, an empty frame, every account-filter shape, and ledgers with and without `To Account`.
+  - The pre-speedup parity test still passes.
+- **Real data:** for all three books, the summaries in USD and THB, with and without an account filter and with cash interest on, are identical with the rows and totals swapped.
+- **Speed:** `/summary` is unchanged: 274 vs 283 ms and 273 vs 276 ms on the two large books.
+  - A first cut of 13c was 15 ms slower in the FIFO shim. The cause was two things done per row: looking pandas functions up by a freshly built name, and calling `py.import` inside the holdings pass's per-row closure.
+  - Binding `pd.isna`, `pd.notna` and `pd.to_numeric` once per call, and interning the method names, brought each ported function within 1–2 ms of the original.
+- All 1,464 tests pass.
+
 ## Found while porting
 
+- **A short holding's "Avg Cost (Local)" is the previous long holding's cost basis divided by the short quantity** (not changed). `_build_summary_rows` assigns `cost_basis_display_local` only in the long branch but reads it for every holding with a non-zero quantity. A short row therefore divides whatever the last long holding left behind, and a book whose first non-zero holding is short raises `UnboundLocalError` out of the summary. No real book holds a short, so no one has seen it. The port keeps both behaviours, and `test_short_holding_reads_the_previous_cost_basis` pins them.
 - **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
   - atchamatan's `E*Trade` account reads as `E*Trade`, i.e. any number of E's followed by "trade". So a transfer of the same symbol whose Note contains "trade" anywhere, such as "TD Ameritrade", is pulled into the E*Trade holding's flows.
   - An account name with parentheses, like `IBKR (1)`, is a regex group: pandas warns about it, and `(1)` matches a bare `1`.

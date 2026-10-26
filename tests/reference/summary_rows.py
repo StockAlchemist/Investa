@@ -2,10 +2,14 @@
 summary-rows speedup, frozen verbatim. They run against portfolio_analyzer's
 own helpers (copied into this module's namespace), so only these two
 functions differ from the current code. Used by tests/test_summary_rows_parity.py.
+
+The helpers come from the frozen tests/reference/portfolio_analyzer.py, not
+the live module: the live one now hands these functions to Rust and no longer
+imports what their bodies use (defaultdict, datetime, ...).
 """
 
 # ruff: noqa: F821  (names come from portfolio_analyzer via globals().update)
-import portfolio_analyzer as _pa
+from reference import portfolio_analyzer as _pa
 
 globals().update({k: v for k, v in vars(_pa).items() if not k.startswith("__")})
 
