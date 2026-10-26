@@ -54,7 +54,7 @@ The crate builds in four places:
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
-| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers **done**; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | In progress |
+| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers **done**; (c) input prep and daily valuation **done**; (d) accumulation and the daily results; (e) `calculate_historical_performance` | In progress |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
@@ -689,6 +689,15 @@ Eight `portfolio_history` helpers are now Rust (`ph_small.rs`): price unadjustme
   - It also covers the worker in both comparison modes, with each stage failing in turn; its `basicConfig` calls are recorded and compared.
   - Manual prices, the NAV series through a fake fund store, the grid, pruning over a real directory, the intraday window and the mappings are fuzzed too.
 - **Real data:** for the three books, every call the history makes is identical: daily runs in USD and THB, with and without a filter, and 5-minute and hourly runs. That covers the mappings, the NAV series, the grid, the manual prices and the intraday window. `_unadjust_prices` is reached only from `portfolio_logic`'s profiling `__main__`, so the fuzz is its check.
+
+## Phase 14c (26 Oct 2026): input preparation and daily valuation
+
+`_prepare_historical_inputs`, `_get_or_calculate_all_daily_holdings` and `_value_daily_holdings_vectorized` are now Rust (`ph_valuation.rs`). The replay and valuation kernels were already Rust; what moved is the glue around them: the account filter and transfer backfill, the cache keys and hashes, the L1 `.npy` cache, and the price and FX alignment. Every operation is Python's own, in the original's order.
+- **Parity:**
+  - The fuzz runs input preparation over every include/exclude shape, a CSV path that exists or does not, and with and without a cache directory.
+  - It runs the L1 cache as a miss that saves and then a hit that loads, in separate directories, plus a run with no directory.
+  - It runs the valuation over random grids, every price layout, published NAVs and manual prices, and FX tables under every pair spelling or missing.
+- **Real data:** every one of these calls in kitmatan's daily and intraday histories is identical. The dheematan and atchamatan runs were cut short and still need repeating.
 
 ## Found while porting
 

@@ -28,7 +28,9 @@ pub mod pa_reports;
 pub mod pa_rows;
 pub mod pa_small;
 pub mod pc_flows;
+pub mod ph_daily;
 pub mod ph_small;
+pub mod ph_valuation;
 pub mod pl_helpers;
 pub mod pl_summary;
 pub mod projection;
@@ -362,5 +364,19 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(ph_small::ph_generate_mappings, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        ph_valuation::ph_prepare_historical_inputs,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(ph_valuation::ph_value_daily_holdings, m)?)?;
+    m.add_function(wrap_pyfunction!(ph_valuation::ph_all_daily_holdings, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        ph_daily::ph_accumulated_gains_and_resample,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        ph_daily::ph_load_or_calculate_daily_results,
+        m
+    )?)?;
     Ok(())
 }
