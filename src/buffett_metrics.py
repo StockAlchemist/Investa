@@ -26,14 +26,12 @@ depreciation obscures cash earnings). See `edgar_sic` for routing.
 
 from __future__ import annotations
 
-import logging
-import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
 
-import edgar_provider
+import edgar_provider  # noqa: F401 -- read by the Rust port at call time
 import investa_core
-from edgar_concepts import BANK_CONCEPTS, REIT_CONCEPTS
+from edgar_concepts import BANK_CONCEPTS, REIT_CONCEPTS  # noqa: F401 -- read by the Rust port at call time
 
 # A company needs at least this many annual periods before consistency
 # measures mean anything. Below it, a single good year would dominate.
@@ -77,21 +75,13 @@ class CompanyMetrics:
 
 
 def _finite(value) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_finite(value)
 
 
 def _safe_divide(numerator, denominator) -> Optional[float]:
-    num = _finite(numerator)
-    den = _finite(denominator)
-    if num is None or den is None or den == 0:
-        return None
-    return num / den
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_safe_divide(numerator, denominator)
 
 
 def _cagr(series_oldest_first: Sequence[Optional[float]]) -> Optional[float]:
@@ -136,41 +126,31 @@ def _raw_number(value) -> Optional[float]:
     """A concept value as Rust takes it: None stays None, numbers become floats
     with NaN and infinity kept (several metrics read raw values), anything
     else raises as the arithmetic on it would have."""
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float)) or hasattr(value, "__float__"):
-        return float(value)
-    raise TypeError(f"concept value is not a number: {value!r}")
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_raw_number(value)
 
 
 def _for_rust(
     concepts: Dict[str, Dict[str, float]],
 ) -> Dict[str, Dict[str, Optional[float]]]:
-    return {
-        name: {str(period): _raw_number(v) for period, v in (series or {}).items()}
-        for name, series in (concepts or {}).items()
-    }
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_for_rust(concepts)
 
 
 def _ratios_for_rust(
     ratios_by_period: Dict[str, Dict[str, float]],
 ) -> Dict[str, Dict[str, Optional[float]]]:
-    return {
-        str(period): {
-            label: _finite(row.get(label)) for label in _RATIO_LABELS if label in row
-        }
-        for period, row in (ratios_by_period or {}).items()
-    }
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_ratios_for_rust(ratios_by_period)
 
 
 def _from_rust(rows) -> Dict[str, Optional[float]]:
     """Rust's (key, value, is_int) rows back into Python's metrics dict."""
-    return {key: (int(value) if is_int else value) for key, value, is_int in rows}
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_from_rust(rows)
 
 
 # --- generic model ----------------------------------------------------------
-
-
 def _compute_generic_metrics(
     concepts: Dict[str, Dict[str, float]], ratios_by_period: Dict[str, Dict[str, float]]
 ) -> Dict[str, Optional[float]]:
@@ -181,16 +161,11 @@ def _compute_generic_metrics(
     definitions and their rationale are in rust/investa_core/src/buffett.rs.
     Original frozen in tests/reference/buffett_metrics.py.
     """
-    return _from_rust(
-        investa_core.buffett_generic_metrics(
-            _for_rust(concepts), _ratios_for_rust(ratios_by_period)
-        )
-    )
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_generic_metrics(concepts, ratios_by_period)
 
 
 # --- bank model -------------------------------------------------------------
-
-
 def _compute_bank_metrics(
     concepts: Dict[str, Dict[str, float]],
     sector: Dict[str, Dict[str, float]],
@@ -207,16 +182,11 @@ def _compute_bank_metrics(
 
     Computed in Rust (investa_core.buffett_bank_metrics).
     """
-    return _from_rust(
-        investa_core.buffett_bank_metrics(
-            _for_rust(concepts), _for_rust(sector), _ratios_for_rust(ratios_by_period)
-        )
-    )
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_bank_metrics(concepts, sector, ratios_by_period)
 
 
 # --- REIT model -------------------------------------------------------------
-
-
 def _compute_reit_metrics(
     concepts: Dict[str, Dict[str, float]],
     sector: Dict[str, Dict[str, float]],
@@ -234,16 +204,11 @@ def _compute_reit_metrics(
 
     Computed in Rust (investa_core.buffett_reit_metrics).
     """
-    return _from_rust(
-        investa_core.buffett_reit_metrics(
-            _for_rust(concepts), _for_rust(sector), _ratios_for_rust(ratios_by_period)
-        )
-    )
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_reit_metrics(concepts, sector, ratios_by_period)
 
 
 # --- ratio bridge -----------------------------------------------------------
-
-
 def _ratios_by_period(cik: str) -> Dict[str, Dict[str, float]]:
     """
     Run the existing ratio engine and re-key its output by period string.
@@ -252,23 +217,8 @@ def _ratios_by_period(cik: str) -> Dict[str, Dict[str, float]]:
     recomputing ROE/leverage here, so the ranking and the rest of the app can
     never disagree about what a company's ROE was.
     """
-    import financial_ratios
-
-    statements = edgar_provider.get_statements(cik)
-    frame = financial_ratios.calculate_key_ratios_timeseries(
-        statements.get("financials"), statements.get("balance_sheet")
-    )
-    if frame is None or frame.empty:
-        return {}
-
-    result: Dict[str, Dict[str, float]] = {}
-    for period, row in frame.iterrows():
-        try:
-            key = period.strftime("%Y-%m-%d")
-        except AttributeError:
-            key = str(period)
-        result[key] = {k: v for k, v in row.to_dict().items() if k != "Period"}
-    return result
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_ratios_by_period(cik)
 
 
 # --- entry point ------------------------------------------------------------
@@ -323,8 +273,8 @@ _COVERAGE_KEYS = {
 
 def compute_metrics(cik: str, symbol: str, name: str, model: str) -> CompanyMetrics:
     """See `_compute_metrics`; its EDGAR reads share one per-company session."""
-    with edgar_provider.company_session(cik):
-        return _compute_metrics(cik, symbol, name, model)
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_compute_metrics(cik, symbol, name, model)
 
 
 def _compute_metrics(cik: str, symbol: str, name: str, model: str) -> CompanyMetrics:
@@ -332,62 +282,5 @@ def _compute_metrics(cik: str, symbol: str, name: str, model: str) -> CompanyMet
     Derive one company's full metric set. Never raises — a company that cannot
     be measured comes back with `gate_failures` explaining why.
     """
-    result = CompanyMetrics(cik=cik, symbol=symbol, name=name, model=model)
-
-    try:
-        concepts = edgar_provider.get_concept_values(cik)
-    except Exception as exc:  # pragma: no cover - defensive
-        logging.warning(f"Metrics: concept load failed for {symbol}: {exc}")
-        result.gate_failures.append("fundamentals_unavailable")
-        return result
-
-    if not concepts or "net_income" not in concepts:
-        result.gate_failures.append("no_fundamentals")
-        return result
-
-    periods = sorted(set(concepts.get("net_income", {})))
-    result.period_count = len(periods)
-    result.latest_period = periods[-1] if periods else None
-    result.first_period = periods[0] if periods else None
-
-    # The share count is the one series here a stock split can corrupt. A 10-K
-    # restates the two prior years for the split and nothing restates the years
-    # before it, so the assembled series steps by the split ratio partway
-    # through the window: Apple's reads as +11.8%/yr of issuance across a decade
-    # in which it retired a quarter of its shares, and NVIDIA's as +49.7%.
-    # Every per-share rate below divides by this — share-count CAGR, book value
-    # per share, FFO per share — so it is rebuilt once, here, from same-filing
-    # ratios that no split can distort. Companies that never split come back
-    # unchanged.
-    if concepts.get("shares_diluted"):
-        try:
-            concepts["shares_diluted"] = edgar_provider.split_consistent_series(
-                cik, "shares_diluted"
-            )
-        except Exception as exc:  # pragma: no cover - defensive
-            logging.warning(
-                f"Metrics: share-count reconstruction failed for {symbol}: {exc}"
-            )
-
-    try:
-        ratios = _ratios_by_period(cik)
-    except Exception as exc:  # pragma: no cover - defensive
-        logging.warning(f"Metrics: ratio computation failed for {symbol}: {exc}")
-        ratios = {}
-
-    if model in ("bank", "insurer"):
-        # Insurers share the residual-income metric set; the lending-specific
-        # entries simply resolve to None and are excluded from their coverage.
-        sector = edgar_provider.get_concept_values(cik, list(BANK_CONCEPTS))
-        result.metrics = _compute_bank_metrics(concepts, sector, ratios)
-    elif model == "reit":
-        sector = edgar_provider.get_concept_values(cik, list(REIT_CONCEPTS))
-        result.metrics = _compute_reit_metrics(concepts, sector, ratios)
-    else:
-        result.metrics = _compute_generic_metrics(concepts, ratios)
-
-    coverage_keys = _COVERAGE_KEYS.get(model, _COVERAGE_KEYS["generic"])
-    resolved = sum(1 for key in coverage_keys if result.metrics.get(key) is not None)
-    result.coverage = resolved / len(coverage_keys) if coverage_keys else 0.0
-
-    return result
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bm_compute_metrics_inner(cik, symbol, name, model)

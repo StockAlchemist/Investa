@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; then the `buffett_*` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; then the `buffett_rank` and `buffett_pipeline` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -754,6 +754,15 @@ The market-trend indicator and the strategy allocation now run in Rust (`st.rs`)
   - The fuzz runs the trend readings over random histories, naive and zoned, too short, mid-month and month-end.
   - It runs every strategy's allocation through fake quote, ranking and SIC sources. Those cover NaN scores, missing and text prices and CIKs, failing quotes, stale, missing and unparsable runs, short books, and every AI-weight override.
 - **Real data:** all six strategies at three AI weights (18 allocations) and the SPY and QQQ trend signals are identical, with the real ranking store and live quotes.
+
+## Phase 15d (26 Oct 2026): the `buffett_metrics` and `buffett_value` glue
+
+What sat around the metric and percentile kernels now runs in Rust (`bm.rs`): the conversions into and out of the kernels, the ratio bridge, the per-company entry point under its EDGAR session, the market metrics, the value score's per-model grouping and the value frame.
+- **The per-value conversions are native** (`_raw_number`, `_finite`, `_safe_divide`). `_for_rust` meets about a thousand values per company across the universe, so a Python call per value would cost far more than the original. They are pure functions whose semantics are reproduced exactly, including the `OverflowError` that `float()` raises for an integer too large, which the original does not catch.
+- **The frozen oracles import each other.** `tests/reference/buffett_*_p15.py` point their sibling imports at one another, so the oracle is the original Python end to end even as the live modules move.
+- **Parity:**
+  - 150 random companies through fake EDGAR and ratio engines match the frozen originals under every model: ints, NaN, infinity, NumPy and text values, missing concepts, failing loads, share rebuilds and ratio runs. So do the helpers and 60 value universes.
+- **Real data:** 400 real filers' complete metric sets are identical, at the same speed (2.1 vs 2.3 s), and so is the value frame and score of those with a stored price.
 
 ## Found while porting
 

@@ -7,6 +7,7 @@
 
 pub mod analyzer;
 pub mod asof;
+pub mod bm;
 pub mod buffett;
 pub mod ca;
 pub mod cashflows;
@@ -416,5 +417,21 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(st::st_sleeve_label, m)?)?;
     m.add_function(wrap_pyfunction!(st::st_build_allocation, m)?)?;
     m.add_function(wrap_pyfunction!(st::st_strategy_payload, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_finite, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_safe_divide, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_raw_number, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_for_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_ratios_for_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_from_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_generic_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_bank_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_reit_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_ratios_by_period, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_compute_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bm_compute_metrics_inner, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bv_pct_yield, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bv_compute_market_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bv_score_value, m)?)?;
+    m.add_function(wrap_pyfunction!(bm::bv_build_value_frame, m)?)?;
     Ok(())
 }
