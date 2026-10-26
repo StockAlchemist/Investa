@@ -948,164 +948,11 @@ def calculate_intrinsic_value_dcf(
     """
     Performs a Discounted Cash Flow (DCF) valuation with mid-year discounting.
     """
-    try:
-        current_revenue = ticker_info.get("totalRevenue")
-        if (
-            not current_revenue
-            and financials_df is not None
-            and not financials_df.empty
-        ):
-            current_revenue = _get_statement_value(
-                financials_df, "Total Revenue", financials_df.columns[0]
-            )
-        model_method = "DCF"
-
-        # 1. Base FCF — a normalized figure, not one fiscal year.
-        fcf_method = "caller-supplied FCF"
-        fcf_history: List[float] = []
-        if fcf is None:
-            base_res = normalized_base_fcf(ticker_info, financials_df, cashflow_df)
-            fcf = base_res["fcf"]
-            fcf_method = base_res["method"]
-            fcf_history = base_res["history"]
-
-        used_fcf_margin = None
-        if (fcf is None or fcf <= 0) and current_revenue and current_revenue > 0:
-            if target_fcf_margin is None:
-                target_fcf_margin = estimate_fcf_margin(financials_df, cashflow_df)
-
-            positive_years = sum(1 for v in fcf_history if v > 0)
-            has_track_record = (
-                len(fcf_history) >= 3 and positive_years >= len(fcf_history) / 2
-            )
-
-            if target_fcf_margin > 0 and has_track_record:
-                fcf = current_revenue * target_fcf_margin
-                model_method = "Revenue-based DCF"
-                used_fcf_margin = target_fcf_margin
-                fcf_method = (
-                    f"revenue x normalized {target_fcf_margin:.1%} FCF margin "
-                    f"({positive_years}/{len(fcf_history)} cash-positive years)"
-                )
-            else:
-                return {
-                    "error": "No sustained positive free cash flow to value",
-                    "diagnostics": {
-                        "fcf_years": len(fcf_history),
-                        "positive_years": positive_years,
-                        "normalized_margin": target_fcf_margin,
-                    },
-                }
-
-        if fcf is None or fcf <= 0:
-            return {"error": "Negative or missing Free Cash Flow"}
-
-        # 2. Discount Rate (WACC)
-        if discount_rate is None:
-            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
-            discount_rate = wacc_res["wacc"]
-        else:
-            discount_rate = max(0.075, discount_rate)
-
-        # 3. Growth Rate
-        growth_method = "caller-supplied growth"
-        growth_signals: Dict[str, float] = {}
-        if growth_rate is None:
-            growth_res = blended_growth_estimate(
-                financials_df, ticker_info=ticker_info, item_name="Net Income"
-            )
-            growth_rate = growth_res["growth"]
-            growth_method = growth_res["method"]
-            growth_signals = growth_res["signals"]
-
-        applied_growth = float(
-            np.clip(growth_rate, MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH)
-        )
-
-        # 4-5. Linear growth fade with mid-year discounting (cash flows arrive
-        # continuously across the year), then a Gordon terminal value.
-        sum_pv_fcf, _last_fcf, pv_terminal_value = _scalar_projection(
-            fcf, applied_growth, discount_rate, projection_years, terminal_growth_rate
-        )
-
-        # 6. Enterprise Value to Equity Value
-        enterprise_value = sum_pv_fcf + pv_terminal_value
-        cash = ticker_info.get("totalCash")
-        if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
-            cash = _get_statement_value(
-                balance_sheet_df, "Total Cash", balance_sheet_df.columns[0]
-            )
-        cash = cash or 0
-
-        debt = ticker_info.get("totalDebt")
-        if debt is None and balance_sheet_df is not None and not balance_sheet_df.empty:
-            debt = _get_statement_value(
-                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
-            )
-        debt = debt or 0
-
-        equity_value = enterprise_value + cash - debt
-
-        shares_outstanding = ticker_info.get("sharesOutstanding")
-        if (
-            not shares_outstanding
-            and balance_sheet_df is not None
-            and not balance_sheet_df.empty
-        ):
-            shares_outstanding = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
-            )
-        if not shares_outstanding:
-            return {"error": "Missing shares outstanding"}
-
-        intrinsic_value = equity_value / shares_outstanding
-
-        if np.isnan(intrinsic_value) or np.isinf(intrinsic_value):
-            return {"error": "DCF resulted in invalid NaN/Inf value"}
-
-        tv_share = pv_terminal_value / enterprise_value if enterprise_value else None
-
-        if intrinsic_value <= 0:
-            return {
-                "error": "Net debt exceeds discounted cash flows (no residual equity value)",
-                "diagnostics": {
-                    "equity_value": equity_value,
-                    "enterprise_value": enterprise_value,
-                },
-            }
-
-        res = {
-            "intrinsic_value": intrinsic_value,
-            "model": model_method,
-            "parameters": {
-                "discount_rate": discount_rate,
-                "growth_rate": growth_rate,
-                "applied_growth": applied_growth,
-                "terminal_growth_rate": terminal_growth_rate,
-                "projection_years": projection_years,
-                "base_fcf": fcf,
-                "total_cash": cash,
-                "total_debt": debt,
-                "shares_outstanding": shares_outstanding,
-                "fcf_margin": used_fcf_margin,
-                "fcf_method": fcf_method,
-                "growth_method": growth_method,
-                "growth_signals": growth_signals,
-                "terminal_value_share": tv_share,
-                "mid_year_discounting": True,
-            },
-        }
-        notes = [
-            f"Linear growth fade over {projection_years}y with mid-year discounting"
-        ]
-        if growth_rate > MAX_PROJECTED_GROWTH:
-            notes.append(f"growth clamped {growth_rate:.1%} -> {applied_growth:.1%}")
-        if tv_share is not None and tv_share > 0.75:
-            notes.append(f"{tv_share:.0%} of value is terminal — low confidence")
-        res["parameters"]["note"] = "; ".join(notes)
-        return res
-    except Exception as e:
-        return {"error": f"DCF calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_dcf(
+        ticker_info, financials_df, balance_sheet_df, cashflow_df, discount_rate,
+        growth_rate, projection_years, terminal_growth_rate, target_fcf_margin, fcf,
+    )  # fmt: skip
 
 
 def calculate_intrinsic_value_graham(
@@ -1126,96 +973,10 @@ def calculate_intrinsic_value_graham(
     - 4.4: Average yield of high-grade corporate bonds in 1962
     - Y: Current yield on AAA corporate bonds (using 10Y Treasury yield as proxy)
     """
-    try:
-        growth_method = "caller-supplied growth"
-        if growth_rate is None:
-            # Same shrunk forecast the DCF uses, expressed in percent. Graham's
-            # 'g' is explicitly a *long-run expected* rate, so feeding it raw
-            # trailing growth was always a misreading of the formula.
-            growth_res = blended_growth_estimate(
-                financials_df, ticker_info=ticker_info, item_name="Net Income"
-            )
-            growth_rate = growth_res["growth"] * 100
-            growth_method = growth_res["method"]
-
-        # Y is a corporate bond yield. Floored because the 4.4/Y term is a
-        # divisor: a low yield inflates every valuation without limit.
-        if bond_yield is None:
-            bond_yield = RISK_FREE_RATE * 100
-        bond_yield = max(bond_yield, 3.5)
-
-        if eps is None:
-            eps = ticker_info.get("trailingEps")
-        if eps is None and financials_df is not None and not financials_df.empty:
-            eps = _get_statement_value(
-                financials_df, "Diluted EPS", financials_df.columns[0]
-            )
-
-        book_value = None
-        if balance_sheet_df is not None and not balance_sheet_df.empty:
-            latest_bs_period = balance_sheet_df.columns[0]
-            total_equity = _get_statement_value(
-                balance_sheet_df, "Total Stockholder Equity", latest_bs_period
-            ) or _get_statement_value(
-                balance_sheet_df,
-                "Total Equity Gross Minority Interest",
-                latest_bs_period,
-            )
-            shares = ticker_info.get("sharesOutstanding")
-            if (
-                not shares
-                and balance_sheet_df is not None
-                and not balance_sheet_df.empty
-            ):
-                shares = _get_statement_value(
-                    balance_sheet_df, "Ordinary Shares Number", latest_bs_period
-                )
-            if total_equity and shares and shares > 0:
-                book_value = total_equity / shares
-
-        # No book-value substitution. This previously returned book value per
-        # share *labelled as the Graham model* for 37% of the universe.
-        # Book value is reported as context and used for Graham Number.
-        if eps is None or eps <= 0:
-            return {
-                "error": "Negative or missing EPS",
-                "diagnostics": {"book_value_per_share": book_value},
-            }
-
-        applied_growth = float(np.clip(growth_rate, -5.0, 15.0))
-        intrinsic_value = (eps * (8.5 + 2 * applied_growth) * 4.4) / bond_yield
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "Graham formula produced a non-positive value"}
-
-        graham_number = (
-            float(np.sqrt(22.5 * eps * book_value))
-            if (book_value and book_value > 0 and eps and eps > 0)
-            else None
-        )
-
-        res = {
-            "intrinsic_value": intrinsic_value,
-            "model": "Graham's Revised Formula",
-            "parameters": {
-                "eps": eps,
-                "growth_rate_pct": growth_rate,
-                "applied_growth_pct": applied_growth,
-                "bond_yield_proxy": bond_yield,
-                "growth_method": growth_method,
-                "book_value_per_share": book_value,
-                "graham_number": graham_number,
-                "implied_pe": intrinsic_value / eps if eps else None,
-            },
-        }
-        if growth_rate > 15.0:
-            res["parameters"]["note"] = (
-                "Growth capped at 15% — Graham's 'g' is a long-run rate"
-            )
-
-        return res
-    except Exception as e:
-        return {"error": f"Graham calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_graham(
+        ticker_info, financials_df, balance_sheet_df, growth_rate, eps, bond_yield
+    )
 
 
 def calculate_intrinsic_value_ddm(
@@ -1233,140 +994,11 @@ def calculate_intrinsic_value_ddm(
     Calculates intrinsic value using a Multi-Stage Dividend Discount Model (DDM).
     Ideal for dividend-paying companies, financials, banks, insurance, and REITs.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
-            shares = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
-            )
-
-        current_price = ticker_info.get("currentPrice") or ticker_info.get(
-            "regularMarketPrice"
-        )
-
-        # 1. Base Dividend per share
-        if base_dividend is None:
-            base_dividend = ticker_info.get("dividendRate") or ticker_info.get(
-                "trailingAnnualDividendRate"
-            )
-
-        if (
-            (base_dividend is None or base_dividend <= 0)
-            and cashflow_df is not None
-            and not cashflow_df.empty
-            and shares
-            and shares > 0
-        ):
-            latest_col = cashflow_df.columns[0]
-            div_paid = _get_statement_value(
-                cashflow_df, "Cash Dividends Paid", latest_col
-            )
-            if div_paid and div_paid != 0:
-                base_dividend = abs(div_paid) / shares
-
-        if base_dividend is None or base_dividend <= 0:
-            return {"error": "No positive dividend rate reported"}
-
-        # Dividend sustainability check
-        payout = ticker_info.get("payoutRatio")
-        if payout is not None and payout > 1.5:
-            return {
-                "error": f"Dividend payout ratio ({payout:.1%}) exceeds sustainable threshold (>150%)",
-                "diagnostics": {"payout_ratio": payout, "base_dividend": base_dividend},
-            }
-
-        # 2. Dividend Growth Rate
-        growth_method = "caller-supplied dividend growth"
-        if growth_rate is None:
-            div_history = []
-            if cashflow_df is not None and not cashflow_df.empty:
-                cols = sorted(
-                    cashflow_df.columns,
-                    key=lambda c: pd.to_datetime(c, errors="coerce"),
-                )
-                for c in cols[-10:]:
-                    d = _get_statement_value(cashflow_df, "Cash Dividends Paid", c)
-                    if d is not None and d != 0:
-                        div_history.append(abs(d))
-
-            if len(div_history) >= 3:
-                first_d, last_d = div_history[0], div_history[-1]
-                n_yrs = len(div_history) - 1
-                if first_d > 0 and last_d > 0 and n_yrs > 0:
-                    hist_cagr = (last_d / first_d) ** (1.0 / n_yrs) - 1.0
-                    raw_growth = hist_cagr if np.isfinite(hist_cagr) else 0.035
-                    growth_method = f"{len(div_history)}y historical dividend CAGR ({raw_growth:.1%})"
-                else:
-                    raw_growth = 0.035
-            else:
-                growth_res = blended_growth_estimate(
-                    financials_df, ticker_info=ticker_info, item_name="Net Income"
-                )
-                raw_growth = growth_res["growth"]
-                growth_method = f"Earnings growth blend ({raw_growth:.1%})"
-
-            # Shrink toward sustainable long-run dividend growth (3.5%)
-            shrunk = 0.35 * raw_growth + 0.65 * 0.035
-            applied_growth = float(np.clip(shrunk, -0.02, 0.12))
-        else:
-            applied_growth = float(np.clip(growth_rate, -0.05, 0.15))
-
-        # 3. Cost of Equity (CAPM)
-        if discount_rate is None:
-            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
-            discount_rate = (
-                wacc_res.get("cost_of_equity") or wacc_res.get("wacc") or 0.09
-            )
-        discount_rate = float(
-            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
-        )
-
-        # 4-5. Projections with mid-year discounting, Gordon terminal value
-        sum_pv_divs, _last_div, pv_terminal_value = _scalar_projection(
-            base_dividend,
-            applied_growth,
-            discount_rate,
-            projection_years,
-            terminal_growth_rate,
-        )
-
-        intrinsic_value = sum_pv_divs + pv_terminal_value
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "DDM produced non-positive value"}
-
-        tv_share = pv_terminal_value / intrinsic_value if intrinsic_value else None
-
-        res = {
-            "intrinsic_value": intrinsic_value,
-            "model": "Dividend Discount Model (Multi-Stage)",
-            "parameters": {
-                "base_dividend": base_dividend,
-                "dividend_yield_pct": (base_dividend / current_price) * 100
-                if current_price and current_price > 0
-                else None,
-                "payout_ratio": payout,
-                "growth_rate": growth_rate
-                if growth_rate is not None
-                else applied_growth,
-                "applied_growth": applied_growth,
-                "terminal_growth_rate": terminal_growth_rate,
-                "discount_rate": discount_rate,
-                "projection_years": projection_years,
-                "growth_method": growth_method,
-                "terminal_value_share": tv_share,
-                "mid_year_discounting": True,
-            },
-        }
-        notes = [
-            f"Multi-stage DDM fading to {terminal_growth_rate:.1%} terminal growth"
-        ]
-        if tv_share is not None and tv_share > 0.75:
-            notes.append(f"{tv_share:.0%} of value is terminal")
-        res["parameters"]["note"] = "; ".join(notes)
-        return res
-    except Exception as e:
-        return {"error": f"DDM calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_ddm(
+        ticker_info, financials_df, cashflow_df, balance_sheet_df, discount_rate,
+        growth_rate, projection_years, terminal_growth_rate, base_dividend,
+    )  # fmt: skip
 
 
 def calculate_intrinsic_value_lynch(
@@ -1379,55 +1011,8 @@ def calculate_intrinsic_value_lynch(
     Calculates Peter Lynch Fair Value based on the principle that fair P/E equals growth rate (PEG=1.0),
     adjusted for dividend yield: Fair Value = EPS * min(max(Growth + DivYield, 5), 25).
     """
-    try:
-        if eps is None:
-            eps = ticker_info.get("trailingEps")
-        if eps is None and financials_df is not None and not financials_df.empty:
-            eps = _get_statement_value(
-                financials_df, "Diluted EPS", financials_df.columns[0]
-            )
-
-        if eps is None or eps <= 0:
-            return {"error": "Negative or missing EPS"}
-
-        if growth_rate is None:
-            growth_res = blended_growth_estimate(
-                financials_df, ticker_info=ticker_info, item_name="Net Income"
-            )
-            growth_rate = growth_res["growth"] * 100
-
-        div_yield_pct = 0.0
-        div_rate = ticker_info.get("dividendRate") or ticker_info.get(
-            "trailingAnnualDividendRate"
-        )
-        current_price = ticker_info.get("currentPrice") or ticker_info.get(
-            "regularMarketPrice"
-        )
-        if div_rate and current_price and current_price > 0:
-            div_yield_pct = (div_rate / current_price) * 100
-        elif ticker_info.get("dividendYield"):
-            div_yield_pct = ticker_info["dividendYield"] * 100
-
-        # Peter Lynch fair multiplier = growth + dividend yield, clamped to sane range [5.0, 25.0]
-        fair_multiplier = float(np.clip(growth_rate + div_yield_pct, 5.0, 25.0))
-        intrinsic_value = eps * fair_multiplier
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "Lynch formula produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Peter Lynch Fair Value",
-            "parameters": {
-                "eps": eps,
-                "growth_rate_pct": growth_rate,
-                "dividend_yield_pct": div_yield_pct,
-                "fair_pe_multiplier": fair_multiplier,
-                "note": "Fair Value where PEG = 1.0 (adjusted for dividend yield)",
-            },
-        }
-    except Exception as e:
-        return {"error": f"Lynch calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_lynch(ticker_info, financials_df, growth_rate, eps)
 
 
 def calculate_earnings_power_value(
@@ -1441,101 +1026,10 @@ def calculate_earnings_power_value(
 
     EPV = normalized after-tax operating earnings / cost of capital, plus net cash.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
-            shares = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
-            )
-        if not shares or shares <= 0:
-            return {"error": "Missing shares outstanding"}
-
-        # Normalized EBIT across the cycle.
-        ebit_history: List[float] = []
-        if financials_df is not None and not financials_df.empty:
-            cols = sorted(
-                financials_df.columns, key=lambda c: pd.to_datetime(c, errors="coerce")
-            )
-            for col in cols[-5:]:
-                ebit = _get_statement_value(financials_df, "Operating Income", col)
-                if ebit is not None:
-                    ebit_history.append(ebit)
-
-        if not ebit_history:
-            return {"error": "No operating income history for earnings power"}
-
-        normalized_ebit = investa_core.np_median([float(e) for e in ebit_history])
-        if normalized_ebit <= 0:
-            return {
-                "error": "No positive normalized operating income",
-                "diagnostics": {"normalized_ebit": normalized_ebit},
-            }
-
-        # Effective tax rate from the same statements, banded to sane values.
-        tax_rate = 0.21
-        if financials_df is not None and not financials_df.empty:
-            latest = financials_df.columns[0]
-            tax = _get_statement_value(financials_df, "Tax Provision", latest)
-            pretax = _get_statement_value(financials_df, "Pretax Income", latest)
-            if tax is not None and pretax and pretax > 0:
-                tax_rate = float(np.clip(tax / pretax, 0.0, 0.5))
-
-        if discount_rate is None:
-            discount_rate = calculate_wacc(
-                ticker_info, financials_df, balance_sheet_df
-            )["wacc"]
-        discount_rate = float(
-            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
-        )
-
-        nopat = normalized_ebit * (1 - tax_rate)
-        enterprise_value = nopat / discount_rate
-
-        cash = ticker_info.get("totalCash")
-        if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
-            cash = _get_statement_value(
-                balance_sheet_df, "Total Cash", balance_sheet_df.columns[0]
-            )
-        cash = cash or 0
-
-        debt = ticker_info.get("totalDebt")
-        if debt is None and balance_sheet_df is not None and not balance_sheet_df.empty:
-            debt = _get_statement_value(
-                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
-            )
-        debt = debt or 0
-
-        equity_value = enterprise_value + cash - debt
-        if equity_value <= 0:
-            return {
-                "error": "Net debt exceeds earnings power value",
-                "diagnostics": {"enterprise_value": enterprise_value},
-            }
-
-        intrinsic_value = equity_value / shares
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "EPV produced an invalid value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Earnings Power Value (no growth)",
-            "when_to_use": "Conservative valuation of normalized sustainable operating earnings in perpetuity assuming zero future growth.",
-            "best_suited_for": "Conservative valuation of normalized sustainable operating earnings in perpetuity assuming zero future growth.",
-            "key_limitation": "Strictly a no-growth baseline floor; gives zero credit to value-accretive capital reinvestment or growth opportunities.",
-            "key_caveats": "Strictly a no-growth baseline floor; gives zero credit to value-accretive capital reinvestment or growth opportunities.",
-            "parameters": {
-                "normalized_ebit": normalized_ebit,
-                "ebit_years": len(ebit_history),
-                "tax_rate": tax_rate,
-                "discount_rate": discount_rate,
-                "nopat": nopat,
-                "net_cash": cash - debt,
-                "shares": shares,
-                "note": "Assumes zero growth; value of current earning power only",
-            },
-        }
-    except Exception as e:
-        return {"error": f"EPV calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_epv(
+        ticker_info, financials_df, balance_sheet_df, cashflow_df, discount_rate
+    )
 
 
 def calculate_intrinsic_value_dcfo(
@@ -1554,103 +1048,11 @@ def calculate_intrinsic_value_dcfo(
     Best Suited For: Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).
     Key Caveats: Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
-            shares = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
-            )
-        if not shares or shares <= 0:
-            return {"error": "Missing shares outstanding"}
-
-        if base_cfo is None:
-            if cashflow_df is not None and not cashflow_df.empty:
-                base_cfo = _get_statement_value(
-                    cashflow_df, "Operating Cash Flow", cashflow_df.columns[0]
-                )
-            if base_cfo is None:
-                base_cfo = ticker_info.get("operatingCashflow")
-
-        if base_cfo is None or base_cfo <= 0:
-            return {"error": "Negative or missing Operating Cash Flow"}
-
-        cfo_per_share = base_cfo / shares
-
-        # Growth rate estimation
-        growth_method = "caller-supplied growth"
-        if growth_rate is None:
-            growth_res = blended_growth_estimate(
-                cashflow_df if cashflow_df is not None else financials_df,
-                ticker_info=ticker_info,
-                item_name="Operating Cash Flow",
-            )
-            raw_growth = growth_res["growth"]
-            growth_method = growth_res["method"]
-            shrunk = 0.40 * raw_growth + 0.60 * 0.04
-            applied_growth = float(np.clip(shrunk, -0.05, 0.20))
-        else:
-            applied_growth = float(np.clip(growth_rate, -0.05, 0.20))
-
-        if discount_rate is None:
-            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
-            discount_rate = wacc_res.get("wacc", 0.09)
-        discount_rate = float(
-            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
-        )
-
-        # Project CFO with mid-year discounting, Gordon terminal value
-        sum_pv_cfos, _last_cfo, pv_terminal = _scalar_projection(
-            cfo_per_share,
-            applied_growth,
-            discount_rate,
-            projection_years,
-            terminal_growth_rate,
-        )
-
-        cash = ticker_info.get("totalCash")
-        if cash is None and balance_sheet_df is not None and not balance_sheet_df.empty:
-            cash = _get_statement_value(
-                balance_sheet_df, "Total Cash", balance_sheet_df.columns[0]
-            )
-        cash = cash or 0
-
-        debt = ticker_info.get("totalDebt")
-        if debt is None and balance_sheet_df is not None and not balance_sheet_df.empty:
-            debt = _get_statement_value(
-                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
-            )
-        debt = debt or 0
-
-        net_cash_per_share = (cash - debt) / shares
-        intrinsic_value = sum_pv_cfos + pv_terminal + net_cash_per_share
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "Discounted CFO produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Discounted Cash from Operations",
-            "when_to_use": "Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).",
-            "best_suited_for": "Companies with consistent operating cash flow but erratic or heavy multi-year CapEx cycles (e.g., telecom, infrastructure, logistics).",
-            "key_limitation": "Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.",
-            "key_caveats": "Excludes ongoing reinvestment needs (CapEx), risking overvaluation for capital-intensive companies that require heavy sustaining capital.",
-            "parameters": {
-                "base_cfo": base_cfo,
-                "cfo_per_share": cfo_per_share,
-                "growth_rate": growth_rate
-                if growth_rate is not None
-                else applied_growth,
-                "applied_growth": applied_growth,
-                "discount_rate": discount_rate,
-                "terminal_growth_rate": terminal_growth_rate,
-                "projection_years": projection_years,
-                "net_cash_per_share": net_cash_per_share,
-                "growth_method": growth_method,
-                "mid_year_discounting": True,
-            },
-        }
-    except Exception as e:
-        return {"error": f"Discounted CFO calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_dcfo(
+        ticker_info, financials_df, balance_sheet_df, cashflow_df, discount_rate,
+        growth_rate, projection_years, terminal_growth_rate, base_cfo,
+    )  # fmt: skip
 
 
 def calculate_intrinsic_value_dni(
@@ -1668,73 +1070,11 @@ def calculate_intrinsic_value_dni(
     Best Suited For: Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.
     Key Caveats: Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.
     """
-    try:
-        if base_eps is None:
-            base_eps = ticker_info.get("trailingEps")
-        if base_eps is None and financials_df is not None and not financials_df.empty:
-            base_eps = _get_statement_value(
-                financials_df, "Diluted EPS", financials_df.columns[0]
-            )
-
-        if base_eps is None or base_eps <= 0:
-            return {"error": "Negative or missing Net Income / EPS"}
-
-        growth_method = "caller-supplied earnings growth"
-        if growth_rate is None:
-            growth_res = blended_growth_estimate(
-                financials_df, ticker_info=ticker_info, item_name="Net Income"
-            )
-            raw_growth = growth_res["growth"]
-            growth_method = growth_res["method"]
-            shrunk = 0.40 * raw_growth + 0.60 * 0.04
-            applied_growth = float(np.clip(shrunk, -0.05, 0.20))
-        else:
-            applied_growth = float(np.clip(growth_rate, -0.05, 0.20))
-
-        if discount_rate is None:
-            wacc_res = calculate_wacc(ticker_info, financials_df, balance_sheet_df)
-            discount_rate = (
-                wacc_res.get("cost_of_equity") or wacc_res.get("wacc") or 0.09
-            )
-        discount_rate = float(
-            np.clip(discount_rate, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE)
-        )
-
-        sum_pv_eps, _last_eps, pv_terminal = _scalar_projection(
-            base_eps,
-            applied_growth,
-            discount_rate,
-            projection_years,
-            terminal_growth_rate,
-        )
-
-        intrinsic_value = sum_pv_eps + pv_terminal
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "Discounted Net Income produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Discounted Net Income",
-            "when_to_use": "Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.",
-            "best_suited_for": "Financial institutions (Banks, Insurance, Brokers, Asset Managers) where cash flow lines are distorted by financial leverage and regulatory capital.",
-            "key_limitation": "Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.",
-            "key_caveats": "Net Income is vulnerable to non-recurring items (NRI) and accounting choices, and does not capture working capital or cash conversion drag.",
-            "parameters": {
-                "base_eps": base_eps,
-                "growth_rate": growth_rate
-                if growth_rate is not None
-                else applied_growth,
-                "applied_growth": applied_growth,
-                "discount_rate": discount_rate,
-                "terminal_growth_rate": terminal_growth_rate,
-                "projection_years": projection_years,
-                "growth_method": growth_method,
-                "mid_year_discounting": True,
-            },
-        }
-    except Exception as e:
-        return {"error": f"Discounted Net Income calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_dni(
+        ticker_info, financials_df, balance_sheet_df, discount_rate,
+        growth_rate, projection_years, terminal_growth_rate, base_eps,
+    )  # fmt: skip
 
 
 def calculate_intrinsic_value_mean_pe(
@@ -1754,59 +1094,8 @@ def calculate_intrinsic_value_mean_pe(
     It used to fall back to `trailingPE`, which is price/EPS — multiplying it
     back by EPS returned the current price to the cent, for 60% of the universe.
     """
-    try:
-        if eps is None:
-            eps = ticker_info.get("trailingEps")
-        if eps is None and financials_df is not None and not financials_df.empty:
-            eps = _get_statement_value(
-                financials_df, "Diluted EPS", financials_df.columns[0]
-            )
-
-        if eps is None or eps <= 0:
-            return {"error": "Negative or missing EPS"}
-
-        pe_source = "caller-supplied"
-        if mean_pe is None:
-            if not history or not history.get("value"):
-                return {
-                    "error": (
-                        "No traded P/E history to average — a fair multiple must "
-                        "come from what this company has actually changed hands at"
-                    ),
-                    "diagnostics": {"eps": eps},
-                }
-            mean_pe = float(history["value"])
-            pe_source = (
-                f"Median traded P/E {mean_pe:.1f}x "
-                f"({history['n']} years, {history['span']})"
-            )
-
-        applied_pe = float(np.clip(mean_pe, 5.0, 45.0))
-        intrinsic_value = eps * applied_pe
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "Mean P/E produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Mean P/E Ratio",
-            "when_to_use": "Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.",
-            "best_suited_for": "Mature, profitable companies with stable earnings predictability and an established historical valuation multiple baseline.",
-            "key_limitation": "Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.",
-            "key_caveats": "Ignores future earnings growth rates and margin trajectory; easily distorted by one-off non-operating gains or restructuring charges.",
-            "parameters": {
-                "eps": eps,
-                "mean_pe": mean_pe,
-                "applied_pe": applied_pe,
-                "pe_source": pe_source,
-                "multiple_observations": (history or {}).get("n"),
-                "multiple_span": (history or {}).get("span"),
-                "multiple_p25": (history or {}).get("low"),
-                "multiple_p75": (history or {}).get("high"),
-            },
-        }
-    except Exception as e:
-        return {"error": f"Mean P/E calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_mean_pe(ticker_info, financials_df, mean_pe, eps, history)
 
 
 def calculate_intrinsic_value_peg(
@@ -1822,68 +1111,10 @@ def calculate_intrinsic_value_peg(
     Best Suited For: Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.
     Key Caveats: Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.
     """
-    try:
-        if eps is None:
-            eps = ticker_info.get("trailingEps")
-        if eps is None and financials_df is not None and not financials_df.empty:
-            eps = _get_statement_value(
-                financials_df, "Diluted EPS", financials_df.columns[0]
-            )
-
-        if eps is None or eps <= 0:
-            return {"error": "Negative or missing EPS"}
-
-        growth_method = "caller-supplied growth"
-        if growth_rate is None:
-            growth_res = blended_growth_estimate(
-                financials_df, ticker_info=ticker_info, item_name="Net Income"
-            )
-            growth_rate = growth_res["growth"] * 100.0
-            growth_method = growth_res["method"]
-
-        if dividend_yield_pct is None:
-            div_rate = ticker_info.get("dividendRate") or ticker_info.get(
-                "trailingAnnualDividendRate"
-            )
-            curr_p = ticker_info.get("currentPrice") or ticker_info.get(
-                "regularMarketPrice"
-            )
-            if div_rate and curr_p and curr_p > 0:
-                dividend_yield_pct = (div_rate / curr_p) * 100.0
-            elif ticker_info.get("dividendYield"):
-                dividend_yield_pct = ticker_info["dividendYield"] * 100.0
-            else:
-                dividend_yield_pct = 0.0
-
-        applied_growth = float(np.clip(growth_rate, 3.0, 35.0))
-        target_peg = float(np.clip(target_peg, 0.5, 2.0))
-        fair_pe_multiplier = float(
-            np.clip(target_peg * (applied_growth + dividend_yield_pct), 5.0, 35.0)
-        )
-        intrinsic_value = eps * fair_pe_multiplier
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "PEG calculation produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "PEG Ratio Fair Value",
-            "when_to_use": "Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.",
-            "best_suited_for": "Profitable growth companies with positive, expanding earnings where growth rate directly anchors the fair earnings multiple.",
-            "key_limitation": "Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.",
-            "key_caveats": "Assumes earnings growth is linear and sustainable; vulnerable to short-term earnings volatility and ignores balance sheet debt burden.",
-            "parameters": {
-                "eps": eps,
-                "growth_rate_pct": growth_rate,
-                "applied_growth_pct": applied_growth,
-                "dividend_yield_pct": dividend_yield_pct,
-                "target_peg": target_peg,
-                "fair_pe_multiplier": fair_pe_multiplier,
-                "growth_method": growth_method,
-            },
-        }
-    except Exception as e:
-        return {"error": f"PEG calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_peg(
+        ticker_info, financials_df, growth_rate, eps, target_peg, dividend_yield_pct
+    )
 
 
 def calculate_intrinsic_value_mean_pb(
@@ -1898,90 +1129,10 @@ def calculate_intrinsic_value_mean_pb(
     Best Suited For: Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.
     Key Caveats: Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
-            shares = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
-            )
-
-        if book_value_per_share is None:
-            book_value_per_share = ticker_info.get("bookValue")
-            if (
-                (book_value_per_share is None or book_value_per_share <= 0)
-                and balance_sheet_df is not None
-                and not balance_sheet_df.empty
-                and shares
-                and shares > 0
-            ):
-                total_equity = _get_statement_value(
-                    balance_sheet_df,
-                    "Total Stockholder Equity",
-                    balance_sheet_df.columns[0],
-                )
-                if total_equity and total_equity > 0:
-                    book_value_per_share = total_equity / shares
-
-        if book_value_per_share is None or book_value_per_share <= 0:
-            return {"error": "Negative or missing Book Value per Share"}
-
-        sector = (ticker_info.get("sector") or "").lower()
-        pb_source = "caller-supplied"
-
-        if mean_pb is None:
-            # The company's own traded record first. The sector benchmarks that
-            # used to come first (1.30x banks, 1.05x REIT NAV) are a claim about
-            # the average bank, not about this one; they survive only as a last
-            # resort where that average is a real domain prior. The `priceToBook`
-            # fallback is gone outright — book value times price/book is price.
-            if history and history.get("value"):
-                mean_pb = float(history["value"])
-                pb_source = (
-                    f"Median traded P/B {mean_pb:.2f}x "
-                    f"({history['n']} years, {history['span']})"
-                )
-            elif "bank" in sector or "financial" in sector:
-                mean_pb = 1.30  # Standard 1.2 - 1.4x banking benchmark
-                pb_source = "Banking benchmark (1.30x) — no traded history"
-            elif "real estate" in sector or "reit" in sector:
-                mean_pb = 1.05  # Price/NAV benchmark
-                pb_source = "REIT NAV benchmark (1.05x) — no traded history"
-            else:
-                return {
-                    "error": (
-                        "No traded P/B history to average — a fair multiple must "
-                        "come from what this company has actually changed hands at"
-                    ),
-                    "diagnostics": {"book_value_per_share": book_value_per_share},
-                }
-
-        applied_pb = float(np.clip(mean_pb, 0.4, 8.0))
-        intrinsic_value = book_value_per_share * applied_pb
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "Mean P/B produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Mean P/B Ratio",
-            "when_to_use": "Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.",
-            "best_suited_for": "Asset-heavy businesses, Banks (1.2–1.4x benchmark), REITs (Price/NAV), and property developers whose assets are marked to market.",
-            "key_limitation": "Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.",
-            "key_caveats": "Understates high-ROE, asset-light, and tech businesses with valuable off-balance-sheet intangible assets or intellectual property.",
-            "parameters": {
-                "book_value_per_share": book_value_per_share,
-                "mean_pb": mean_pb,
-                "applied_pb": applied_pb,
-                "pb_source": pb_source,
-                "sector": ticker_info.get("sector"),
-                "multiple_observations": (history or {}).get("n"),
-                "multiple_span": (history or {}).get("span"),
-                "multiple_p25": (history or {}).get("low"),
-                "multiple_p75": (history or {}).get("high"),
-            },
-        }
-    except Exception as e:
-        return {"error": f"Mean P/B calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_mean_pb(
+        ticker_info, balance_sheet_df, book_value_per_share, mean_pb, history
+    )
 
 
 def calculate_intrinsic_value_mean_ps(
@@ -1997,71 +1148,10 @@ def calculate_intrinsic_value_mean_ps(
     Best Suited For: Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.
     Key Caveats: Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
-            shares = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
-            )
-
-        if sales_per_share is None:
-            revenue = ticker_info.get("totalRevenue")
-            if (
-                revenue is None
-                and financials_df is not None
-                and not financials_df.empty
-            ):
-                revenue = _get_statement_value(
-                    financials_df, "Total Revenue", financials_df.columns[0]
-                )
-            if revenue and shares and shares > 0:
-                sales_per_share = revenue / shares
-
-        if sales_per_share is None or sales_per_share <= 0:
-            return {"error": "Negative or missing Revenue / Sales per share"}
-
-        ps_source = "caller-supplied"
-        if mean_ps is None:
-            if not history or not history.get("value"):
-                return {
-                    "error": (
-                        "No traded P/S history to average — a fair multiple must "
-                        "come from what this company has actually changed hands at"
-                    ),
-                    "diagnostics": {"sales_per_share": sales_per_share},
-                }
-            mean_ps = float(history["value"])
-            ps_source = (
-                f"Median traded P/S {mean_ps:.2f}x "
-                f"({history['n']} years, {history['span']})"
-            )
-
-        applied_ps = float(np.clip(mean_ps, 0.4, 15.0))
-        intrinsic_value = sales_per_share * applied_ps
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "Mean P/S produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Mean P/S Ratio",
-            "when_to_use": "Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.",
-            "best_suited_for": "Early-stage or cyclical growth companies not yet consistently profitable, where top-line revenue reflects commercial traction.",
-            "key_limitation": "Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.",
-            "key_caveats": "Ignores profit margins and cash burn entirely; a business can grow revenue rapidly while accumulating severe cash flow deficits.",
-            "parameters": {
-                "sales_per_share": sales_per_share,
-                "mean_ps": mean_ps,
-                "applied_ps": applied_ps,
-                "ps_source": ps_source,
-                "multiple_observations": (history or {}).get("n"),
-                "multiple_span": (history or {}).get("span"),
-                "multiple_p25": (history or {}).get("low"),
-                "multiple_p75": (history or {}).get("high"),
-            },
-        }
-    except Exception as e:
-        return {"error": f"Mean P/S calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_mean_ps(
+        ticker_info, financials_df, balance_sheet_df, sales_per_share, mean_ps, history
+    )
 
 
 def calculate_intrinsic_value_psg(
@@ -2077,88 +1167,11 @@ def calculate_intrinsic_value_psg(
     Best Suited For: High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.
     Key Caveats: Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares and balance_sheet_df is not None and not balance_sheet_df.empty:
-            shares = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", balance_sheet_df.columns[0]
-            )
-
-        if sales_per_share is None:
-            revenue = ticker_info.get("totalRevenue")
-            if (
-                revenue is None
-                and financials_df is not None
-                and not financials_df.empty
-            ):
-                revenue = _get_statement_value(
-                    financials_df, "Total Revenue", financials_df.columns[0]
-                )
-            if revenue and shares and shares > 0:
-                sales_per_share = revenue / shares
-
-        if sales_per_share is None or sales_per_share <= 0:
-            return {"error": "Negative or missing Revenue / Sales per share"}
-
-        growth_method = "caller-supplied growth"
-        if revenue_growth_pct is None:
-            growth_res = blended_growth_estimate(
-                financials_df, ticker_info=ticker_info, item_name="Total Revenue"
-            )
-            revenue_growth_pct = growth_res["growth"] * 100.0
-            growth_method = growth_res["method"]
-
-        gross_margin = ticker_info.get("grossMargins")
-        if (
-            gross_margin is None
-            and financials_df is not None
-            and not financials_df.empty
-        ):
-            rev = _get_statement_value(
-                financials_df, "Total Revenue", financials_df.columns[0]
-            )
-            gp = _get_statement_value(
-                financials_df, "Gross Profit", financials_df.columns[0]
-            )
-            if rev and gp and rev > 0:
-                gross_margin = gp / rev
-        gross_margin = float(
-            np.clip(gross_margin if gross_margin is not None else 0.50, 0.20, 0.95)
-        )
-
-        applied_growth = float(np.clip(revenue_growth_pct, 5.0, 45.0))
-        target_psg = float(np.clip(target_psg, 0.5, 2.0))
-
-        # Fair P/S multiplier scales with revenue growth rate scaled by gross margin quality
-        fair_ps_multiplier = float(
-            np.clip(
-                (applied_growth / 10.0) * gross_margin * target_psg * 1.5, 0.5, 12.0
-            )
-        )
-        intrinsic_value = sales_per_share * fair_ps_multiplier
-
-        if not np.isfinite(intrinsic_value) or intrinsic_value <= 0:
-            return {"error": "PSG calculation produced non-positive value"}
-
-        return {
-            "intrinsic_value": intrinsic_value,
-            "model": "Price-to-Sales Growth (PSG)",
-            "when_to_use": "High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.",
-            "best_suited_for": "High-growth, unprofitable software and tech businesses, scaling top-line revenue growth weighted by gross margin quality.",
-            "key_limitation": "Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.",
-            "key_caveats": "Assumes rapid revenue expansion will eventually achieve profitable operating leverage; breaks down quickly if revenue growth decelerates.",
-            "parameters": {
-                "sales_per_share": sales_per_share,
-                "revenue_growth_pct": revenue_growth_pct,
-                "applied_growth_pct": applied_growth,
-                "gross_margin_pct": gross_margin * 100.0,
-                "target_psg": target_psg,
-                "fair_ps_multiplier": fair_ps_multiplier,
-                "growth_method": growth_method,
-            },
-        }
-    except Exception as e:
-        return {"error": f"PSG calculation failed: {str(e)}"}
+    # Ported to Rust: rust/investa_core/src/fr_models.rs
+    return investa_core.fr_iv_psg(
+        ticker_info, financials_df, balance_sheet_df, sales_per_share,
+        revenue_growth_pct, target_psg,
+    )  # fmt: skip
 
 
 def recommend_best_valuation_method(

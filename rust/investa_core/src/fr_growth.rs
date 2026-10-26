@@ -20,7 +20,7 @@ use crate::pl_helpers::kwargs;
 use crate::pyhelp::{es, log, pystr, unpack};
 
 /// `key=lambda x: pd.to_datetime(x, errors="coerce")`
-fn date_key<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyCFunction>> {
+pub(crate) fn date_key<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyCFunction>> {
     PyCFunction::new_closure(py, None, None, |args, _| -> PyResult<Py<PyAny>> {
         let py = args.py();
         Ok(py

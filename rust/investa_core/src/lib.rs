@@ -21,6 +21,7 @@ pub mod ep;
 pub mod fifo;
 pub mod fr;
 pub mod fr_growth;
+pub mod fr_models;
 pub mod history;
 pub mod holdings;
 pub mod irr;
@@ -534,5 +535,17 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fr_growth::fr_mc_graham, m)?)?;
     m.add_function(wrap_pyfunction!(fr_growth::fr_mc_epv, m)?)?;
     m.add_function(wrap_pyfunction!(fr_growth::fr_mc_lynch, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_dcf, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_graham, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_ddm, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_lynch, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_epv, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_dcfo, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_dni, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_mean_pe, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_peg, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_mean_pb, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_mean_ps, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_models::fr_iv_psg, m)?)?;
     Ok(())
 }

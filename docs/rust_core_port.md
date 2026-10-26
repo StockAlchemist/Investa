@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; then the model and blend glue | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; then the recommendation, the blend and the comprehensive valuation | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -841,6 +841,18 @@ Checks:
   - Enrichment, the margins and the normalized FCF take sparse profiles. A targeted case reaches the through-cycle branch, which random statements rarely do.
   - Each Monte Carlo wrapper runs from the same seed with zero, negative, NaN, None and text inputs.
 - **Real data:** 9,600 comparisons over 400 cached companies, all identical: the growth estimates, enrichment, margins and normalized FCF, plus every Monte Carlo wrapper, seeded, on each company's own inputs. The port took 4.0 s against 3.9 s.
+
+## Phase 15j (26–27 Oct 2026): the twelve valuation models
+
+The twelve `financial_ratios` models now run in Rust (`fr_models.rs`): DCF, Graham, DDM, Lynch, earnings power, discounted CFO, discounted net income, mean P/E, PEG, mean P/B, mean P/S and PSG. That covers each model's input reading and eligibility checks, its projection call, and its result and diagnostics dicts.
+
+How it is done:
+- **The figures stay Python's.** `np.clip` and the finiteness tests are NumPy's own, called through the module's `np`. Constants such as `0.65 * 0.035` are folded in Rust to the same double Python folds them to. Every sibling is looked up on the module: the statement lookup, the WACC, the growth blend, the normalized FCF, the projection.
+- **Errors match.** Each model turns any exception into the original's `{"error": "<model> calculation failed: <message>"}`, so the text matches too.
+
+Checks:
+- **Parity:** 300 rounds of all twelve models match. Statements are random. Profiles have prices, shares, dividends, payout ratios, margins and sectors that are missing, zero, negative, NaN or text. Every optional argument is either left to the model or supplied with an odd value. Multiple histories are missing, empty, zero or complete. Every success and refusal branch is reached.
+- **Real data:** 9,600 comparisons over 400 cached companies, all identical. Each model ran on the raw and the enriched profile, and the mean-multiple models got the company's own traded history. The port took 4.6 s against 4.4 s.
 
 ## Found while porting
 
