@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; then the `buffett_rank` and `buffett_pipeline` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; then `buffett_pipeline`, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -763,6 +763,14 @@ What sat around the metric and percentile kernels now runs in Rust (`bm.rs`): th
 - **Parity:**
   - 150 random companies through fake EDGAR and ratio engines match the frozen originals under every model: ints, NaN, infinity, NumPy and text values, missing concepts, failing loads, share rebuilds and ratio runs. So do the helpers and 60 value universes.
 - **Real data:** 400 real filers' complete metric sets are identical, at the same speed (2.1 vs 2.3 s), and so is the value frame and score of those with a stored price.
+
+## Phase 15e (26 Oct 2026): the `buffett_rank` glue
+
+The gates, the confidence factor, the universe frame, the per-model quality scoring, the composite, and the re-blend and re-rank now run in Rust (`br.rs`). The percentile and pillar kernels were already Rust, and every operation here is Python's own.
+- **Parity:** 64 random universes of every model match: metrics random, missing, NaN or exactly at a gate threshold; carried gate failures; coverage from None to full. Each runs through the gates, the scoring, the composite with and without value scores, and the re-rank at four AI weights.
+- **Real data:** identical on all of these:
+  - the latest stored run's 1,219 scored rows, re-blended and re-ranked at nine quality/AI weightings;
+  - 400 real filers' gates, quality scores (63 eligible) and composite.
 
 ## Found while porting
 

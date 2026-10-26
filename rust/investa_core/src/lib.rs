@@ -8,6 +8,7 @@
 pub mod analyzer;
 pub mod asof;
 pub mod bm;
+pub mod br;
 pub mod buffett;
 pub mod ca;
 pub mod cashflows;
@@ -433,5 +434,12 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bm::bv_compute_market_metrics, m)?)?;
     m.add_function(wrap_pyfunction!(bm::bv_score_value, m)?)?;
     m.add_function(wrap_pyfunction!(bm::bv_build_value_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(br::br_evaluate_gates, m)?)?;
+    m.add_function(wrap_pyfunction!(br::br_confidence_factor, m)?)?;
+    m.add_function(wrap_pyfunction!(br::br_metrics_to_frame, m)?)?;
+    m.add_function(wrap_pyfunction!(br::br_score_quality, m)?)?;
+    m.add_function(wrap_pyfunction!(br::br_combine, m)?)?;
+    m.add_function(wrap_pyfunction!(br::br_blend_scores, m)?)?;
+    m.add_function(wrap_pyfunction!(br::br_rerank, m)?)?;
     Ok(())
 }
