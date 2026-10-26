@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; then the recommendation, the blend and the comprehensive valuation | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -853,6 +853,24 @@ How it is done:
 Checks:
 - **Parity:** 300 rounds of all twelve models match. Statements are random. Profiles have prices, shares, dividends, payout ratios, margins and sectors that are missing, zero, negative, NaN or text. Every optional argument is either left to the model or supplied with an odd value. Multiple histories are missing, empty, zero or complete. Every success and refusal branch is reached.
 - **Real data:** 9,600 comparisons over 400 cached companies, all identical. Each model ran on the raw and the enriched profile, and the mean-multiple models got the company's own traded history. The port took 4.6 s against 4.4 s.
+
+## Phase 15k (27 Oct 2026): the recommendation, the blend and the comprehensive valuation
+
+The last of `financial_ratios` now runs in Rust (`fr_blend.rs`):
+- the best-fit method recommendation;
+- the per-company Monte Carlo seed, and its context manager (`investa_core.DeterministicDraws`), which seeds NumPy's global generator and puts the caller's state back;
+- the blend's membership profile, reliability weights and dividend gate, and the blend itself;
+- `get_comprehensive_intrinsic_value`: all twelve models with their overrides, the seeded simulations, the ETF/fund NAV path, the eligibility gate, the sanity band, the range and the margin of safety;
+- `get_intrinsic_value_for_symbol`: the symbol mapping, the sparse-info refetch, the live-price patch, and the overrides. The fetches are still the provider's own methods.
+
+`financial_ratios.py` is now 1,296 lines of policy constants, alias tables, signatures and docstrings, down from 4,487. Phase 15 is done: every valuation and ranking calculation is Rust.
+
+Checks:
+- **Parity:**
+  - The recommendation and the blend take 720 random model maps under every sector and industry. Values are missing, None, zero, negative or NaN, and Monte Carlo bands are present, partial or text.
+  - The comprehensive valuation runs end to end on 150 random cases from the same NumPy state. They include random overrides, ETFs and funds with and without a NAV, penny stocks and micro caps. Every valuation status is reached, and the caller's random stream is left where the original leaves it.
+  - The per-symbol entry point runs against a fake provider and config manager. It sees sparse info, failing quotes and fetches, exclusions, and prefetched statements, and makes the same provider calls in the same order.
+- **Real data:** the comprehensive valuation of 400 cached companies is identical end to end, at 2,000 iterations with their price histories, and so are their recommendations and blends. The port took 3.5 s against 3.2 s.
 
 ## Found while porting
 

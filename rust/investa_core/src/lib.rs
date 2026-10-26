@@ -20,6 +20,7 @@ pub mod ef_store;
 pub mod ep;
 pub mod fifo;
 pub mod fr;
+pub mod fr_blend;
 pub mod fr_growth;
 pub mod fr_models;
 pub mod history;
@@ -547,5 +548,23 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fr_models::fr_iv_mean_pb, m)?)?;
     m.add_function(wrap_pyfunction!(fr_models::fr_iv_mean_ps, m)?)?;
     m.add_function(wrap_pyfunction!(fr_models::fr_iv_psg, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        fr_blend::fr_recommend_best_valuation_method,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(fr_blend::fr_stable_mc_seed, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_blend::fr_blend_profile, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_blend::fr_model_reliability, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_blend::fr_ddm_describes_the_company, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_blend::fr_blend_intrinsic_values, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        fr_blend::fr_comprehensive_intrinsic_value,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        fr_blend::fr_intrinsic_value_for_symbol,
+        m
+    )?)?;
+    m.add_class::<fr_blend::DeterministicDraws>()?;
     Ok(())
 }
