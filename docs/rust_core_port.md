@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; then its growth, normalization, model and blend glue | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; then the model and blend glue | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -823,6 +823,24 @@ Checks:
   - 400 cached companies (Yahoo frames merged with SEC history, priced from the month-end panel);
   - trailing twelve months and the quarterly ratio history for all 38 filers with quarterly facts.
   - The port took 17.2 s against 17.1 s.
+
+## Phase 15i (26 Oct 2026): the `financial_ratios` growth, normalization and Monte Carlo glue
+
+The second block of `financial_ratios` now runs in Rust (`fr_growth.rs`):
+- the measured growth rate, the log-regression trend, and the blended growth forecast;
+- the ticker-info enrichment from the statements;
+- the FCF margin, the through-cycle margin and the normalized base FCF;
+- the Monte Carlo statistics, and all twelve Monte Carlo model wrappers.
+
+How it is done:
+- **The draws are NumPy's global generator.** The wrappers call `np.random.normal` through the module's `np` with the original's arguments, in the original's order. A seeded run therefore produces the same samples, and leaves the generator at the same point, which the tests check by drawing once more afterwards.
+
+Checks:
+- **Parity:**
+  - Growth estimates take analyst rows that are missing, None, text, NaN or infinite, plus random statement histories.
+  - Enrichment, the margins and the normalized FCF take sparse profiles. A targeted case reaches the through-cycle branch, which random statements rarely do.
+  - Each Monte Carlo wrapper runs from the same seed with zero, negative, NaN, None and text inputs.
+- **Real data:** 9,600 comparisons over 400 cached companies, all identical: the growth estimates, enrichment, margins and normalized FCF, plus every Monte Carlo wrapper, seeded, on each company's own inputs. The port took 4.0 s against 3.9 s.
 
 ## Found while porting
 

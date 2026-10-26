@@ -20,6 +20,7 @@ pub mod ef_store;
 pub mod ep;
 pub mod fifo;
 pub mod fr;
+pub mod fr_growth;
 pub mod history;
 pub mod holdings;
 pub mod irr;
@@ -510,5 +511,28 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fr::fr_current_valuation_ratios, m)?)?;
     m.add_function(wrap_pyfunction!(fr::fr_calculate_wacc, m)?)?;
     m.add_class::<fr::StatementLookup>()?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_estimate_growth_rate, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        fr_growth::fr_historical_growth_regression,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_blended_growth_estimate, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_enrich_ticker_info, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_estimate_fcf_margin, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_through_cycle_fcf_margin, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_normalized_base_fcf, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_generate_mc_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_dcf, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_dcfo, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_dni, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_ddm, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_mean_pe, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_peg, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_mean_pb, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_mean_ps, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_psg, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_graham, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_epv, m)?)?;
+    m.add_function(wrap_pyfunction!(fr_growth::fr_mc_lynch, m)?)?;
     Ok(())
 }

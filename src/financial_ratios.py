@@ -554,81 +554,10 @@ def estimate_growth_rate(
     years: int = GROWTH_HISTORY_YEARS,
 ) -> float:
     """Attempts to estimate a historical growth rate for a financial item."""
-    _values = []
-
-    # 1. Try to get ANALYST EXPECTED GROWTH (Priority)
-    if ticker_info:
-        # Check for our injected analyst data
-        # We average '0y' (Current Year) and '+1y' (Next Year) estimates
-        analyst_ee = ticker_info.get("_earnings_estimate", {})
-        if analyst_ee:
-            expected_rates = []
-            for p in ["0y", "+1y"]:
-                row = analyst_ee.get(p)
-                if row and "growth" in row and row["growth"] is not None:
-                    try:
-                        g_val = float(row["growth"])
-                        if not np.isnan(g_val) and not np.isinf(g_val):
-                            expected_rates.append(g_val)
-                    except (ValueError, TypeError):
-                        pass
-
-            if expected_rates:
-                avg_expected = sum(expected_rates) / len(expected_rates)
-                return avg_expected
-
-        # Fallback to standard info fields if specific estimates missing
-        g = ticker_info.get("earningsGrowth") or ticker_info.get("revenueGrowth")
-        if g is not None:
-            try:
-                g_val = float(g)
-                if not np.isnan(g_val) and not np.isinf(g_val):
-                    return g_val
-            except (ValueError, TypeError):
-                pass
-
-    # 2. Try to calculate historical CAGR if analyst data is not available
-    # ... (keeping existing historical CAGR logic as fallback)
-    if financials_df is not None and not financials_df.empty:
-        try:
-            # Sort columns to be chronological
-            cols = sorted(
-                financials_df.columns, key=lambda x: pd.to_datetime(x, errors="coerce")
-            )
-            recent_dated = []
-            for col in cols:
-                val = _get_statement_value(financials_df, item_name, col)
-                if val is not None and val > 0:
-                    recent_dated.append((pd.to_datetime(col), val))
-
-            if len(recent_dated) >= 2:
-                # Target window: last 3 years
-                end_date, end_val = recent_dated[-1]
-
-                # Find the starting point ~3 years before the end point
-                start_idx = 0
-                for i in range(len(recent_dated) - 2, -1, -1):
-                    d, v = recent_dated[i]
-                    years_diff = (end_date - d).days / 365.25
-                    if years_diff >= 2.5:  # approx 3 years
-                        start_idx = i
-                        break
-
-                start_date, start_val = recent_dated[start_idx]
-
-                # Calculate CAGR
-                n_years = (end_date - start_date).days / 365.25
-                if n_years > 0.5:
-                    res = (end_val / start_val) ** (1 / n_years) - 1
-                    # Protect against NaN or Infinity
-                    if np.isnan(res) or np.isinf(res):
-                        return 0.05
-                    return res
-        except Exception:
-            pass
-
-    # 3. Final Default
-    return 0.05
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_estimate_growth_rate(
+        financials_df, ticker_info, item_name, years
+    )
 
 
 def _historical_growth_regression(
@@ -646,31 +575,8 @@ def _historical_growth_regression(
     Returns None when there are fewer than three positive observations, which
     is the caller's signal to fall back rather than pretend to a trend.
     """
-    if financials_df is None or financials_df.empty:
-        return None
-    try:
-        dated: List[Tuple[pd.Timestamp, float]] = []
-        for col in financials_df.columns:
-            ts = pd.to_datetime(col, errors="coerce")
-            val = _get_statement_value(financials_df, item_name, col)
-            if pd.notna(ts) and val is not None and val > 0:
-                dated.append((ts, val))
-        dated.sort(key=lambda p: p[0])
-        dated = dated[-years:]
-        if len(dated) < 3:
-            return None
-
-        t0 = dated[0][0]
-        xs = np.array([(d - t0).days / 365.25 for d, _ in dated], dtype=float)
-        ys = np.log(np.array([v for _, v in dated], dtype=float))
-        if xs[-1] - xs[0] < 1.0:
-            return None
-
-        slope = float(np.polyfit(xs, ys, 1)[0])
-        growth = float(np.expm1(slope))
-        return growth if np.isfinite(growth) else None
-    except Exception:
-        return None
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_historical_growth_regression(financials_df, item_name, years)
 
 
 def blended_growth_estimate(
@@ -691,66 +597,10 @@ def blended_growth_estimate(
     endpoint CAGR), then pulls the result most of the way to `BASE_RATE_GROWTH`
     and clamps it to a band a real business could sustain.
     """
-    signals: Dict[str, float] = {}
-
-    if ticker_info:
-        analyst_rates = []
-        for period in ("0y", "+1y"):
-            row = (ticker_info.get("_earnings_estimate") or {}).get(period)
-            if row and row.get("growth") is not None:
-                try:
-                    val = float(row["growth"])
-                    if np.isfinite(val):
-                        analyst_rates.append(val)
-                except (ValueError, TypeError):
-                    pass
-        if analyst_rates:
-            signals["analyst"] = investa_core.np_mean(analyst_rates)
-
-    regression = _historical_growth_regression(financials_df, item_name=item_name)
-    if regression is not None:
-        signals["regression"] = regression
-
-    cagr = estimate_growth_rate(financials_df, ticker_info=None, item_name=item_name)
-    # 0.05 is the estimator's "I found nothing" default; don't treat it as evidence.
-    if cagr is not None and np.isfinite(cagr) and abs(cagr - 0.05) > 1e-9:
-        signals["cagr"] = float(cagr)
-
-    if not signals:
-        return {
-            "growth": BASE_RATE_GROWTH,
-            "raw_growth": None,
-            "signals": {},
-            "method": "base rate (no growth evidence)",
-        }
-
-    # Combine by *kind* of evidence, not by counting estimates. `regression`
-    # and `cagr` are two ways of measuring the same backward-looking quantity,
-    # so a plain median over all three signals gave history two votes to the
-    # analysts' one and the middle value was almost always historical — the
-    # forward-looking estimate was silently discarded. Collapse history to one
-    # view first, then let history and expectations weigh equally. (The
-    # median, mean, shrink and clamp run in Rust: investa_core.blend_growth.)
-    clamped, raw = investa_core.blend_growth(
-        signals.get("regression"),
-        signals.get("cagr"),
-        signals.get("analyst"),
-        GROWTH_SHRINK_WEIGHT,
-        BASE_RATE_GROWTH,
-        MIN_PROJECTED_GROWTH,
-        MAX_PROJECTED_GROWTH,
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_blended_growth_estimate(
+        financials_df, ticker_info, item_name
     )
-
-    return {
-        "growth": clamped,
-        "raw_growth": raw,
-        "signals": signals,
-        "method": (
-            f"{sorted(signals)} -> {raw:.1%}, shrunk "
-            f"{GROWTH_SHRINK_WEIGHT:.0%}/{1 - GROWTH_SHRINK_WEIGHT:.0%} toward "
-            f"{BASE_RATE_GROWTH:.0%} base rate"
-        ),
-    }
 
 
 def _enrich_ticker_info(
@@ -763,101 +613,10 @@ def _enrich_ticker_info(
     Fills in missing critical data in ticker_info using financial statements.
     Ensures DCF/Graham models have necessary inputs even if 'info' is sparse.
     """
-    enriched = ticker_info.copy()
-
-    # Check 1: Shares Outstanding
-    if not enriched.get("sharesOutstanding"):
-        # Try Balance Sheet (Ordinary Shares Number or Share Issued)
-        if balance_sheet_df is not None and not balance_sheet_df.empty:
-            latest_col = balance_sheet_df.columns[0]
-            shares = _get_statement_value(
-                balance_sheet_df, "Ordinary Shares Number", latest_col
-            )
-            if not shares:
-                shares = _get_statement_value(
-                    balance_sheet_df, "Share Issued", latest_col
-                )
-
-            if shares:
-                enriched["sharesOutstanding"] = shares
-
-        # Try Income Statement (Average Shares)
-        if (
-            not enriched.get("sharesOutstanding")
-            and financials_df is not None
-            and not financials_df.empty
-        ):
-            latest_col = financials_df.columns[0]
-            shares = _get_statement_value(
-                financials_df, "Diluted Average Shares", latest_col
-            )
-            if not shares:
-                shares = _get_statement_value(
-                    financials_df, "Basic Average Shares", latest_col
-                )
-
-            if shares:
-                enriched["sharesOutstanding"] = shares
-
-    # Check 2: Total Revenue
-    if (
-        not enriched.get("totalRevenue")
-        and financials_df is not None
-        and not financials_df.empty
-    ):
-        latest_col = financials_df.columns[0]
-        rev = _get_statement_value(financials_df, "Total Revenue", latest_col)
-        if rev:
-            enriched["totalRevenue"] = rev
-
-    # Check 3: Total Cash / Debt
-    if (
-        enriched.get("totalCash") is None
-        and balance_sheet_df is not None
-        and not balance_sheet_df.empty
-    ):
-        latest_col = balance_sheet_df.columns[0]
-        cash = _get_statement_value(
-            balance_sheet_df, "Cash And Cash Equivalents", latest_col
-        )
-        if cash:
-            enriched["totalCash"] = cash
-
-    if (
-        enriched.get("totalDebt") is None
-        and balance_sheet_df is not None
-        and not balance_sheet_df.empty
-    ):
-        latest_col = balance_sheet_df.columns[0]
-        debt = _get_statement_value(balance_sheet_df, "Total Debt", latest_col)
-        if debt:
-            enriched["totalDebt"] = debt
-
-    # Check 4: EPS (Trailing)
-    if (
-        not enriched.get("trailingEps")
-        and financials_df is not None
-        and not financials_df.empty
-    ):
-        latest_col = financials_df.columns[0]
-        eps = _get_statement_value(financials_df, "Diluted EPS", latest_col)
-        if eps:
-            enriched["trailingEps"] = eps
-
-    # Check 5: Dividend Rate
-    if not enriched.get("dividendRate") and not enriched.get(
-        "trailingAnnualDividendRate"
-    ):
-        if cashflow_df is not None and not cashflow_df.empty:
-            latest_col = cashflow_df.columns[0]
-            div_paid = _get_statement_value(
-                cashflow_df, "Cash Dividends Paid", latest_col
-            )
-            shares = enriched.get("sharesOutstanding")
-            if div_paid and shares and shares > 0:
-                enriched["dividendRate"] = abs(div_paid) / shares
-
-    return enriched
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_enrich_ticker_info(
+        ticker_info, financials_df, balance_sheet_df, cashflow_df
+    )
 
 
 def estimate_fcf_margin(
@@ -868,38 +627,8 @@ def estimate_fcf_margin(
     """
     Estimates a normalized Free Cash Flow margin based on historical data.
     """
-    if (
-        financials_df is None
-        or financials_df.empty
-        or cashflow_df is None
-        or cashflow_df.empty
-    ):
-        return 0.05  # Default conservative 5%
-
-    try:
-        # Find common columns/periods
-        common_cols = sorted(
-            list(set(financials_df.columns).intersection(set(cashflow_df.columns))),
-            key=lambda x: pd.to_datetime(x, errors="coerce"),
-        )
-
-        revenues, fcfs = [], []
-        for col in common_cols[-years:]:  # Look at last N years
-            revenues.append(
-                _opt_number(_get_statement_value(financials_df, "Total Revenue", col))
-            )
-            fcfs.append(_opt_number(_extract_fcf_from_statement(cashflow_df, col)))
-
-        # Loss-making years are kept; only implausible magnitudes are excluded.
-        margins = investa_core.plausible_margins(revenues, fcfs)
-        if margins:
-            # Use median for better robustness against outliers
-            return investa_core.np_median(margins)
-
-    except Exception as e:
-        logging.warning(f"Failed to estimate FCF margin: {e}")
-
-    return 0.05  # Fallback
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_estimate_fcf_margin(financials_df, cashflow_df, years)
 
 
 # A full business cycle. Five years was never a judgement about normalization —
@@ -931,30 +660,8 @@ def through_cycle_fcf_margin(
     four of ten years on the six that worked, which is the single most
     upward-biased thing a normalizer can do.
     """
-    revenues: List[Optional[float]] = []
-    fcfs: List[Optional[float]] = []
-    try:
-        if financials_df is not None and cashflow_df is not None:
-            common = sorted(
-                set(financials_df.columns).intersection(set(cashflow_df.columns)),
-                key=lambda c: pd.to_datetime(c, errors="coerce"),
-            )
-            for col in common[-years:]:
-                revenue = _opt_number(
-                    _get_statement_value(financials_df, "Total Revenue", col)
-                )
-                fcf = _opt_number(_extract_fcf_from_statement(cashflow_df, col))
-                revenues.append(revenue)
-                fcfs.append(fcf)
-    except Exception as exc:
-        logging.debug(f"Through-cycle margin extraction failed: {exc}")
-
-    # The same plausibility band `estimate_fcf_margin` uses: outside it the
-    # statement mapping is wrong, not the business remarkable.
-    margins = investa_core.plausible_margins(revenues, fcfs)
-    if len(margins) < MIN_CYCLE_OBSERVATIONS:
-        return {"margin": None, "observations": len(margins)}
-    return {"margin": investa_core.np_median(margins), "observations": len(margins)}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_through_cycle_fcf_margin(financials_df, cashflow_df, years)
 
 
 def normalized_base_fcf(
@@ -980,83 +687,10 @@ def normalized_base_fcf(
     unvaluable by a longer one. Returns `fcf=None` when neither estimate finds
     positive normalized cash flow, which is a refusal, not a fallback.
     """
-    history: List[float] = []
-    try:
-        if cashflow_df is not None and not cashflow_df.empty:
-            cols = sorted(
-                cashflow_df.columns, key=lambda c: pd.to_datetime(c, errors="coerce")
-            )
-            for col in cols[-years:]:
-                fcf = _extract_fcf_from_statement(cashflow_df, col)
-                if fcf is not None:
-                    history.append(fcf)
-    except Exception as exc:
-        logging.debug(f"FCF history extraction failed: {exc}")
-
-    latest_fcf = history[-1] if history else None
-    if latest_fcf is None:
-        latest_fcf = ticker_info.get("freeCashflow")
-
-    revenue = ticker_info.get("totalRevenue")
-
-    # A reported FCF margin above 60% is almost always a bad statement mapping
-    # rather than a spectacular business. Drop only the offending years: an
-    # earlier version discarded the whole history whenever the *latest* year
-    # looked wrong, throwing away four good observations because of one bad
-    # one — the opposite of what normalizing is for.
-    if revenue and revenue > 0:
-        plausible = [f for f in history if f / revenue <= 0.6]
-        if len(plausible) != len(history):
-            logging.debug(
-                f"Dropping {len(history) - len(plausible)} implausible FCF year(s) "
-                f"for {ticker_info.get('symbol')}"
-            )
-            history = plausible
-            latest_fcf = history[-1] if history else None
-        if latest_fcf and latest_fcf / revenue > 0.6:
-            latest_fcf = None
-
-    # Preferred: the cycle. Positive-only, so this can rescale a valuation but
-    # never take one away — a company the five-year window can value is not made
-    # unvaluable by looking further back.
-    cycle = through_cycle_fcf_margin(financials_df, cashflow_df)
-    if cycle["margin"] and cycle["margin"] > 0 and revenue and revenue > 0:
-        cycle_fcf = cycle["margin"] * revenue
-        if cycle_fcf > 0:
-            return {
-                "fcf": float(cycle_fcf),
-                "method": (
-                    f"through-cycle {cycle['margin']:.1%} FCF margin over "
-                    f"{cycle['observations']}y x current revenue"
-                ),
-                "history": history,
-                "normalized": True,
-            }
-
-    if len(history) >= 3:
-        median_fcf = investa_core.np_median([float(f) for f in history])
-        if median_fcf > 0:
-            return {
-                "fcf": median_fcf,
-                "method": f"median of {len(history)}y FCF",
-                "history": history,
-                "normalized": True,
-            }
-
-    if (latest_fcf or 0) > 0:
-        return {
-            "fcf": float(latest_fcf),
-            "method": "latest reported FCF (insufficient history to normalize)",
-            "history": history,
-            "normalized": False,
-        }
-
-    return {
-        "fcf": None,
-        "method": "no positive normalized free cash flow",
-        "history": history,
-        "normalized": False,
-    }
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_normalized_base_fcf(
+        ticker_info, financials_df, cashflow_df, years
+    )
 
 
 def _generate_mc_stats(intrinsic_values: np.ndarray) -> Dict[str, Any]:
@@ -1066,34 +700,8 @@ def _generate_mc_stats(intrinsic_values: np.ndarray) -> Dict[str, Any]:
     Computed in Rust (investa_core.mc_stats). The smoothing stays np.convolve,
     whose BLAS dot product cannot be reproduced bit for bit.
     """
-    try:
-        stats = investa_core.mc_stats(
-            np.ascontiguousarray(intrinsic_values, dtype=np.float64)
-        )
-        if stats is None:
-            return {}
-        bear, conservative, base, bull, std_dev, counts, midpoints = stats
-
-        # 7-point Gaussian smoothing kernel
-        kernel = np.array([0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])
-        smoothed_counts = np.convolve(counts, kernel, mode="same")
-
-        histogram = [
-            {"price": float(p), "count": float(c)}
-            for p, c in zip(midpoints, smoothed_counts)
-        ]
-
-        return {
-            "bear": bear,
-            "conservative": conservative,
-            "base": base,
-            "bull": bull,
-            "std_dev": std_dev,
-            "histogram": histogram,
-        }
-    except Exception as e:
-        logging.error(f"Error computing MC stats: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_generate_mc_stats(intrinsic_values)
 
 
 def run_monte_carlo_dcf(
@@ -1111,28 +719,11 @@ def run_monte_carlo_dcf(
     runs in Rust (investa_core.mc_dcf). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares or shares <= 0:
-            return {}
-
-        growth_sigma = max(0.06, abs(base_growth) * 0.25)
-        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
-        discount_sigma = max(0.015, abs(base_discount) * 0.15)
-        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
-
-        cash = ticker_info.get("totalCash") or 0
-        debt = ticker_info.get("totalDebt") or 0
-        intrinsic_values = investa_core.mc_dcf(
-            growth_samples, discount_samples,
-            MIN_PROJECTED_GROWTH, MAX_PROJECTED_GROWTH, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE,
-            int(projection_years), float(terminal_growth),
-            float(base_fcf), float(cash), float(debt), float(shares),
-        )  # fmt: skip
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo DCF failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_dcf(
+        ticker_info, base_fcf, base_growth, base_discount,
+        projection_years, terminal_growth, iterations,
+    )  # fmt: skip
 
 
 def run_monte_carlo_dcfo(
@@ -1150,30 +741,11 @@ def run_monte_carlo_dcfo(
     runs in Rust (investa_core.mc_discounted). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares or shares <= 0:
-            return {}
-
-        cfo_per_share = base_cfo / shares
-        growth_sigma = max(0.05, abs(base_growth) * 0.25)
-        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
-        discount_sigma = max(0.015, abs(base_discount) * 0.15)
-        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
-
-        cash = ticker_info.get("totalCash") or 0
-        debt = ticker_info.get("totalDebt") or 0
-        net_cash_per_share = (cash - debt) / shares
-        intrinsic_values = investa_core.mc_discounted(
-            growth_samples, discount_samples,
-            -0.05, 0.25, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE,
-            int(projection_years), float(terminal_growth),
-            float(cfo_per_share), float(net_cash_per_share),
-        )  # fmt: skip
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo D-CFO failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_dcfo(
+        ticker_info, base_cfo, base_growth, base_discount,
+        projection_years, terminal_growth, iterations,
+    )  # fmt: skip
 
 
 def run_monte_carlo_dni(
@@ -1190,21 +762,15 @@ def run_monte_carlo_dni(
     runs in Rust (investa_core.mc_discounted). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        growth_sigma = max(0.05, abs(base_growth) * 0.25)
-        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
-        discount_sigma = max(0.015, abs(base_discount) * 0.15)
-        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
-
-        intrinsic_values = investa_core.mc_discounted(
-            growth_samples, discount_samples,
-            -0.05, 0.25, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE,
-            int(projection_years), float(terminal_growth), float(base_eps),
-        )  # fmt: skip
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo D-NI failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_dni(
+        base_eps,
+        base_growth,
+        base_discount,
+        projection_years,
+        terminal_growth,
+        iterations,
+    )
 
 
 def run_monte_carlo_mean_pe(
@@ -1218,18 +784,8 @@ def run_monte_carlo_mean_pe(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        eps_samples = np.random.normal(eps, max(0.1, abs(eps) * 0.15), iterations)
-        pe_samples = np.random.normal(
-            applied_pe, max(1.5, applied_pe * 0.18), iterations
-        )
-        intrinsic_values = investa_core.mc_base_times_multiple(
-            eps_samples, pe_samples, 0.01, float(eps * 2.5), 5.0, 45.0
-        )
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo Mean P/E failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_mean_pe(eps, applied_pe, iterations)
 
 
 def run_monte_carlo_peg(
@@ -1245,22 +801,10 @@ def run_monte_carlo_peg(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        eps_samples = np.random.normal(eps, max(0.1, abs(eps) * 0.15), iterations)
-        growth_samples = np.random.normal(
-            applied_growth_pct, max(1.5, abs(applied_growth_pct) * 0.25), iterations
-        )
-        peg_samples = np.random.normal(
-            target_peg, max(0.1, target_peg * 0.15), iterations
-        )
-        intrinsic_values = investa_core.mc_peg(
-            eps_samples, growth_samples, peg_samples,
-            float(eps * 2.5), float(dividend_yield_pct),
-        )  # fmt: skip
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo PEG failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_peg(
+        eps, applied_growth_pct, dividend_yield_pct, target_peg, iterations
+    )
 
 
 def run_monte_carlo_mean_pb(
@@ -1274,20 +818,8 @@ def run_monte_carlo_mean_pb(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        bv_samples = np.random.normal(
-            book_value_per_share, max(0.1, book_value_per_share * 0.08), iterations
-        )
-        pb_samples = np.random.normal(
-            applied_pb, max(0.15, applied_pb * 0.18), iterations
-        )
-        intrinsic_values = investa_core.mc_base_times_multiple(
-            bv_samples, pb_samples, 0.01, float(book_value_per_share * 2.0), 0.4, 8.0
-        )
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo Mean P/B failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_mean_pb(book_value_per_share, applied_pb, iterations)
 
 
 def run_monte_carlo_mean_ps(
@@ -1301,20 +833,8 @@ def run_monte_carlo_mean_ps(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        sps_samples = np.random.normal(
-            sales_per_share, max(0.1, sales_per_share * 0.10), iterations
-        )
-        ps_samples = np.random.normal(
-            applied_ps, max(0.2, applied_ps * 0.18), iterations
-        )
-        intrinsic_values = investa_core.mc_base_times_multiple(
-            sps_samples, ps_samples, 0.01, float(sales_per_share * 2.0), 0.4, 15.0
-        )
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo Mean P/S failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_mean_ps(sales_per_share, applied_ps, iterations)
 
 
 def run_monte_carlo_psg(
@@ -1331,27 +851,10 @@ def run_monte_carlo_psg(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        sps_samples = np.random.normal(
-            sales_per_share, max(0.1, sales_per_share * 0.10), iterations
-        )
-        growth_samples = np.random.normal(
-            applied_growth_pct, max(2.0, applied_growth_pct * 0.25), iterations
-        )
-        gm_samples = np.random.normal(
-            gross_margin, max(0.02, gross_margin * 0.08), iterations
-        )
-        target_psg_samples = np.random.normal(
-            target_psg, max(0.1, target_psg * 0.15), iterations
-        )
-        intrinsic_values = investa_core.mc_psg(
-            sps_samples, growth_samples, gm_samples, target_psg_samples,
-            float(sales_per_share * 2.0),
-        )  # fmt: skip
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo PSG failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_psg(
+        sales_per_share, applied_growth_pct, gross_margin, target_psg, iterations
+    )
 
 
 def run_monte_carlo_graham(
@@ -1363,20 +866,8 @@ def run_monte_carlo_graham(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        growth_samples = np.random.normal(
-            base_growth, max(1.0, abs(base_growth) * 0.2), iterations
-        )
-        yield_samples = np.random.normal(
-            base_bond_yield, max(0.3, abs(base_bond_yield) * 0.1), iterations
-        )
-        intrinsic_values = investa_core.mc_graham(
-            growth_samples, yield_samples, float(eps)
-        )
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo Graham failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_graham(eps, base_growth, base_bond_yield, iterations)
 
 
 def run_monte_carlo_ddm(
@@ -1393,21 +884,15 @@ def run_monte_carlo_ddm(
     runs in Rust (investa_core.mc_discounted). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        growth_sigma = max(0.03, abs(base_growth) * 0.25)
-        growth_samples = np.random.normal(base_growth, growth_sigma, iterations)
-        discount_sigma = max(0.015, abs(base_discount) * 0.15)
-        discount_samples = np.random.normal(base_discount, discount_sigma, iterations)
-
-        intrinsic_values = investa_core.mc_discounted(
-            growth_samples, discount_samples,
-            -0.05, 0.15, MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE,
-            int(projection_years), float(terminal_growth), float(base_dividend),
-        )  # fmt: skip
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo DDM failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_ddm(
+        base_dividend,
+        base_growth,
+        base_discount,
+        projection_years,
+        terminal_growth,
+        iterations,
+    )
 
 
 def run_monte_carlo_epv(
@@ -1424,28 +909,10 @@ def run_monte_carlo_epv(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        shares = ticker_info.get("sharesOutstanding")
-        if not shares or shares <= 0:
-            return {}
-
-        ebit_samples = np.random.normal(
-            normalized_ebit, max(1.0, abs(normalized_ebit) * 0.15), iterations
-        )
-        discount_samples = np.random.normal(
-            base_discount, max(0.01, abs(base_discount) * 0.12), iterations
-        )
-        cash = ticker_info.get("totalCash") or 0
-        debt = ticker_info.get("totalDebt") or 0
-        intrinsic_values = investa_core.mc_epv(
-            ebit_samples, discount_samples,
-            float(normalized_ebit * 2.5), MIN_DISCOUNT_RATE, MAX_DISCOUNT_RATE,
-            float(tax_rate), float(cash), float(debt), float(shares),
-        )  # fmt: skip
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo EPV failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_epv(
+        ticker_info, normalized_ebit, tax_rate, base_discount, iterations
+    )
 
 
 def run_monte_carlo_lynch(
@@ -1460,18 +927,10 @@ def run_monte_carlo_lynch(
     runs in Rust (investa_core). Original frozen in
     tests/reference/monte_carlo.py.
     """
-    try:
-        eps_samples = np.random.normal(eps, max(0.1, abs(eps) * 0.15), iterations)
-        growth_samples = np.random.normal(
-            growth_rate_pct, max(1.5, abs(growth_rate_pct) * 0.25), iterations
-        )
-        intrinsic_values = investa_core.mc_lynch(
-            eps_samples, growth_samples, float(eps * 2.5), float(dividend_yield_pct)
-        )
-        return _generate_mc_stats(intrinsic_values)
-    except Exception as e:
-        logging.error(f"Monte Carlo Lynch failed: {e}")
-        return {}
+    # Ported to Rust: rust/investa_core/src/fr_growth.rs
+    return investa_core.fr_mc_lynch(
+        eps, growth_rate_pct, dividend_yield_pct, iterations
+    )
 
 
 def calculate_intrinsic_value_dcf(
