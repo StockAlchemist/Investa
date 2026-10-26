@@ -19,6 +19,7 @@ pub mod dl;
 pub mod ef_store;
 pub mod ep;
 pub mod fifo;
+pub mod fr;
 pub mod history;
 pub mod holdings;
 pub mod irr;
@@ -488,5 +489,26 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ep::ep_get_sector_concepts, m)?)?;
     m.add_class::<ep::AsOf>()?;
     m.add_class::<ep::BulkDocuments>()?;
+    m.add_function(wrap_pyfunction!(fr::fr_get_statement_value, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_extract_fcf_from_statement, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_is_level_row, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_is_consecutive_window, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_to_trailing_twelve_months, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_price_on_or_before, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_opt_number, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_scalar_projection, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_key_ratios_python, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_numeric_statement, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_period_columns, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_first_column, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_key_ratios_timeseries, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_historical_mean_multiples, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        fr::fr_load_price_history_for_multiples,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_current_valuation_ratios, m)?)?;
+    m.add_function(wrap_pyfunction!(fr::fr_calculate_wacc, m)?)?;
+    m.add_class::<fr::StatementLookup>()?;
     Ok(())
 }

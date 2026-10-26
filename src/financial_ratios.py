@@ -18,7 +18,6 @@ import hashlib
 
 import pandas as pd
 import investa_core
-import operator
 import numpy as np
 import logging
 from typing import Dict, Optional, List, Any, Tuple
@@ -240,37 +239,16 @@ def _get_statement_value(
     df: Optional[pd.DataFrame], item_name: str, period_column: str
 ) -> Optional[float]:
     """Safely retrieves a value from a financial statement DataFrame with alias fallback."""
-    if df is None or df.empty or period_column not in df.columns:
-        return None
-    # 1. Exact match
-    if item_name in df.index:
-        val = df.loc[item_name, period_column]
-        if pd.notna(val):
-            return float(val)
-    # 2. Alias fallback
-    aliases = STATEMENT_ALIASES.get(item_name, [])
-    for alias in aliases:
-        if alias != item_name and alias in df.index:
-            val = df.loc[alias, period_column]
-            if pd.notna(val):
-                return float(val)
-    return None
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_get_statement_value(df, item_name, period_column)
 
 
 def _extract_fcf_from_statement(
     cf_df: Optional[pd.DataFrame], col: Any
 ) -> Optional[float]:
     """Extracts Free Cash Flow from cashflow statement using explicit FCF or OCF + CapEx."""
-    if cf_df is None or cf_df.empty or col not in cf_df.columns:
-        return None
-    fcf = _get_statement_value(cf_df, "Free Cash Flow", col)
-    if fcf is not None:
-        return fcf
-    ocf = _get_statement_value(cf_df, "Operating Cash Flow", col)
-    capex = _get_statement_value(cf_df, "Capital Expenditure", col)
-    if ocf is not None and capex is not None:
-        return ocf + capex if capex < 0 else ocf - capex
-    return None
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_extract_fcf_from_statement(cf_df, col)
 
 
 # A share count is a level, not a flow: four quarters of "Diluted Average
@@ -280,8 +258,8 @@ _LEVEL_ROW_MARKERS = ("Shares", "Share Issued")
 
 
 def _is_level_row(label: Any) -> bool:
-    text = str(label)
-    return any(marker in text for marker in _LEVEL_ROW_MARKERS)
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_is_level_row(label)
 
 
 # Bounds on the *average* quarter in the window, which is what its span divided
@@ -309,11 +287,8 @@ def _is_consecutive_window(newest: Any, oldest: Any, quarters: int) -> bool:
     Measured between the outermost period *ends*, which is one quarter fewer
     than the window holds.
     """
-    if pd.isna(newest) or pd.isna(oldest) or quarters < 2:
-        return False
-    steps = quarters - 1
-    days = (newest - oldest).days
-    return _MIN_QUARTER_SPAN_DAYS * steps <= days <= _MAX_QUARTER_SPAN_DAYS * steps
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_is_consecutive_window(newest, oldest, quarters)
 
 
 def to_trailing_twelve_months(
@@ -337,97 +312,22 @@ def to_trailing_twelve_months(
     rule the quarterly series itself follows when it refuses to difference
     across a missing rung.
     """
-    if statement_df is None or statement_df.empty:
-        return statement_df
-
-    periods = list(statement_df.columns)
-    if len(periods) < min_quarters:
-        return statement_df.iloc[:, :0]
-
-    stamps = pd.to_datetime(pd.Index(periods), errors="coerce")
-
-    columns: Dict[Any, pd.Series] = {}
-    for i in range(len(periods) - min_quarters + 1):
-        oldest = i + min_quarters - 1
-        if not _is_consecutive_window(stamps[i], stamps[oldest], min_quarters):
-            continue
-        window = statement_df.iloc[:, i : oldest + 1]
-        # `min_count` keeps a row that no quarter reported as NaN rather than
-        # letting it sum to a confident zero.
-        summed = window.sum(axis=1, min_count=min_quarters)
-        averaged = window.mean(axis=1)
-        columns[periods[i]] = summed.where(~summed.index.map(_is_level_row), averaged)
-
-    if not columns:
-        return statement_df.iloc[:, :0]
-    return pd.DataFrame(columns)
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_to_trailing_twelve_months(statement_df, min_quarters)
 
 
 def _price_on_or_before(prices_data: Any, dt: Any) -> Optional[float]:
     """Finds the split-consistent price on or immediately before `dt`."""
-    if prices_data is None or dt is None:
-        return None
-    try:
-        series = None
-        if isinstance(prices_data, pd.DataFrame):
-            for col in ["price", "Price", "Adj Close", "Close", "adj_close", "close"]:
-                if col in prices_data.columns:
-                    series = prices_data[col]
-                    break
-            if series is None and not prices_data.empty:
-                series = prices_data.iloc[:, 0]
-        elif isinstance(prices_data, pd.Series):
-            series = prices_data
-        elif isinstance(prices_data, dict):
-            series = pd.Series(prices_data)
-
-        if series is None or series.empty:
-            return None
-
-        # Convert index to datetime if needed
-        if not isinstance(series.index, pd.DatetimeIndex):
-            series.index = pd.to_datetime(series.index, errors="coerce")
-            series = series[series.index.notnull()]
-
-        # Normalize timezone on index to naive UTC for safe comparison
-        if getattr(series.index, "tz", None) is not None:
-            try:
-                series.index = series.index.tz_convert("UTC").tz_localize(None)
-            except Exception:
-                series.index = series.index.tz_localize(None)
-
-        dt_ts = pd.to_datetime(dt)
-        if dt_ts is None or pd.isna(dt_ts):
-            return None
-        if getattr(dt_ts, "tzinfo", None) is not None:
-            try:
-                dt_ts = dt_ts.tz_convert("UTC").tz_localize(None)
-            except Exception:
-                dt_ts = dt_ts.tz_localize(None)
-
-        series = series.sort_index()
-        sub = series.loc[:dt_ts]
-        if sub.empty:
-            return None
-        last_dt = sub.index[-1]
-        if (dt_ts - last_dt).days > 60:
-            return None
-        val = float(sub.iloc[-1])
-        return val if val > 0 and np.isfinite(val) else None
-    except Exception as e:
-        logging.debug(f"_price_on_or_before error: {e}")
-        return None
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_price_on_or_before(prices_data, dt)
 
 
 def _opt_number(value: Any) -> Optional[float]:
     """A statement or profile number for Rust: None stays None; ints, floats,
     bools and NumPy numbers convert; anything else raises TypeError, as the
     Python arithmetic it replaces would have."""
-    if value is None:
-        return None
-    if isinstance(value, (bool, int, float, np.number)):
-        return float(value)
-    raise TypeError(f"not a number: {value!r}")
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_opt_number(value)
 
 
 def _scalar_projection(
@@ -445,20 +345,10 @@ def _scalar_projection(
     scalars too, which changes how sum() adds them and what type comes back,
     so both are mirrored.
     """
-    years = operator.index(projection_years)
-    inputs = (base, applied_growth, discount_rate, terminal_growth_rate)
-    numpy_terms = any(type(v) not in (float, int, bool) for v in inputs)
-    _pv, total, last, pv_terminal = investa_core.scalar_projection(
-        float(base),
-        float(applied_growth),
-        float(discount_rate),
-        years,
-        float(terminal_growth_rate),
-        numpy_terms,
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_scalar_projection(
+        base, applied_growth, discount_rate, projection_years, terminal_growth_rate
     )
-    if numpy_terms:
-        return np.float64(total), np.float64(last), np.float64(pv_terminal)
-    return total, last, pv_terminal
 
 
 def _key_ratios_python(
@@ -476,436 +366,10 @@ def _key_ratios_python(
     `prices_df` adds point-in-time historical valuation multiples (P/E, P/S, P/B, EV/EBITDA, EV/Sales, P/FCF).
     `periods_per_year` says how many columns make a year (4 for quarterly TTM, 1 for annual).
     """
-    if (
-        financials_df is None
-        or financials_df.empty
-        or balance_sheet_df is None
-        or balance_sheet_df.empty
-    ):
-        logging.warning(
-            "Financials or Balance Sheet data is missing/empty. Cannot calculate historical ratios."
-        )
-        return pd.DataFrame()
-
-    try:
-        fin_periods_dt = pd.to_datetime(financials_df.columns, errors="coerce").dropna()
-        bs_periods_dt = pd.to_datetime(
-            balance_sheet_df.columns, errors="coerce"
-        ).dropna()
-
-        if fin_periods_dt.empty or bs_periods_dt.empty:
-            logging.warning(
-                "No valid period columns found in financial statements for ratio calculation."
-            )
-            return pd.DataFrame()
-
-        common_periods_dt = sorted(
-            list(set(fin_periods_dt).intersection(set(bs_periods_dt)))
-        )
-
-    except Exception as e:
-        logging.error(f"Could not parse period columns for ratio calculation: {e}")
-        return pd.DataFrame()
-
-    if not common_periods_dt:
-        logging.warning(
-            "No common periods found between income statement and balance sheet for ratio calculation."
-        )
-        return pd.DataFrame()
-
-    ratios_data_list: List[Dict] = []
-
-    for i, period_dt in enumerate(common_periods_dt):
-        period_str_fin = next(
-            (
-                col
-                for col in financials_df.columns
-                if pd.to_datetime(col, errors="coerce") == period_dt
-            ),
-            None,
-        )
-        period_str_bs = next(
-            (
-                col
-                for col in balance_sheet_df.columns
-                if pd.to_datetime(col, errors="coerce") == period_dt
-            ),
-            None,
-        )
-
-        if not period_str_fin or not period_str_bs:
-            logging.debug(
-                f"Skipping period {period_dt.strftime('%Y-%m-%d')} due to missing original column name match."
-            )
-            continue
-
-        current_ratios: Dict[str, Any] = {"Period": period_dt}
-
-        # 1. Profitability & Operations
-        revenue = _get_statement_value(financials_df, "Total Revenue", period_str_fin)
-        cost_of_revenue = _get_statement_value(
-            financials_df, "Cost Of Revenue", period_str_fin
-        )
-        gross_profit = _get_statement_value(
-            financials_df, "Gross Profit", period_str_fin
-        )
-        if gross_profit is None and revenue is not None and cost_of_revenue is not None:
-            gross_profit = revenue - cost_of_revenue
-
-        operating_income = _get_statement_value(
-            financials_df, "Operating Income", period_str_fin
-        ) or _get_statement_value(
-            financials_df, "Operating Revenue Or Loss", period_str_fin
-        )
-
-        ebit = _get_statement_value(financials_df, "Ebit", period_str_fin)
-        if operating_income is None and ebit is not None:
-            operating_income = ebit
-
-        net_income = _get_statement_value(financials_df, "Net Income", period_str_fin)
-        if net_income is None:
-            net_income = _get_statement_value(
-                financials_df, "Net Income From Continuing Ops", period_str_fin
-            )
-
-        total_equity = (
-            _get_statement_value(balance_sheet_df, "Stockholders Equity", period_str_bs)
-            or _get_statement_value(
-                balance_sheet_df, "Total Stockholder Equity", period_str_bs
-            )
-            or _get_statement_value(
-                balance_sheet_df, "Total Equity Gross Minority Interest", period_str_bs
-            )
-        )
-        total_assets = _get_statement_value(
-            balance_sheet_df, "Total Assets", period_str_bs
-        )
-
-        avg_equity, avg_assets = total_equity, total_assets
-        if i >= periods_per_year:
-            prev_period_dt = common_periods_dt[i - periods_per_year]
-            prev_period_str_bs = next(
-                (
-                    col
-                    for col in balance_sheet_df.columns
-                    if pd.to_datetime(col, errors="coerce") == prev_period_dt
-                ),
-                None,
-            )
-            if prev_period_str_bs:
-                prev_equity = _get_statement_value(
-                    balance_sheet_df, "Total Stockholder Equity", prev_period_str_bs
-                )
-                prev_assets = _get_statement_value(
-                    balance_sheet_df, "Total Assets", prev_period_str_bs
-                )
-                if total_equity is not None and prev_equity is not None:
-                    avg_equity = (total_equity + prev_equity) / 2
-                if total_assets is not None and prev_assets is not None:
-                    avg_assets = (total_assets + prev_assets) / 2
-
-        current_ratios["Gross Profit Margin (%)"] = (
-            (gross_profit / revenue) * 100
-            if revenue and revenue != 0 and gross_profit is not None
-            else np.nan
-        )
-        current_ratios["Operating Margin (%)"] = (
-            (operating_income / revenue) * 100
-            if revenue and revenue != 0 and operating_income is not None
-            else np.nan
-        )
-        current_ratios["Net Profit Margin (%)"] = (
-            (net_income / revenue) * 100
-            if revenue and revenue != 0 and net_income is not None
-            else np.nan
-        )
-        current_ratios["Return on Equity (ROE) (%)"] = (
-            (net_income / avg_equity) * 100
-            if avg_equity and avg_equity != 0 and net_income is not None
-            else np.nan
-        )
-        current_ratios["Return on Assets (ROA) (%)"] = (
-            (net_income / avg_assets) * 100
-            if avg_assets and avg_assets != 0 and net_income is not None
-            else np.nan
-        )
-
-        # 2. Liquidity
-        current_assets = _get_statement_value(
-            balance_sheet_df, "Current Assets", period_str_bs
-        ) or _get_statement_value(
-            balance_sheet_df, "Total Current Assets", period_str_bs
-        )
-        current_liabilities = _get_statement_value(
-            balance_sheet_df, "Current Liabilities", period_str_bs
-        ) or _get_statement_value(
-            balance_sheet_df, "Total Current Liabilities", period_str_bs
-        )
-        inventory = _get_statement_value(balance_sheet_df, "Inventory", period_str_bs)
-        current_ratios["Current Ratio"] = (
-            current_assets / current_liabilities
-            if current_liabilities
-            and current_liabilities != 0
-            and current_assets is not None
-            else np.nan
-        )
-        current_ratios["Quick Ratio"] = (
-            ((current_assets - (inventory or 0)) / current_liabilities)
-            if current_liabilities
-            and current_liabilities != 0
-            and current_assets is not None
-            else np.nan
-        )
-
-        # 3. Solvency
-        total_liab = (
-            _get_statement_value(
-                balance_sheet_df,
-                "Total Liabilities Net Minority Interest",
-                period_str_bs,
-            )
-            or _get_statement_value(balance_sheet_df, "Total Liab", period_str_bs)
-            or _get_statement_value(
-                balance_sheet_df, "Total Liabilities", period_str_bs
-            )
-        )
-        current_ratios["Debt-to-Equity Ratio"] = (
-            total_liab / total_equity
-            if total_equity and total_equity != 0 and total_liab is not None
-            else np.nan
-        )
-
-        lt_debt = (
-            _get_statement_value(balance_sheet_df, "Long Term Debt", period_str_bs)
-            or _get_statement_value(
-                balance_sheet_df,
-                "Long Term Debt And Capital Lease Obligation",
-                period_str_bs,
-            )
-            or _get_statement_value(
-                balance_sheet_df, "Long Term Debt Non Current", period_str_bs
-            )
-        )
-        current_ratios["Long-Term Debt to Equity"] = (
-            lt_debt / total_equity
-            if total_equity and total_equity != 0 and lt_debt is not None
-            else np.nan
-        )
-
-        interest_exp = _get_statement_value(
-            financials_df, "Interest Expense", period_str_fin
-        )
-        if interest_exp is not None and interest_exp < 0:
-            interest_exp = abs(interest_exp)
-        current_ratios["Interest Coverage Ratio"] = (
-            ebit / interest_exp
-            if interest_exp and interest_exp != 0 and ebit is not None
-            else np.nan
-        )
-
-        # 4. Efficiency
-        current_ratios["Asset Turnover"] = (
-            revenue / avg_assets
-            if avg_assets and avg_assets != 0 and revenue is not None
-            else np.nan
-        )
-
-        # 5. ROIC
-        pretax = _get_statement_value(financials_df, "Pretax Income", period_str_fin)
-        tax = _get_statement_value(financials_df, "Tax Provision", period_str_fin)
-        total_debt = _get_statement_value(balance_sheet_df, "Total Debt", period_str_bs)
-        cash = _get_statement_value(
-            balance_sheet_df, "Cash And Cash Equivalents", period_str_bs
-        )
-        roic = np.nan
-        if pretax is not None and total_equity:
-            operating_earnings = pretax + (interest_exp or 0.0)
-            tax_rate = (
-                (tax / pretax) if pretax and pretax > 0 and tax is not None else None
-            )
-            if tax_rate is None or not (0.0 <= tax_rate <= 0.6):
-                tax_rate = 0.21
-            nopat = operating_earnings * (1.0 - tax_rate)
-            invested = total_equity + (total_debt or 0.0) - (cash or 0.0)
-            if invested and invested != 0:
-                candidate = nopat / invested
-                if -2.0 < candidate < 3.0:
-                    roic = candidate * 100.0
-        current_ratios["Return on Invested Capital (ROIC) (%)"] = roic
-
-        # 6. Cash Flow & Shares
-        current_ratios["Free Cash Flow Margin (%)"] = np.nan
-        current_ratios["Diluted Shares Outstanding"] = np.nan
-        ocf, capex, div_paid = None, None, None
-        period_str_cf = None
-        if cashflow_df is not None and not cashflow_df.empty:
-            period_str_cf = next(
-                (
-                    col
-                    for col in cashflow_df.columns
-                    if pd.to_datetime(col, errors="coerce") == period_dt
-                ),
-                None,
-            )
-            if period_str_cf is not None:
-                ocf = _get_statement_value(
-                    cashflow_df, "Operating Cash Flow", period_str_cf
-                )
-                capex = _get_statement_value(
-                    cashflow_df, "Capital Expenditure", period_str_cf
-                )
-                div_paid = _get_statement_value(
-                    cashflow_df, "Common Stock Dividend Paid", period_str_cf
-                ) or _get_statement_value(
-                    cashflow_df, "Cash Dividends Paid", period_str_cf
-                )
-                if ocf is not None and capex is not None and revenue:
-                    current_ratios["Free Cash Flow Margin (%)"] = (
-                        (ocf + capex) / revenue
-                    ) * 100.0
-
-        shares = _get_statement_value(
-            financials_df, "Diluted Average Shares", period_str_fin
-        ) or _get_statement_value(
-            balance_sheet_df, "Ordinary Shares Number", period_str_bs
-        )
-        if shares:
-            current_ratios["Diluted Shares Outstanding"] = shares
-
-        # 7. Level figures (Revenue, Net Income, EPS) & YoY Growth
-        current_ratios["Total Revenue"] = revenue
-        current_ratios["Operating Income"] = operating_income
-        current_ratios["Net Income"] = net_income
-
-        eps = _get_statement_value(financials_df, "Diluted EPS", period_str_fin)
-        if eps is None and net_income is not None and shares and shares > 0:
-            eps = net_income / shares
-        current_ratios["Diluted EPS"] = eps
-
-        # YoY Growth rates against period from 1 year prior
-        current_ratios["Revenue Growth YoY (%)"] = np.nan
-        current_ratios["EPS Growth YoY (%)"] = np.nan
-        if i >= periods_per_year:
-            prev_dt = common_periods_dt[i - periods_per_year]
-            prev_fin_col = next(
-                (
-                    col
-                    for col in financials_df.columns
-                    if pd.to_datetime(col, errors="coerce") == prev_dt
-                ),
-                None,
-            )
-            if prev_fin_col:
-                prev_rev = _get_statement_value(
-                    financials_df, "Total Revenue", prev_fin_col
-                )
-                if prev_rev and prev_rev > 0 and revenue is not None:
-                    current_ratios["Revenue Growth YoY (%)"] = (
-                        (revenue / prev_rev) - 1
-                    ) * 100.0
-
-                prev_eps = _get_statement_value(
-                    financials_df, "Diluted EPS", prev_fin_col
-                )
-                if prev_eps and prev_eps > 0 and eps is not None and eps > 0:
-                    current_ratios["EPS Growth YoY (%)"] = (
-                        (eps / prev_eps) - 1
-                    ) * 100.0
-
-        # 8. Historical Valuation Multiples over Time (using historical price)
-        price = _price_on_or_before(prices_df, period_dt)
-        current_ratios["Price"] = price
-        current_ratios["P/E Ratio"] = np.nan
-        current_ratios["P/S Ratio"] = np.nan
-        current_ratios["P/B Ratio"] = np.nan
-        current_ratios["P/FCF Ratio"] = np.nan
-        current_ratios["EV/EBITDA"] = np.nan
-        current_ratios["EV/Sales"] = np.nan
-        current_ratios["Dividend Yield (%)"] = np.nan
-
-        if price is not None and shares and shares > 0:
-            mkt_cap = price * shares
-            if eps and eps > 0:
-                current_ratios["P/E Ratio"] = price / eps
-            elif net_income and net_income > 0:
-                current_ratios["P/E Ratio"] = mkt_cap / net_income
-
-            if revenue and revenue > 0:
-                current_ratios["P/S Ratio"] = mkt_cap / revenue
-
-            if total_equity and total_equity > 0:
-                current_ratios["P/B Ratio"] = mkt_cap / total_equity
-
-            fcf = (ocf + capex) if (ocf is not None and capex is not None) else None
-            if fcf and fcf > 0:
-                current_ratios["P/FCF Ratio"] = mkt_cap / fcf
-
-            ev = mkt_cap + (total_debt or 0.0) - (cash or 0.0)
-            if revenue and revenue > 0 and ev > 0:
-                current_ratios["EV/Sales"] = ev / revenue
-
-            ebitda = (
-                _get_statement_value(financials_df, "EBITDA", period_str_fin)
-                or _get_statement_value(financials_df, "Ebitda", period_str_fin)
-                or _get_statement_value(
-                    financials_df, "Normalized EBITDA", period_str_fin
-                )
-            )
-            if ebitda is None:
-                base_ebit = ebit if ebit is not None else operating_income
-                if base_ebit is not None:
-                    depr = (
-                        _get_statement_value(
-                            financials_df, "Reconciled Depreciation", period_str_fin
-                        )
-                        or _get_statement_value(
-                            financials_df,
-                            "Depreciation And Amortization",
-                            period_str_fin,
-                        )
-                        or (
-                            _get_statement_value(
-                                cashflow_df,
-                                "Depreciation And Amortization",
-                                period_str_cf,
-                            )
-                            if cashflow_df is not None and period_str_cf is not None
-                            else None
-                        )
-                        or (
-                            _get_statement_value(
-                                cashflow_df,
-                                "Depreciation Amortization Depletion",
-                                period_str_cf,
-                            )
-                            if cashflow_df is not None and period_str_cf is not None
-                            else None
-                        )
-                        or (
-                            _get_statement_value(
-                                cashflow_df, "Depreciation", period_str_cf
-                            )
-                            if cashflow_df is not None and period_str_cf is not None
-                            else None
-                        )
-                    )
-                    if depr is not None:
-                        ebitda = base_ebit + abs(depr)
-                    else:
-                        ebitda = base_ebit
-            if ebitda and ebitda > 0 and ev > 0:
-                current_ratios["EV/EBITDA"] = ev / ebitda
-
-            if div_paid is not None and mkt_cap > 0:
-                current_ratios["Dividend Yield (%)"] = (abs(div_paid) / mkt_cap) * 100.0
-
-        ratios_data_list.append(current_ratios)
-
-    if not ratios_data_list:
-        return pd.DataFrame()
-
-    ratios_df = pd.DataFrame(ratios_data_list).set_index("Period")
-    return ratios_df.sort_index(ascending=False)
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_key_ratios_python(
+        financials_df, balance_sheet_df, cashflow_df, periods_per_year, prices_df
+    )
 
 
 # Statement lookups the ratio history makes, by investa_core.key_ratios slot:
@@ -934,7 +398,13 @@ _RATIO_LOOKUPS = [
     ("prev_fin", "Total Revenue"), ("prev_fin", "Diluted EPS"),
 ]  # fmt: skip
 # The fields the original may leave as None (the rest are np.nan when missing).
-_RATIO_OPTIONAL = {"Total Revenue", "Operating Income", "Net Income", "Diluted EPS", "Price"}
+_RATIO_OPTIONAL = {
+    "Total Revenue",
+    "Operating Income",
+    "Net Income",
+    "Diluted EPS",
+    "Price",
+}
 _RATIO_FIELDS = investa_core.key_ratio_fields()
 
 
@@ -948,61 +418,26 @@ def _numeric_statement(df: Optional[pd.DataFrame]) -> bool:
     or columns make `.loc` return a Series, and text cells can make `float()`
     raise; those frames keep the original code.
     """
-    if df is None or df.empty:
-        return True
-    if not (df.index.is_unique and df.columns.is_unique):
-        return False
-    for dtype, column in zip(df.dtypes, df.columns):
-        if isinstance(dtype, np.dtype) and dtype.kind in "fiub":
-            continue
-        if not (isinstance(dtype, np.dtype) and dtype.kind == "O"):
-            return False
-        for v in df[column].tolist():
-            if v is None or isinstance(v, (bool, int, float, np.number)) or v is pd.NA:
-                continue
-            return False
-    return True
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_numeric_statement(df)
 
 
-class _StatementLookup:
-    """`_get_statement_value` for one numeric frame, resolved a row at a time:
-    the label's value, else the first of its aliases that has one."""
-
-    def __init__(self, df: pd.DataFrame):
-        self.rows = {label: i for i, label in enumerate(df.index)}
-        self.columns = {label: j for j, label in enumerate(df.columns)}
-        values = df.to_numpy(dtype=object)
-        self.matrix = np.array(
-            [[np.nan if v is None or pd.isna(v) else float(v) for v in row] for row in values],
-            dtype=np.float64,
-        ).reshape(values.shape)
-        self._resolved: Dict[str, np.ndarray] = {}
-
-    def row(self, item: str) -> np.ndarray:
-        if item not in self._resolved:
-            out = np.full(self.matrix.shape[1], np.nan)
-            chain = [item] + [a for a in STATEMENT_ALIASES.get(item, []) if a != item]
-            for label in chain:
-                if label in self.rows:
-                    values = self.matrix[self.rows[label]]
-                    fill = np.isnan(out) & ~np.isnan(values)
-                    out[fill] = values[fill]
-            self._resolved[item] = out
-        return self._resolved[item]
-
-    def get(self, item: str, column: Any) -> float:
-        """The value, NaN for None."""
-        return self.row(item)[self.columns[column]]
+# `_get_statement_value` for one numeric frame, resolved a row at a time: the
+# label's value, else the first of its aliases that has one.
+# Ported to Rust: rust/investa_core/src/fr.rs
+_StatementLookup = investa_core.StatementLookup
 
 
 def _period_columns(df: pd.DataFrame) -> List[Tuple[Any, Any]]:
     """(parsed date, column) in column order, parsed one column at a time as the
     original's `pd.to_datetime(col, errors="coerce") == period` does."""
-    return [(pd.to_datetime(col, errors="coerce"), col) for col in df.columns]
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_period_columns(df)
 
 
 def _first_column(columns: List[Tuple[Any, Any]], period: Any) -> Any:
-    return next((col for parsed, col in columns if parsed == period), None)
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_first_column(columns, period)
 
 
 def calculate_key_ratios_timeseries(
@@ -1024,104 +459,10 @@ def calculate_key_ratios_timeseries(
     arithmetic runs in investa_core.key_ratios; frames with duplicate labels
     or non-numeric cells take the original code (`_key_ratios_python`).
     """
-    if not all(_numeric_statement(df) for df in (financials_df, balance_sheet_df, cashflow_df)):
-        return _key_ratios_python(
-            financials_df, balance_sheet_df, cashflow_df, periods_per_year, prices_df
-        )
-    if (
-        financials_df is None
-        or financials_df.empty
-        or balance_sheet_df is None
-        or balance_sheet_df.empty
-    ):
-        logging.warning(
-            "Financials or Balance Sheet data is missing/empty. Cannot calculate historical ratios."
-        )
-        return pd.DataFrame()
-
-    try:
-        fin_periods_dt = pd.to_datetime(financials_df.columns, errors="coerce").dropna()
-        bs_periods_dt = pd.to_datetime(
-            balance_sheet_df.columns, errors="coerce"
-        ).dropna()
-
-        if fin_periods_dt.empty or bs_periods_dt.empty:
-            logging.warning(
-                "No valid period columns found in financial statements for ratio calculation."
-            )
-            return pd.DataFrame()
-
-        common_periods_dt = sorted(
-            list(set(fin_periods_dt).intersection(set(bs_periods_dt)))
-        )
-
-    except Exception as e:
-        logging.error(f"Could not parse period columns for ratio calculation: {e}")
-        return pd.DataFrame()
-
-    if not common_periods_dt:
-        logging.warning(
-            "No common periods found between income statement and balance sheet for ratio calculation."
-        )
-        return pd.DataFrame()
-
-    has_cashflow = cashflow_df is not None and not cashflow_df.empty
-    frames = {
-        "fin": _StatementLookup(financials_df),
-        "bs": _StatementLookup(balance_sheet_df),
-        "cf": _StatementLookup(cashflow_df) if has_cashflow else None,
-    }
-    fin_columns = _period_columns(financials_df)
-    bs_columns = _period_columns(balance_sheet_df)
-    cf_columns = _period_columns(cashflow_df) if has_cashflow else []
-
-    periods, inputs, flags = [], [], []
-    for i, period_dt in enumerate(common_periods_dt):
-        period_str_fin = _first_column(fin_columns, period_dt)
-        period_str_bs = _first_column(bs_columns, period_dt)
-        if not period_str_fin or not period_str_bs:
-            logging.debug(
-                f"Skipping period {period_dt.strftime('%Y-%m-%d')} due to missing original column name match."
-            )
-            continue
-        period_str_cf = _first_column(cf_columns, period_dt) if has_cashflow else None
-        prev_bs = prev_fin = None
-        if i >= periods_per_year:
-            prev_dt = common_periods_dt[i - periods_per_year]
-            prev_bs = _first_column(bs_columns, prev_dt)
-            prev_fin = _first_column(fin_columns, prev_dt)
-        columns = {
-            "fin": period_str_fin,
-            "bs": period_str_bs,
-            "cf": period_str_cf,
-            "prev_bs": prev_bs or None,
-            "prev_fin": prev_fin or None,
-        }
-        row = []
-        for statement, item in _RATIO_LOOKUPS:
-            column = columns[statement]
-            frame = frames[statement.replace("prev_", "")]
-            row.append(np.nan if frame is None or column is None else frame.get(item, column))
-        price = _price_on_or_before(prices_df, period_dt)
-        row.append(np.nan if price is None else float(price))
-        periods.append(period_dt)
-        inputs.append(row)
-        flags.append((columns["prev_bs"] is not None, columns["prev_fin"] is not None, period_str_cf is not None))
-
-    if not periods:
-        return pd.DataFrame()
-
-    ratios_data_list: List[Dict] = []
-    for period_dt, values in zip(periods, investa_core.key_ratios(inputs, flags)):
-        current_ratios: Dict[str, Any] = {"Period": period_dt}
-        for field, value in zip(_RATIO_FIELDS, values):
-            current_ratios[field] = (
-                value if value is not None or field in _RATIO_OPTIONAL else np.nan
-            )
-        ratios_data_list.append(current_ratios)
-
-    ratios_df = pd.DataFrame(ratios_data_list).set_index("Period")
-    return ratios_df.sort_index(ascending=False)
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_key_ratios_timeseries(
+        financials_df, balance_sheet_df, cashflow_df, periods_per_year, prices_df
+    )
 
 
 _HISTORICAL_MULTIPLE_COLUMNS = {
@@ -1149,39 +490,10 @@ def historical_mean_multiples(
     Returns `{}` for any multiple without enough usable history. Callers must
     treat that as a refusal, not as a cue to substitute the current multiple.
     """
-    if prices_df is None:
-        return {}
-    try:
-        ratios = calculate_key_ratios_timeseries(
-            financials_df, balance_sheet_df, cashflow_df, prices_df=prices_df
-        )
-    except Exception as e:
-        logging.debug(f"historical_mean_multiples: ratio timeseries failed: {e}")
-        return {}
-    if ratios is None or ratios.empty:
-        return {}
-
-    out: Dict[str, Dict[str, Any]] = {}
-    for key, column in _HISTORICAL_MULTIPLE_COLUMNS.items():
-        if column not in ratios.columns:
-            continue
-        series = pd.to_numeric(ratios[column], errors="coerce").dropna()
-        low, high = HISTORICAL_MULTIPLE_BANDS[key]
-        usable = series[(series >= low) & (series <= high)]
-        if len(usable) < HISTORICAL_MULTIPLE_MIN_OBSERVATIONS:
-            continue
-
-        periods = [str(p)[:4] for p in usable.index]
-        span = f"{min(periods)}-{max(periods)}" if periods else ""
-        out[key] = {
-            "value": investa_core.np_median(usable.values.tolist()),
-            "n": int(len(usable)),
-            "span": span,
-            "low": investa_core.np_percentile(usable.values.tolist(), 25.0),
-            "high": investa_core.np_percentile(usable.values.tolist(), 75.0),
-            "dropped": int(len(series) - len(usable)),
-        }
-    return out
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_historical_mean_multiples(
+        financials_df, balance_sheet_df, cashflow_df, prices_df
+    )
 
 
 def load_price_history_for_multiples(
@@ -1192,22 +504,8 @@ def load_price_history_for_multiples(
     Best-effort: the historical multiples are the only thing that needs it, and
     those models refuse cleanly when it is missing.
     """
-    try:
-        from datetime import timedelta
-
-        from utils_time import get_est_today
-
-        end = get_est_today()
-        hist, _ = mdp.get_historical_data(
-            [yf_symbol], end - timedelta(days=365 * years + 30), end
-        )
-        if hist and yf_symbol in hist:
-            frame = hist[yf_symbol]
-            if frame is not None and len(frame):
-                return frame
-    except Exception as e:
-        logging.debug(f"Price history unavailable for {yf_symbol}: {e}")
-    return None
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_load_price_history_for_multiples(mdp, yf_symbol, years)
 
 
 def calculate_current_valuation_ratios(
@@ -1216,51 +514,10 @@ def calculate_current_valuation_ratios(
     balance_sheet_df_latest_annual: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Optional[float]]:
     """Calculates point-in-time valuation ratios."""
-    ratios: Dict[str, Optional[float]] = {
-        "P/E Ratio (TTM)": np.nan,
-        "Forward P/E Ratio": np.nan,
-        "Price-to-Sales (P/S) Ratio (TTM)": np.nan,
-        "Price-to-Book (P/B) Ratio (MRQ)": np.nan,
-        "Dividend Yield (%)": np.nan,
-        "Enterprise Value to EBITDA": np.nan,
-    }
-    if not ticker_info:
-        return ratios
-
-    current_price = ticker_info.get("currentPrice") or ticker_info.get(
-        "regularMarketPrice"
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_current_valuation_ratios(
+        ticker_info, financials_df_latest_annual, balance_sheet_df_latest_annual
     )
-    market_cap = ticker_info.get("marketCap")
-
-    ratios["P/E Ratio (TTM)"] = ticker_info.get("trailingPE")
-    ratios["Forward P/E Ratio"] = ticker_info.get("forwardPE")
-    if ticker_info.get("dividendYield") is not None:
-        ratios["Dividend Yield (%)"] = ticker_info["dividendYield"]
-
-    trailing_revenue = ticker_info.get(
-        "totalRevenue"
-    )  # yfinance info often has 'totalRevenue' for TTM
-    if market_cap and trailing_revenue and trailing_revenue != 0:
-        ratios["Price-to-Sales (P/S) Ratio (TTM)"] = market_cap / trailing_revenue
-
-    book_value_per_share = ticker_info.get("bookValue")
-    if current_price and book_value_per_share and book_value_per_share != 0:
-        ratios["Price-to-Book (P/B) Ratio (MRQ)"] = current_price / book_value_per_share
-    elif (
-        market_cap
-        and balance_sheet_df_latest_annual is not None
-        and not balance_sheet_df_latest_annual.empty
-    ):
-        # Fallback to marketCap / latest total equity if bookValue per share is not available
-        latest_bs_period = balance_sheet_df_latest_annual.columns[0]
-        total_equity_latest = _get_statement_value(
-            balance_sheet_df_latest_annual, "Total Stockholder Equity", latest_bs_period
-        )
-        if total_equity_latest and total_equity_latest != 0:
-            ratios["Price-to-Book (P/B) Ratio (MRQ)"] = market_cap / total_equity_latest
-
-    ratios["Enterprise Value to EBITDA"] = ticker_info.get("enterpriseToEbitda")
-    return ratios
 
 
 def calculate_wacc(
@@ -1279,83 +536,15 @@ def calculate_wacc(
     are at market value. The inputs are read here and the arithmetic runs in
     Rust (investa_core.wacc).
     """
-    try:
-        raw_beta = ticker_info.get("beta")
-        if raw_beta is None or pd.isna(raw_beta):
-            logging.debug(f"Beta missing for {ticker_info.get('symbol')}, using 1.0")
-            raw_beta = None
-
-        total_debt = ticker_info.get("totalDebt")
-        if (
-            total_debt is None
-            and balance_sheet_df is not None
-            and not balance_sheet_df.empty
-        ):
-            total_debt = _get_statement_value(
-                balance_sheet_df, "Total Debt", balance_sheet_df.columns[0]
-            )
-
-        interest_expense = income_tax_expense = pretax_income = None
-        operating_income = None
-        have_statements = financials_df is not None and not financials_df.empty
-        if have_statements:
-            latest_period = financials_df.columns[0]
-            interest_expense = _get_statement_value(
-                financials_df, "Interest Expense", latest_period
-            )
-            income_tax_expense = _get_statement_value(
-                financials_df, "Tax Provision", latest_period
-            )
-            pretax_income = _get_statement_value(
-                financials_df, "Pretax Income", latest_period
-            )
-            operating_income = _get_statement_value(
-                financials_df, "Operating Income", latest_period
-            )
-
-        (wacc, cost_of_equity, cost_of_debt, tax_rate, beta, size_premium, weights) = (
-            investa_core.wacc(
-                _opt_number(raw_beta),
-                float(risk_free_rate),
-                float(market_return),
-                float(default_tax_rate),
-                _opt_number(ticker_info.get("marketCap")),
-                _opt_number(total_debt),
-                have_statements,
-                _opt_number(interest_expense),
-                _opt_number(income_tax_expense),
-                _opt_number(pretax_income),
-                _opt_number(operating_income),
-                MAX_COST_OF_DEBT,
-                MIN_DISCOUNT_RATE,
-                MAX_DISCOUNT_RATE,
-                [(float(t), float(p)) for t, p in SIZE_PREMIUM_BANDS],
-            )
-        )
-
-        if weights is None:
-            return {
-                "wacc": wacc,
-                "cost_of_equity": cost_of_equity,
-                "beta": beta,
-                "size_premium": size_premium,
-                "method": "Cost of Equity (No Market Cap)",
-            }
-        weight_equity, weight_debt = weights
-        return {
-            "wacc": wacc,
-            "cost_of_equity": cost_of_equity,
-            "cost_of_debt": cost_of_debt,
-            "tax_rate": tax_rate,
-            "weight_equity": weight_equity,
-            "weight_debt": weight_debt,
-            "beta": beta,
-            "size_premium": size_premium,
-            "method": "WACC",
-        }
-    except Exception as e:
-        logging.error(f"Error calculating WACC: {e}")
-        return {"wacc": 0.10, "method": "Default (10%) due to error"}
+    # Ported to Rust: rust/investa_core/src/fr.rs
+    return investa_core.fr_calculate_wacc(
+        ticker_info,
+        financials_df,
+        balance_sheet_df,
+        risk_free_rate,
+        market_return,
+        default_tax_rate,
+    )
 
 
 def estimate_growth_rate(
@@ -1696,7 +885,9 @@ def estimate_fcf_margin(
 
         revenues, fcfs = [], []
         for col in common_cols[-years:]:  # Look at last N years
-            revenues.append(_opt_number(_get_statement_value(financials_df, "Total Revenue", col)))
+            revenues.append(
+                _opt_number(_get_statement_value(financials_df, "Total Revenue", col))
+            )
             fcfs.append(_opt_number(_extract_fcf_from_statement(cashflow_df, col)))
 
         # Loss-making years are kept; only implausible magnitudes are excluded.
@@ -1749,7 +940,9 @@ def through_cycle_fcf_margin(
                 key=lambda c: pd.to_datetime(c, errors="coerce"),
             )
             for col in common[-years:]:
-                revenue = _opt_number(_get_statement_value(financials_df, "Total Revenue", col))
+                revenue = _opt_number(
+                    _get_statement_value(financials_df, "Total Revenue", col)
+                )
                 fcf = _opt_number(_extract_fcf_from_statement(cashflow_df, col))
                 revenues.append(revenue)
                 fcfs.append(fcf)

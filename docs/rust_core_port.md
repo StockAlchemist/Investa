@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; then the rest of `financial_ratios` | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; then its growth, normalization, model and blend glue | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -802,6 +802,27 @@ Checks:
   - all 38 filers with quarterly facts;
   - 60 companyfacts documents from the real bulk archive, through both parsers.
   - The port took 15.7 s against 16.3 s.
+
+## Phase 15h (26 Oct 2026): the `financial_ratios` statement and ratio glue
+
+The first block of what `financial_ratios` still ran in Python now runs in Rust (`fr.rs`):
+- statement lookups with their aliases, and free cash flow from a statement;
+- trailing-twelve-month columns, with their consecutive-window check;
+- the point-in-time price;
+- the ratio history: the resolved-lookup path, and the original cell-by-cell code it falls back to for duplicate labels and text cells;
+- historical multiples, the current valuation ratios, the WACC's input reading, and the price-history loader.
+
+`_StatementLookup` is now a Rust class, `investa_core.StatementLookup`, that fills its rows natively. The arithmetic kernels from phases 3 and 7 are called as the original called them.
+
+How it is done:
+- **Chained comparisons return their own object.** `_is_consecutive_window` hands back NumPy's `np.True_` when the quarter count is a NumPy integer, as `a <= b <= c` does in Python. The first draft returned Rust's `bool`, and the fuzz caught it.
+
+Checks:
+- **Parity:** random statements match the frozen original through every function in the block. They carry aliases, filed zeros, duplicate labels, text cells and missing columns. The quarterly frames have gaps and mistyped ends. Prices come as frames, as series (whose index the original rewrites in place, and still does), as dicts, and with aware indexes and dates. Profiles carry NaN, text and list betas. The inputs left behind match too.
+- **Real data:** 29,593 comparisons, all identical:
+  - 400 cached companies (Yahoo frames merged with SEC history, priced from the month-end panel);
+  - trailing twelve months and the quarterly ratio history for all 38 filers with quarterly facts.
+  - The port took 17.2 s against 17.1 s.
 
 ## Found while porting
 
