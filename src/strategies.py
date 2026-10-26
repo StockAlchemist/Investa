@@ -56,19 +56,17 @@ Both are returned, labelled, and the API never collapses them into one field.
 
 from __future__ import annotations
 
-import logging
 
 import investa_core
-import math
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta  # noqa: F401 -- read by the Rust port at call time
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
-from ai_review_scores import attach_ai_scores
-from buffett_rank import DEFAULT_AI_WEIGHT, blend_scores
-from utils_time import get_est_today
+from ai_review_scores import attach_ai_scores  # noqa: F401 -- read by the Rust port at call time
+from buffett_rank import DEFAULT_AI_WEIGHT, blend_scores  # noqa: F401 -- read by the Rust port at call time
+from utils_time import get_est_today  # noqa: F401 -- read by the Rust port at call time
 
 # How much history to pull for the signal. A 10-month average needs 10 completed
 # months plus the running one; the extra year makes the returned history chart
@@ -361,17 +359,8 @@ def month_end_closes(prices: pd.Series) -> pd.Series:
     Grouping by period and taking the last actual observation keeps both the
     value and its real date.
     """
-    clean = prices.dropna()
-    if clean.empty:
-        return clean
-    # Period arithmetic drops any timezone, and pandas warns about it. Nothing
-    # here needs the offset — a close belongs to the month its exchange dated
-    # it — so drop it explicitly rather than let the conversion do it noisily.
-    index = clean.index
-    if isinstance(index, pd.DatetimeIndex) and index.tz is not None:
-        clean = clean.copy()
-        clean.index = index.tz_localize(None)
-    return clean.groupby(clean.index.to_period("M")).tail(1)
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_month_end_closes(prices)
 
 
 def evaluate_trend_signal(
@@ -389,102 +378,22 @@ def evaluate_trend_signal(
     `today` decides which month is still running, so it is a *market* date, not
     the server's (see `MARKET_SIGNAL_TIMEZONE`).
     """
-    monthly = month_end_closes(prices)
-    if monthly.empty:
-        return None
-
-    today = today or get_est_today()
-    current_period = pd.Period(today, freq="M")
-
-    # Split the running month off: its last close is *not* a month-end yet, and
-    # treating it as one would let a mid-month price set the active signal.
-    periods = monthly.index.to_period("M")
-    completed = monthly[periods < current_period]
-    if len(completed) < sma_months:
-        return None
-
-    # The averages run in Rust (investa_core.trend_sma): the active SMA, the
-    # provisional one, the flip price and the per-month history.
-    latest_close = float(prices.dropna().iloc[-1])
-    sma, provisional_sma, flip_close, smas = investa_core.trend_sma(
-        completed.to_numpy(dtype=float).tolist(), int(sma_months), latest_close
-    )
-    decision_close = float(completed.iloc[-1])
-    decision_stamp = completed.index[-1]
-    state = "in" if decision_close >= sma else "out"
-
-    # Provisional: replace the oldest month of the window with the running
-    # month's latest close, which is what the comparison will use if the month
-    # ended right now.
-    latest_stamp = prices.dropna().index[-1]
-    provisional_state = "in" if latest_close >= provisional_sma else "out"
-
-    # The close at which the next decision flips. Solving
-    #   p = (sum(previous sma_months-1 month-ends) + p) / sma_months
-    # for p gives the mean of the *other* months in the window — the price at
-    # which today's close equals the average that includes it.
-    distance_pct = (latest_close / flip_close - 1.0) * 100.0 if flip_close else None
-
-    history = [
-        {
-            "date": str(stamp.date() if hasattr(stamp, "date") else stamp),
-            "close": float(close),
-            "sma": smas[i],
-        }
-        for i, (stamp, close) in enumerate(completed.items())
-    ][-36:]
-
-    return {
-        "state": state,
-        "sma_months": sma_months,
-        # The month-end that set the active signal, and the month it governs.
-        "decision_date": str(
-            decision_stamp.date() if hasattr(decision_stamp, "date") else decision_stamp
-        ),
-        "decision_close": decision_close,
-        "sma": sma,
-        "governs_month": str(current_period),
-        "provisional_state": provisional_state,
-        "provisional_sma": provisional_sma,
-        "latest_close": latest_close,
-        "latest_date": str(
-            latest_stamp.date() if hasattr(latest_stamp, "date") else latest_stamp
-        ),
-        # What the next month-end close has to do to change the answer.
-        "flip_close": flip_close,
-        "distance_pct": distance_pct,
-        "would_flip": provisional_state != state,
-        "next_decision_date": str(_next_month_end(today)),
-        "history": history,
-    }
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_evaluate_trend_signal(prices, sma_months, today)
 
 
 def _next_month_end(today: date) -> date:
     """Calendar month-end for `today`'s month (the next decision point)."""
-    if today.month == 12:
-        return date(today.year, 12, 31)
-    return date(today.year, today.month + 1, 1) - timedelta(days=1)
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_next_month_end(today)
 
 
 def load_signal_prices(
     symbol: str, today: Optional[date] = None
 ) -> Optional[pd.Series]:
     """Daily closes for the signal symbol, via the shared market-data provider."""
-    from server.route_utils import get_mdp
-
-    today = today or get_est_today()
-    start = today - timedelta(days=_SIGNAL_LOOKBACK_DAYS)
-    try:
-        history, _ = get_mdp().get_historical_data([symbol], start, today)
-    except Exception as exc:
-        logging.error(f"Strategies: price fetch failed for {symbol}: {exc}")
-        return None
-
-    frame = history.get(symbol)
-    if frame is None or frame.empty or "price" not in frame.columns:
-        return None
-    series = frame["price"].dropna()
-    return series if not series.empty else None
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_load_signal_prices(symbol, today)
 
 
 def latest_closes(
@@ -497,29 +406,8 @@ def latest_closes(
     quote API: the quote path needs a user's symbol map and exclusion set,
     which an ETF ticker in a fixed rule has no business depending on.
     """
-    from server.route_utils import get_mdp
-
-    today = today or get_est_today()
-    wanted = sorted({s for s in symbols if s})
-    if not wanted:
-        return {}
-    try:
-        history, _ = get_mdp().get_historical_data(
-            [*wanted], today - timedelta(days=14), today
-        )
-    except Exception as exc:
-        logging.warning(f"Strategies: quote fetch failed for {wanted}: {exc}")
-        return {}
-
-    prices: Dict[str, float] = {}
-    for symbol in wanted:
-        frame = history.get(symbol)
-        if frame is None or frame.empty or "price" not in frame.columns:
-            continue
-        series = frame["price"].dropna()
-        if not series.empty:
-            prices[symbol] = float(series.iloc[-1])
-    return prices
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_latest_closes(symbols, today)
 
 
 def market_trend_signal(
@@ -537,26 +425,11 @@ def market_trend_signal(
     self-describing wherever it is read — and so the panel that shows several of
     these side by side names each market the same way in every client.
     """
-    prices = load_signal_prices(symbol, today)
-    if prices is None:
-        return None
-    signal = evaluate_trend_signal(prices, sma_months, today)
-    if signal is None:
-        return None
-    signal["signal_symbol"] = symbol
-    signal["signal_name"] = _SIGNAL_DISPLAY_NAMES.get(symbol.upper(), symbol)
-    # Every date in the payload is a market date; say which market's clock they
-    # were read on so a client cannot re-reckon them against a device timezone.
-    signal["market_timezone"] = MARKET_SIGNAL_TIMEZONE
-    # Stated in the payload so a client cannot present the indicator as a
-    # trading rule the backend is standing behind.
-    signal["advisory_only"] = True
-    return signal
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_market_trend_signal(symbol, sma_months, today)
 
 
 # --- turning a strategy into positions --------------------------------------
-
-
 def _ranking_positions(
     sleeve: RankingSleeve,
     capital: float,
@@ -585,144 +458,21 @@ def _ranking_positions(
     cached market-data path), with the snapshot close as the fallback so a
     quote outage degrades to the old behaviour rather than to no answer.
     """
-    from buffett_store import get_store
-
-    run = get_store().get_run()
-    if not run:
-        return {"positions": [], "run": None, "error": "No completed ranking run yet"}
-
-    frame = get_store().get_scores_frame(run["run_id"])
-    if frame is None or frame.empty:
-        return {"positions": [], "run": run, "error": "Ranking run has no scores"}
-
-    weight = sleeve.ai_weight if ai_weight is None else ai_weight
-    frame = attach_ai_scores(frame)
-
-    if sleeve.min_market_cap and "market_cap" in frame.columns:
-        caps = pd.to_numeric(frame["market_cap"], errors="coerce")
-        frame = frame[caps >= sleeve.min_market_cap]
-        if frame.empty:
-            return {
-                "positions": [],
-                "run": run,
-                "error": f"No companies meet the minimum market cap of ${sleeve.min_market_cap:,.0f}",
-            }
-
-    # A company with no value score keeps its quality score, and one with no
-    # AI review keeps its quality/value score — neither gap counts against it.
-    blended = blend_scores(frame, sleeve.quality_weight, weight)
-
-    picked = _apply_sector_cap(frame, blended, sleeve)
-    per_position = capital / sleeve.top_n if sleeve.top_n else 0.0
-
-    symbols = [str(row["symbol"]) for _, row in picked.iterrows()]
-    live = latest_closes(symbols, today)
-
-    positions = []
-    live_count = 0
-    for _, row in picked.iterrows():
-        symbol = str(row["symbol"])
-        snapshot_price = row.get("price")
-        snapshot_price = (
-            float(snapshot_price)
-            if snapshot_price is not None and not pd.isna(snapshot_price)
-            else None
-        )
-        quoted = live.get(symbol)
-        price = quoted if (quoted and quoted > 0) else snapshot_price
-        if quoted and quoted > 0:
-            live_count += 1
-        shares = math.floor(per_position / price) if price and price > 0 else None
-        positions.append(
-            {
-                "symbol": symbol,
-                "name": row.get("name"),
-                "role": "stock",
-                "weight": 1.0 / sleeve.top_n if sleeve.top_n else 0.0,
-                "amount": per_position,
-                "price": price,
-                "shares": shares,
-                "cost": (shares * price) if (shares and price) else None,
-                "score": float(row["_score"]),
-                "industry": row.get("_industry"),
-                # The review's own 1-10 mean, or None when the company has not
-                # been reviewed — so a client can mark the names the AI term
-                # did not touch.
-                "ai_rating": _optional_float(row.get("ai_rating")),
-            }
-        )
-
-    # Stated rather than implied: a client showing share counts should be able
-    # to say whether they came from today's market or from a stored close.
-    if not positions or live_count == 0:
-        price_source = "snapshot"
-    elif live_count == len(positions):
-        price_source = "live"
-    else:
-        price_source = "mixed"
-
-    return {
-        "positions": positions,
-        "run": run,
-        "error": None,
-        "price_source": price_source,
-        "ai_weight": weight,
-    }
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_ranking_positions(sleeve, capital, today, ai_weight)
 
 
 def _optional_float(value: Any) -> Optional[float]:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return None if math.isnan(number) else number
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_optional_float(value)
 
 
 def _apply_sector_cap(
     frame: pd.DataFrame, scores: pd.Series, sleeve: RankingSleeve
 ) -> pd.DataFrame:
     """Walk the ranked list, skipping a name once its industry is full."""
-    import edgar_sic
-
-    order = scores.sort_values(ascending=False).index
-    try:
-        sic_map = edgar_sic.get_sic_map()
-    except Exception as exc:
-        logging.warning(
-            f"Strategies: SIC map unavailable, industry cap disabled: {exc}"
-        )
-        sic_map = {}
-
-    codes: Dict[Any, str] = {}
-    for index, cik in frame["cik"].items():
-        try:
-            key = str(int(float(cik))).zfill(10)
-        except (TypeError, ValueError):
-            continue
-        sic = sic_map.get(key)
-        if sic is not None:
-            codes[index] = str(int(sic)).zfill(4)
-
-    counts: Dict[str, int] = {}
-    picked: List[Any] = []
-    for index in order:
-        if pd.isna(scores.get(index)):
-            continue
-        full = codes.get(index, "")
-        # An unclassified company is its own industry rather than lumped with
-        # every other unclassified name, which would cap them against each other.
-        group = full[: sleeve.sector_digits] if full else f"?{index}"
-        if sleeve.max_per_sector and counts.get(group, 0) >= sleeve.max_per_sector:
-            continue
-        counts[group] = counts.get(group, 0) + 1
-        picked.append(index)
-        if len(picked) == sleeve.top_n:
-            break
-
-    result = frame.loc[picked].copy()
-    result["_score"] = scores.loc[picked]
-    result["_industry"] = [_industry_label(codes.get(i, "")) for i in picked]
-    return result
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_apply_sector_cap(frame, scores, sleeve)
 
 
 # Major-group labels for the industries the ranking actually surfaces. Display
@@ -776,9 +526,8 @@ _SIC_EXACT = {
 
 
 def _industry_label(sic: str) -> str:
-    if not sic:
-        return "Unclassified"
-    return _SIC_EXACT.get(sic) or _SIC_GROUPS.get(sic[:2], "Other")
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_industry_label(sic)
 
 
 # How old the ranking snapshot may get before the allocation says so. The
@@ -792,13 +541,8 @@ def ranking_age_days(
     finished_at: Optional[str], today: Optional[date] = None
 ) -> Optional[int]:
     """Whole days between a run's completion and `today`, or None if unparseable."""
-    if not finished_at:
-        return None
-    try:
-        finished = datetime.fromisoformat(str(finished_at)).date()
-    except (TypeError, ValueError):
-        return None
-    return max((today or date.today()) - finished, timedelta(0)).days
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_ranking_age_days(finished_at, today)
 
 
 def build_allocation(
@@ -835,82 +579,13 @@ def build_allocation(
     `ai_weight` overrides the strategy's AI-review weight for this request;
     None keeps the strategy's own.
     """
-    warnings: List[str] = []
-    built = _ranking_positions(strategy.ranking, capital, today, ai_weight)
-    applied_ai_weight = built.get(
-        "ai_weight",
-        strategy.ranking.ai_weight if ai_weight is None else ai_weight,
-    )
-    if built["error"]:
-        warnings.append(built["error"])
-
-    run = built["run"] or {}
-    ranked_at = run.get("finished_at")
-    age_days = ranking_age_days(ranked_at, today)
-    if age_days is not None and age_days >= STALE_RANKING_DAYS:
-        warnings.append(
-            f"Ranking snapshot is {age_days} days old (last run {str(ranked_at)[:10]}). "
-            "The daily worker may not be running — refresh with "
-            "`python src/buffett_rank_worker.py` before acting on this list."
-        )
-
-    positions = built["positions"]
-    wanted = strategy.ranking.top_n
-    allocated = sum(p["amount"] for p in positions)
-    if positions and len(positions) < wanted:
-        warnings.append(
-            f"The ranking produced only {len(positions)} of the {wanted} names this "
-            f"rule calls for, so ${capital - allocated:,.0f} of ${capital:,.0f} is "
-            "unallocated. Weights are deliberately left at the rule's "
-            f"{1.0 / wanted:.1%} rather than spread over a shorter list. Check that "
-            "the last ranking run covered the whole universe."
-        )
-
-    sleeves = [
-        {
-            "key": "ranking",
-            "label": _sleeve_label(strategy.ranking, applied_ai_weight),
-            "weight": 1.0,
-            "amount": capital,
-            # What the rule asked for against what the ranking could supply, so a
-            # client can show the gap without recounting the positions itself.
-            "positions_requested": wanted,
-            "positions_filled": len(positions),
-            "amount_allocated": allocated,
-            "positions": positions,
-            "run_id": run.get("run_id"),
-            "ranked_at": ranked_at,
-            "price_source": built.get("price_source", "snapshot"),
-        }
-    ]
-
-    return {
-        "strategy_id": strategy.id,
-        "name": strategy.name,
-        "capital": capital,
-        # A market date (the day the quotes are from), so the market's clock —
-        # not the server's, which in Bangkok is up to a day ahead.
-        "as_of": str(today or get_est_today()),
-        "ranking_age_days": age_days,
-        "ranking_is_stale": bool(
-            age_days is not None and age_days >= STALE_RANKING_DAYS
-        ),
-        "is_short": bool(positions and len(positions) < wanted),
-        # The AI-review weight this answer was built with, so a client showing
-        # a picker can confirm the server applied the choice.
-        "ai_weight": applied_ai_weight,
-        "sleeves": sleeves,
-        "warnings": warnings,
-    }
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_build_allocation(strategy, capital, today, ai_weight)
 
 
 def _sleeve_label(sleeve: RankingSleeve, ai_weight: float) -> str:
-    parts = [f"top {sleeve.top_n}", f"{sleeve.quality_weight:.0%} quality"]
-    if ai_weight > 0:
-        # The review is blended over the quality/value score, so it reads as a
-        # share of the final score rather than a third weight summing with them.
-        parts.append(f"AI review {ai_weight:.0%} of the score")
-    return f"Quality sleeve ({', '.join(parts)})"
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_sleeve_label(sleeve, ai_weight)
 
 
 # Shown beside a strategy while the AI review carries weight: the backtest
@@ -924,24 +599,5 @@ AI_BACKTEST_CAVEAT = (
 
 def strategy_payload(strategy: Strategy) -> Dict[str, Any]:
     """Serialisable description of a strategy, without touching market data."""
-    return {
-        "id": strategy.id,
-        "name": strategy.name,
-        "summary": strategy.summary,
-        "sleeves": strategy.sleeves,
-        "backtest": strategy.backtest,
-        "risks": list(strategy.risks),
-        "is_default": strategy.id == DEFAULT_STRATEGY_ID,
-        "ranking": {
-            "quality_weight": strategy.ranking.quality_weight,
-            "top_n": strategy.ranking.top_n,
-            "max_per_sector": strategy.ranking.max_per_sector,
-            "sector_digits": strategy.ranking.sector_digits,
-            "min_market_cap": strategy.ranking.min_market_cap,
-            "ai_weight": strategy.ranking.ai_weight,
-            # Its own field rather than a risk, because the reader can switch the
-            # AI term off per request — the note applies only while it is on.
-            "ai_note": AI_BACKTEST_CAVEAT,
-            "rebalance": "Each January",
-        },
-    }
+    # Ported to Rust: rust/investa_core/src/st.rs
+    return investa_core.st_strategy_payload(strategy)

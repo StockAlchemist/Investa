@@ -44,6 +44,7 @@ pub mod ratios;
 pub mod records;
 pub mod sql;
 pub mod sqlite_read;
+pub mod st;
 pub mod stats;
 pub mod tr;
 pub mod util;
@@ -401,5 +402,19 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tr::tr_bands, m)?)?;
     m.add_function(wrap_pyfunction!(tr::tr_stress, m)?)?;
     m.add_function(wrap_pyfunction!(tr::tr_build, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_month_end_closes, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_next_month_end, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_evaluate_trend_signal, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_load_signal_prices, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_latest_closes, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_market_trend_signal, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_optional_float, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_industry_label, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_apply_sector_cap, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_ranking_positions, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_ranking_age_days, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_sleeve_label, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_build_allocation, m)?)?;
+    m.add_function(wrap_pyfunction!(st::st_strategy_payload, m)?)?;
     Ok(())
 }

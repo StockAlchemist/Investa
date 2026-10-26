@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; then `strategies`, the `buffett_*` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; then the `buffett_*` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -745,8 +745,19 @@ The stock window's track record now runs in Rust (`tr.rs`): the pillars' metrics
   - It also covers `build` with each stage faked to succeed or fail.
 - **Real data:** 60 real companies' complete track records are identical.
 
+## Phase 15c (26 Oct 2026): `strategies`
+
+The market-trend indicator and the strategy allocation now run in Rust (`st.rs`): month-end closes and both moving-average readings, the signal prices, the ranked positions under the industry cap with live quotes, the allocation with its stale-snapshot and short-book warnings, and the payloads.
+- **What stays Python:** the strategy registry and its dataclasses. They are definitions, not calculation.
+- The SMA arithmetic was already Rust. The text is formatted with Python's `format()`, and `attach_ai_scores`, `blend_scores` and the clock are read off `strategies` at call time.
+- **Parity:**
+  - The fuzz runs the trend readings over random histories, naive and zoned, too short, mid-month and month-end.
+  - It runs every strategy's allocation through fake quote, ranking and SIC sources. Those cover NaN scores, missing and text prices and CIKs, failing quotes, stale, missing and unparsable runs, short books, and every AI-weight override.
+- **Real data:** all six strategies at three AI weights (18 allocations) and the SPY and QQQ trend signals are identical, with the real ranking store and live quotes.
+
 ## Found while porting
 
+- **The ranking's age is counted on the server's clock** (not changed). `strategies.ranking_age_days` defaults `today` to `date.today()`, while the same allocation's `as_of` uses the market clock. On the Bangkok host a run finished late on a US day can read a day older than it is.
 - **Valuation bands use the server's clock and vanish on a leap day** (not changed). `valuation_history.bands` defaults `today` to `date.today()`, against the market-local-time rule. On 29 February, `today.replace(year=today.year - 15)` raises, the error is caught, and every company shows no bands that day.
 - **Two unbound variables in `calculate_historical_performance`** (not changed).
   - An account filter that leaves no transactions makes the date-range `try` fail before `full_end_date_tx` is set. A few lines later `max(..., full_end_date_tx + 1 day)` reads it, and the request raises `UnboundLocalError` instead of returning an empty history.
