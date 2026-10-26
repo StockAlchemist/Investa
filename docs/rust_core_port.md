@@ -53,7 +53,7 @@ The crate builds in four places:
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
-| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors **done**; (c) the holdings pass and FIFO **done**; (d) the summary rows and totals **done**; (e) `portfolio_logic` | In progress |
+| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
@@ -651,6 +651,21 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
   - A first cut of 13c was 15 ms slower in the FIFO shim. The cause was two things done per row: looking pandas functions up by a freshly built name, and calling `py.import` inside the holdings pass's per-row closure.
   - Binding `pd.isna`, `pd.notna` and `pd.to_numeric` once per call, and interning the method names, brought each ported function within 1–2 ms of the original.
 - All 1,464 tests pass.
+
+## Phase 13e (26 Oct 2026): `portfolio_logic`'s summary
+
+`calculate_portfolio_summary` and its helpers are now Rust (`pl_summary.rs`, `pl_helpers.rs`). That covers the transactions fingerprint, the default metrics, the published NAVs, the sector and geography enrichment, and the historical FX table. With 13a–d, the whole `/summary` calculation is Rust from the loaded ledger onwards. `portfolio_logic.py` is down to 668 lines, most of them re-exports and the `__main__` block.
+- **It orchestrates Python objects:** the market provider, the NAV store, pandas frames, and the FIFO cache under its lock (`mdb::with1`). So every call is Python's, in the original's order, including the sets whose iteration order depends on how they were filled.
+- Module state and siblings are looked up on `portfolio_logic` at call time. That covers `_FIFO_CACHE`, `SHORTABLE_SYMBOLS`, the clock functions and the analyzer functions it imports, so the tests and benchmarks that patch them still reach the patched one.
+- **One unavoidable difference.** The two `logging.error(traceback.format_exc())` lines print the caught exception's traceback, which has no frame for the summary function now that it is not Python. The exception line itself is unchanged.
+- **Parity:**
+  - 160 random summaries match the frozen original, each run twice so the FIFO cache is read as well as filled. They cover the whole seven-part result, the caller's frame afterwards, and the logs, with the elapsed-time line and the traceback bodies masked.
+  - The runs use a deterministic fake provider: critical and partial fetch errors, both Yahoo FX conventions, a currency with no history that takes the current-quote fallback, and metadata from the batch, the per-symbol fetch, or a failing service. A fake NAV store stands in for the real one.
+  - The ledgers cover every account-filter shape, transfer-source backfill, splits, "All Accounts" rows, a missing `original_index`, and manual overrides with valid, text and zero prices.
+  - Empty, missing and account-less inputs, and the helpers, are compared separately.
+- **Real data:** for all three books, with the real market provider, in USD and THB, with and without an account filter, the whole summary is identical. The original, run again, is stable, so the quotes did not move under the comparison.
+- **Speed:** `/summary` end to end is level with the Phase-13 Python: 359 vs 375 ms (kitmatan) and 288 vs 285 ms (dheematan). atchamatan's small book is 5–8 ms slower (119 vs 111–114 ms).
+- All 1,474 tests pass.
 
 ## Found while porting
 

@@ -108,3 +108,37 @@ pub fn setitem<'py>(
     drop(stack);
     r
 }
+
+/// `a, b, ... = item` for `n` names, with Python's unpacking errors.
+pub fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, PyAny>>> {
+    use pyo3::exceptions::{PyTypeError, PyValueError};
+    let it = match item.try_iter() {
+        Ok(it) => it,
+        Err(e) if e.is_instance_of::<PyTypeError>(item.py()) => {
+            return Err(PyTypeError::new_err(format!(
+                "cannot unpack non-iterable {} object",
+                item.get_type().name()?
+            )));
+        }
+        Err(e) => return Err(e),
+    };
+    let mut it = it;
+    let mut out = Vec::with_capacity(n);
+    while out.len() < n {
+        match it.next().transpose()? {
+            Some(v) => out.push(v),
+            None => {
+                return Err(PyValueError::new_err(format!(
+                    "not enough values to unpack (expected {n}, got {})",
+                    out.len()
+                )));
+            }
+        }
+    }
+    if it.next().transpose()?.is_some() {
+        return Err(PyValueError::new_err(format!(
+            "too many values to unpack (expected {n})"
+        )));
+    }
+    Ok(out)
+}
