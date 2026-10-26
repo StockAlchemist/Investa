@@ -29,6 +29,7 @@ pub mod pa_rows;
 pub mod pa_small;
 pub mod pc_flows;
 pub mod ph_daily;
+pub mod ph_performance;
 pub mod ph_small;
 pub mod ph_valuation;
 pub mod pl_helpers;
@@ -46,6 +47,7 @@ pub mod sqlite_read;
 pub mod stats;
 pub mod util;
 pub mod valuation;
+pub mod vh;
 
 use pyo3::prelude::*;
 
@@ -378,5 +380,15 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         ph_daily::ph_load_or_calculate_daily_results,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(
+        ph_performance::ph_historical_performance,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(vh::vh_percentile_of, m)?)?;
+    m.add_function(wrap_pyfunction!(vh::vh_describe_percentile, m)?)?;
+    m.add_function(wrap_pyfunction!(vh::vh_price_on_or_before, m)?)?;
+    m.add_function(wrap_pyfunction!(vh::vh_load_prices, m)?)?;
+    m.add_function(wrap_pyfunction!(vh::vh_observations, m)?)?;
+    m.add_function(wrap_pyfunction!(vh::vh_bands, m)?)?;
     Ok(())
 }

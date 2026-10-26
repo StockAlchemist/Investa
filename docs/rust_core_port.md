@@ -54,7 +54,7 @@ The crate builds in four places:
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
-| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers **done**; (c) input prep and daily valuation **done**; (d) accumulation and the daily results **done**; (e) `calculate_historical_performance` | In progress |
+| 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
@@ -717,8 +717,26 @@ Eight `portfolio_history` helpers are now Rust (`ph_small.rs`): price unadjustme
   - The cache's validation is covered too: a stale key, a newer CSV, a missing CSV and corrupt metadata.
 - **Real data:** all 18 calls the three books' daily and intraday histories make are identical, compared with the feather cache off.
 
+## Phase 14e (26 Oct 2026): `calculate_historical_performance`
+
+The history request itself is now Rust (`ph_performance.rs`). With 14a–d, the whole `/history` calculation runs in Rust from the loaded ledger onwards. `portfolio_history.py` is down to about 650 lines of signatures, docstrings and constants.
+- **What moved:**
+  - The split deduplication, the mappings, the date-range and clamp logic, and the L1 holdings.
+  - The daily price fetch, with the intraday bars merged after the daily history, and the leading-edge fill of every table back to the start.
+  - The daily results, the benchmark alignment (a 120 h tolerance across holiday weekends), the accumulation, and the status line with its TWR factor.
+- **It orchestrates the market provider and pandas,** so every call is Python's own, in the original's order. `get_shared_mdp`, the clock functions and every sibling are looked up on `portfolio_history` at call time.
+- **Two of the original's unbound-variable paths are kept** (see "Found while porting"). A direct test pins both.
+- **Parity:**
+  - 48 random requests through a deterministic fake provider match the frozen original: every interval, invalid intervals and date orders, benchmark lists of every shape, account filters that keep, empty or void the ledger, fetch failures, and benchmark frames that are missing, empty or lack a usable column.
+- **Real data:** for all three books, with the real market provider, the whole result (daily frame and status) is identical in 15 requests: all history daily, a year weekly in THB, IBKR monthly, five days hourly and one day at 5 minutes. The original, run again, is stable, so no live bar moved under the comparison.
+- All 1,561 tests pass.
+
 ## Found while porting
 
+- **Two unbound variables in `calculate_historical_performance`** (not changed).
+  - An account filter that leaves no transactions makes the date-range `try` fail before `full_end_date_tx` is set. A few lines later `max(..., full_end_date_tx + 1 day)` reads it, and the request raises `UnboundLocalError` instead of returning an empty history.
+  - A benchmark frame with no `price`/`Adj Close`/`Close` column reuses the previous benchmark's `bm_series`, so it draws the wrong benchmark. If it is the first benchmark, the request raises.
+  - The port keeps both, and `test_unbound_variable_quirks_match` pins them.
 - **The worker-failure log never shows the worker's error** (not changed). `_load_or_calculate_daily_results` logs `r.get('error_message', 'Unknown Error')`, but the worker stores the message under `worker_error_msg`, so the sample always reads "Unknown Error".
 - **The vectorized cash-flow pass writes to another tool's scratch file** (not changed). A transfer that neither the price history nor another trade can price appends `Missing price for transfer: <symbol>` to `/Users/kmatan/.gemini/antigravity/brain/19ed956f-…/scratch/missing_transfer_prices.txt`, a path left behind by a debugging session. The directory exists on this machine, so the server really does write there. The port keeps it, and the parity test captures the writes instead of making them. Removing it is a one-line change once you want it gone.
 - **A short holding's "Avg Cost (Local)" is the previous long holding's cost basis divided by the short quantity** (not changed). `_build_summary_rows` assigns `cost_basis_display_local` only in the long branch but reads it for every holding with a non-zero quantity. A short row therefore divides whatever the last long holding left behind, and a book whose first non-zero holding is short raises `UnboundLocalError` out of the summary. No real book holds a short, so no one has seen it. The port keeps both behaviours, and `test_short_holding_reads_the_previous_cost_basis` pins them.
