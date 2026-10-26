@@ -45,6 +45,7 @@ pub mod records;
 pub mod sql;
 pub mod sqlite_read;
 pub mod stats;
+pub mod tr;
 pub mod util;
 pub mod valuation;
 pub mod vh;
@@ -390,5 +391,15 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(vh::vh_load_prices, m)?)?;
     m.add_function(wrap_pyfunction!(vh::vh_observations, m)?)?;
     m.add_function(wrap_pyfunction!(vh::vh_bands, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_format, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_labelled_metrics, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_by_fiscal_year, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_stress_response, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_money, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_revisions, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_ranked_row, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_bands, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_stress, m)?)?;
+    m.add_function(wrap_pyfunction!(tr::tr_build, m)?)?;
     Ok(())
 }

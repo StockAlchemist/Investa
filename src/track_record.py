@@ -28,11 +28,10 @@ without a fact store.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, List, Optional
 
-import buffett_metrics
-import buffett_rank
+import buffett_metrics  # noqa: F401 -- read by the Rust port at call time
+import buffett_rank  # noqa: F401 -- read by the Rust port at call time
 import investa_core
 
 # Human titles for the five quality pillars, in the order they are scored.
@@ -122,30 +121,8 @@ def _format(
     value: Optional[float], unit: str, denominator: Optional[float]
 ) -> Optional[str]:
     """The reader-facing form of one metric. None when there is nothing to show."""
-    if value is None:
-        return None
-    try:
-        if unit == "percent":
-            return f"{value:.1f}%"
-        if unit == "cagr":
-            return f"{value * 100:+.1f}%/yr"
-        if unit == "points":
-            return f"{value:.1f} pts"
-        if unit == "times":
-            return f"{value:.1f}×"
-        if unit == "share":
-            # A share of years is only meaningful next to how many years there
-            # were, so it is rendered as the count it came from when possible.
-            if denominator:
-                return f"{round(value * denominator):.0f} of {denominator:.0f} years"
-            return f"{value * 100:.0f}% of years"
-        if unit == "years":
-            if denominator:
-                return f"{value:.0f} of {denominator:.0f} years"
-            return f"{value:.0f} years"
-        return f"{value:.2f}"
-    except (TypeError, ValueError):
-        return None
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_format(value, unit, denominator)
 
 
 def labelled_metrics(
@@ -158,41 +135,8 @@ def labelled_metrics(
     dropped: "we could not measure this" and "we did not look" are different
     statements, and only the first is honest about a data gap.
     """
-    spec = (
-        buffett_rank.PILLARS_BY_MODEL.get(model)
-        or buffett_rank.PILLARS_BY_MODEL["generic"]
-    )
-    groups: List[Dict[str, Any]] = []
-
-    for pillar, entries in spec.items():
-        items: List[Dict[str, Any]] = []
-        for key, higher_is_better in entries:
-            label, unit = _METRIC_LABELS.get(
-                key, (key.replace("_", " ").capitalize(), "ratio")
-            )
-            value = metrics.get(key)
-            denominator = metrics.get(_DENOMINATORS.get(key, ""))
-            items.append(
-                {
-                    "key": key,
-                    "label": label,
-                    "unit": unit,
-                    "value": value,
-                    "display": _format(value, unit, denominator),
-                    "note": None,
-                    "higher_is_better": higher_is_better,
-                }
-            )
-        groups.append(
-            {
-                "key": pillar,
-                "title": PILLAR_TITLES.get(
-                    pillar, pillar.replace("_", " ").capitalize()
-                ),
-                "items": items,
-            }
-        )
-    return groups
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_labelled_metrics(metrics, model)
 
 
 # The two downturns the filed history reaches. A five-year window contains
@@ -229,13 +173,8 @@ _STRESS_METRICS = (
 
 def _by_fiscal_year(series: Dict[str, float]) -> Dict[int, float]:
     """{calendar year of the period end: value}, latest wins within a year."""
-    out: Dict[int, float] = {}
-    for period_end in sorted(series):
-        try:
-            out[int(str(period_end)[:4])] = series[period_end]
-        except (TypeError, ValueError):
-            continue
-    return out
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_by_fiscal_year(series)
 
 
 def stress_response(
@@ -253,84 +192,14 @@ def stress_response(
     A company with no data covering a window comes back `covered: false` — "not
     listed then" and "did not fall" are opposite claims.
     """
-    free_cash_flow: Dict[str, float] = {}
-    ocf = values.get("operating_cash_flow", {})
-    capex = values.get("capex", {})
-    for period_end, operating in ocf.items():
-        if operating is None:
-            continue
-        # EDGAR reports capex as a positive outflow, as `buffett_metrics` does.
-        free_cash_flow[period_end] = operating - (capex.get(period_end) or 0.0)
-
-    by_metric = {
-        "revenue": _by_fiscal_year(values.get("revenue", {})),
-        "net_income": _by_fiscal_year(values.get("net_income", {})),
-        "free_cash_flow": _by_fiscal_year(free_cash_flow),
-    }
-
-    results: List[Dict[str, Any]] = []
-    for window in periods:
-        items: List[Dict[str, Any]] = []
-        for concept, label in _STRESS_METRICS:
-            annual = by_metric.get(concept) or {}
-            # The peak, the trough strictly after it, and the recovery run in
-            # Rust (investa_core.stress_window). A fall measured from a loss is
-            # not a fall — Delta lost $8.9bn in 2008 and $1.2bn in 2009, which
-            # would read as net income "+86%" — so a non-positive peak is
-            # skipped; and a trough must come strictly after the peak, or a
-            # company with only a 2008 reading would "fall" 0% against itself.
-            # Recovery is measured from the trough forward: a company that never
-            # fell reports None rather than 0.
-            found = investa_core.stress_window(
-                [(int(y), float(v)) for y, v in annual.items()],
-                [int(y) for y in window["peak_years"]],
-                [int(y) for y in window["trough_years"]],
-            )
-            if found is None:
-                continue
-            peak_year, trough_year, peak, trough, change, recovered = found
-
-            items.append(
-                {
-                    "metric": concept,
-                    "label": label,
-                    "peak_year": peak_year,
-                    "trough_year": trough_year,
-                    "peak": peak,
-                    "trough": trough,
-                    "change_pct": change,
-                    "display": f"{change:+.0f}%",
-                    "recovered_year": recovered,
-                    "recovery_display": (
-                        None
-                        if trough >= peak
-                        else (
-                            f"back in {recovered}"
-                            if recovered
-                            else "not back to its peak"
-                        )
-                    ),
-                }
-            )
-
-        results.append(
-            {
-                "key": window["key"],
-                "label": window["label"],
-                "covered": bool(items),
-                "items": items,
-            }
-        )
-    return results
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_stress_response(values, periods)
 
 
 def _money(value: float) -> str:
     """A filing-scale figure, short enough to sit twice on one line."""
-    magnitude = abs(value)
-    for scale, suffix in ((1e12, "tn"), (1e9, "bn"), (1e6, "m"), (1e3, "k")):
-        if magnitude >= scale:
-            return f"{'-' if value < 0 else ''}${magnitude / scale:,.2f}{suffix}"
-    return f"{'-' if value < 0 else ''}${magnitude:,.0f}"
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_money(value)
 
 
 def revisions(cik: str, limit: int = REVISION_LIMIT) -> Dict[str, Any]:
@@ -348,46 +217,14 @@ def revisions(cik: str, limit: int = REVISION_LIMIT) -> Dict[str, Any]:
     years of revenue at once. The magnitude and the dates are the information;
     what they mean is the reader's call.
     """
-    try:
-        import edgar_provider
-
-        found = edgar_provider.revisions(cik)
-        labels = edgar_provider.concept_labels()
-    except Exception as exc:
-        logging.debug(f"Track record: revision history unavailable for {cik}: {exc}")
-        return {"count": 0, "items": []}
-
-    items = []
-    for row in found[:limit]:
-        items.append(
-            {
-                "concept": row["concept"],
-                "label": labels.get(
-                    row["concept"], row["concept"].replace("_", " ").capitalize()
-                ),
-                "period_end": row["period_end"],
-                "original": row["original"],
-                "current": row["current"],
-                "change_pct": row["change_pct"],
-                "display": f"{_money(row['original'])} → {_money(row['current'])}",
-                "change_display": f"{row['change_pct']:+.1f}%",
-                "first_filed": row["first_filed"],
-                "restated_filed": row["restated_filed"],
-            }
-        )
-    return {"count": len(found), "items": items}
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_revisions(cik, limit)
 
 
 def _ranked_row(symbol: str) -> Optional[Dict[str, Any]]:
     """The company's row in the most recent run, or None if it was not ranked."""
-    try:
-        from buffett_store import get_store
-
-        history = get_store().get_symbol_history(symbol, limit=1)
-    except Exception as exc:
-        logging.debug(f"Track record: no ranking history for {symbol}: {exc}")
-        return None
-    return history[0] if history else None
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_ranked_row(symbol)
 
 
 def build(symbol: str, cik: str, name: Optional[str] = None) -> Dict[str, Any]:
@@ -398,82 +235,17 @@ def build(symbol: str, cik: str, name: Optional[str] = None) -> Dict[str, Any]:
     reasons in `gate_failures` and empty metrics, which is the same thing the
     exclusions list would say about it.
     """
-    import buffett_pipeline
-
-    symbol = symbol.upper()
-    try:
-        model = buffett_pipeline.infer_model_from_facts(cik)
-    except Exception as exc:
-        logging.debug(f"Track record: model inference failed for {symbol}: {exc}")
-        model = "generic"
-
-    company = buffett_metrics.compute_metrics(cik, symbol, name or symbol, model)
-
-    # Gates are the one place this system states an absolute threshold, so they
-    # are the one judgement worth passing through — as the exclusion reasons
-    # they already are, not as a score.
-    try:
-        gate_failures = list(company.gate_failures) + buffett_rank.evaluate_gates(
-            company
-        )
-    except Exception as exc:
-        logging.debug(f"Track record: gate evaluation failed for {symbol}: {exc}")
-        gate_failures = list(company.gate_failures)
-
-    ranked = _ranked_row(symbol)
-    rank: Optional[Dict[str, Any]] = None
-    if ranked:
-        rank = {
-            "run_id": ranked.get("run_id"),
-            "rank": ranked.get("rank"),
-            "composite_score": ranked.get("composite_score"),
-            "quality_score": ranked.get("quality_score"),
-            "value_score": ranked.get("value_score"),
-            "confidence": ranked.get("confidence"),
-            "pillars": {key: ranked.get(key) for key in _PILLAR_SCORE_KEYS},
-        }
-
-    return {
-        "symbol": symbol,
-        "name": name or (ranked.get("name") if ranked else None),
-        "cik": cik,
-        "model": model,
-        "period_count": company.period_count,
-        "first_period": company.first_period,
-        "latest_period": company.latest_period,
-        # The metrics span the durability window, not every filed year: ten
-        # years is the span over which an advantage either holds or does not.
-        "window_years": min(company.period_count, buffett_metrics.DURABILITY_WINDOW),
-        "coverage": company.coverage,
-        "gate_failures": gate_failures,
-        "rank": rank,
-        "groups": labelled_metrics(company.metrics, model),
-        "revisions": revisions(cik),
-        "stress": _stress(cik),
-        "valuation_bands": _bands(symbol, cik),
-    }
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_build(symbol, cik, name)
 
 
 def _bands(symbol: str, cik: str) -> List[Dict[str, Any]]:
     """Today's multiples against the company's own fifteen-year record."""
-    try:
-        import valuation_history
-
-        return valuation_history.bands(symbol, cik)
-    except Exception as exc:
-        logging.debug(f"Track record: valuation bands unavailable for {symbol}: {exc}")
-        return []
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_bands(symbol, cik)
 
 
 def _stress(cik: str) -> List[Dict[str, Any]]:
     """The company's behaviour in the two downturns the filed history reaches."""
-    try:
-        import edgar_provider
-
-        values = edgar_provider.get_concept_values(
-            cik, ["revenue", "net_income", "operating_cash_flow", "capex"]
-        )
-        return stress_response(values)
-    except Exception as exc:
-        logging.debug(f"Track record: stress history unavailable for {cik}: {exc}")
-        return []
+    # Ported to Rust: rust/investa_core/src/tr.rs
+    return investa_core.tr_stress(cik)

@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record`; then `strategies`, the `buffett_*` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; then `strategies`, the `buffett_*` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -736,6 +736,14 @@ The history request itself is now Rust (`ph_performance.rs`). With 14a–d, the 
 A company's multiples against its own fifteen-year record now run in Rust (`vh.rs`). The band statistics were already Rust; what moved is the glue: the store and EDGAR reads, the point-in-time `as_of` context, and the per-year arithmetic, all with Python's own operations. The oracle is `tests/reference/valuation_history_p15.py`, frozen just before this port; the older reference predates `_describe_percentile`.
 - **Parity:** 80 random requests through fake EDGAR and price stores match: losses, missing cash flows or capex, short share series that take the fallbacks, non-date period keys, gappy and non-positive prices, failing stores, and a leap-day `today`. The helpers are checked separately.
 - **Real data:** 407 real companies from the CIK map, 92 of them with bands, are identical.
+
+## Phase 15b (26 Oct 2026): `track_record`
+
+The stock window's track record now runs in Rust (`tr.rs`): the pillars' metrics labelled and formatted, the downturn windows, restated numbers, the ranked row and the assembly. The window search was already Rust. Every figure is formatted with Python's `format()` and rounded with its `round`, so the text matches to the character. `buffett_rank` and `buffett_metrics` are read off `track_record` at call time.
+- **Parity:**
+  - The fuzz covers the formatter over every unit with NaN, inf, text and zero denominators, the labels over every model's real pillar spec, and 80 downturn and money rounds.
+  - It also covers `build` with each stage faked to succeed or fail.
+- **Real data:** 60 real companies' complete track records are identical.
 
 ## Found while porting
 
