@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; then EDGAR statement assembly and the rest of `financial_ratios` | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; then the rest of `financial_ratios` | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -777,6 +777,31 @@ The gates, the confidence factor, the universe frame, the per-model quality scor
 The ranking run itself now runs in Rust (`bp.rs`): the universe collapsed to one listing per filer, sector routing with inference from the facts, the metrics and gates under per-company sessions, the price-quality gate, the archived market data with batched share-count fetches, the value score, the composite, and the snapshot. `RunResult` stays Python. With 15d and 15e, the whole ranking pass is Rust apart from the EDGAR and market-data reads it orchestrates.
 - **Parity:** 36 rounds of the market-data fetch, the price-quality gate and the exclusion records match, through a fake archive and provider. They cover missing closes, stale counts, failing batches, zero and text share counts, a failing quality scan, and both severities.
 - **Real data:** a whole-universe run (market data and persistence off, so no network and no writes) is identical over all 5,561 filers: 1,219 ranked and 4,342 excluded, every row and every exclusion reason. It took 43.4 s against 47.1 s.
+
+## Phase 15g (26 Oct 2026): the `edgar_provider` glue
+
+Everything in `edgar_provider` around the fact store (already Rust since 11d) now runs in Rust (`ep.rs`), except the bulk download, which is network:
+- the `as_of` block (an `investa_core.AsOf` context manager) and the shared store;
+- both companyfacts parsers, and the bulk archive reader (`investa_core.BulkDocuments`, which opens the archive on the first `next()` as the generator did);
+- the bulk, per-company and quarterly ingest, with `sec_get_json` still the Python fetch;
+- the quarterly derivation: canonical period ends, per-filing split bases, the year-to-date ladder;
+- concept resolution, provenance, the split-consistent series, revisions and the split factors;
+- the annual and quarterly statement frames with their derived rows, and the sector concepts.
+
+How it is done:
+- **The per-element helpers are native, the dates are not.** `_span_days`, `_is_annual_duration`, `_median` and the ISO-day match in `_period_stamps` run in Rust, and are called directly rather than through the module. They are pure, and the parsers meet them once per fact. Dates are still parsed by `datetime.fromisoformat`, so an aware timestamp or an impossible day fails exactly as before. The ISO match is native only for ASCII strings: `\d` also matches other Unicode digits, so anything else goes to the original regex.
+- **The sorts are Python's.** `revisions` sorts with `list.sort(key=..., reverse=True)` and the ladder with `itemgetter(0)`. Ties and NaN changes therefore land where they did.
+
+Checks:
+- **Parity:**
+  - Eight rounds of four synthetic filers go into one real fact store. They have random fiscal calendars, quarters tagged directly or only year-to-date, 10-K comparatives, restatements, a split that later filings restate, mistyped period ends, 16-week fourth quarters, 8-Ks and amendments. Every reader answers alike at three `as_of` dates.
+  - Odd documents and odd helper inputs match too: unhashable forms, aware and impossible dates, None and zero values, Unicode digits, object and duplicate-column frames.
+  - The ingest paths run against separate stores, a fake fetch and a synthetic archive with a corrupt member. They leave identical stores, stats and logs.
+- **Real data:** 8,234 comparisons, all identical:
+  - 400 real filers, now and as of mid-2018: statements, concept values, provenance, revisions, split factors and series, and sector concepts;
+  - all 38 filers with quarterly facts;
+  - 60 companyfacts documents from the real bulk archive, through both parsers.
+  - The port took 15.7 s against 16.3 s.
 
 ## Found while porting
 

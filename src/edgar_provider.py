@@ -30,29 +30,24 @@ the DCF and the Graham model all consume EDGAR data with no changes.
 
 from __future__ import annotations
 
-import contextlib
 import contextvars
-import io
-import json
 import logging
 import os
 import sqlite3
 import threading
 import urllib.error
 import urllib.request
-import zipfile
 from datetime import datetime
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import re
 
-import numpy as np
 import pandas as pd
 
 import config
 import investa_core
 from db_utils import get_db_connection
-from edgar_concepts import (
+from edgar_concepts import (  # noqa: F401 -- read by the Rust port at call time
     BALANCE_CONCEPTS,
     BANK_CONCEPTS,
     CASHFLOW_CONCEPTS,
@@ -61,7 +56,7 @@ from edgar_concepts import (
     all_concepts,
     all_tags,
 )
-from edgar_http import get_user_agent, sec_get_json
+from edgar_http import get_user_agent, sec_get_json  # noqa: F401 -- read by the Rust port at call time
 
 _BULK_URL = "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip"
 _COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
@@ -161,7 +156,6 @@ _as_of_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 )
 
 
-@contextlib.contextmanager
 def as_of(date: Optional[str]):
     """
     Read the store as it stood on `date` (ISO 'YYYY-MM-DD') for this block.
@@ -170,11 +164,8 @@ def as_of(date: Optional[str]):
     `buffett_metrics`, so a whole ranking run can be moved back in time without
     each call site having to thread a date through.
     """
-    token = _as_of_var.set(date)
-    try:
-        yield
-    finally:
-        _as_of_var.reset(token)
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.AsOf(date)
 
 
 def _effective_as_of(explicit: Optional[str]) -> Optional[str]:
@@ -229,9 +220,8 @@ def company_session(cik: str):
 
 
 def _db_path() -> str:
-    directory = os.path.join(config.get_app_data_dir(), config.DB_DIR)
-    os.makedirs(directory, exist_ok=True)
-    return os.path.join(directory, _DB_FILENAME)
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_db_path()
 
 
 class EdgarFactStore:
@@ -414,24 +404,15 @@ _shared_store: Optional[EdgarFactStore] = None
 
 
 def get_store() -> EdgarFactStore:
-    global _shared_store
-    if _shared_store is None:
-        _shared_store = EdgarFactStore()
-    return _shared_store
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_get_store()
 
 
 # --- parsing ----------------------------------------------------------------
-
-
 def _is_annual_duration(start: Optional[str], end: str) -> bool:
     """True for facts covering roughly one year; instants have no start."""
-    if not start:
-        return True  # instant (balance-sheet) fact
-    try:
-        span = (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days
-    except (ValueError, TypeError):
-        return False
-    return _MIN_ANNUAL_DAYS <= span <= _MAX_ANNUAL_DAYS
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_is_annual_duration(start, end)
 
 
 def parse_company_facts(
@@ -444,56 +425,14 @@ def parse_company_facts(
     chain actually references — that filter is what turns a 1.4 GB archive into
     a database of workable size.
     """
-    if wanted_tags is None:
-        wanted_tags = set(all_tags())
-
-    try:
-        cik = str(payload["cik"]).zfill(10)
-    except (KeyError, TypeError, ValueError):
-        return []
-
-    us_gaap = payload.get("facts", {}).get("us-gaap", {})
-    if not us_gaap:
-        return []
-
-    rows: List[Tuple] = []
-    for tag, tag_body in us_gaap.items():
-        if tag not in wanted_tags:
-            continue
-        for unit, entries in tag_body.get("units", {}).items():
-            for entry in entries:
-                if entry.get("form") not in _ANNUAL_FORMS:
-                    continue
-                end = entry.get("end")
-                if not end:
-                    continue
-                start = entry.get("start")
-                if not _is_annual_duration(start, end):
-                    continue
-                rows.append(
-                    (
-                        cik,
-                        tag,
-                        end,
-                        start,
-                        entry.get("val"),
-                        unit,
-                        entry.get("form"),
-                        entry.get("accn", ""),
-                        entry.get("filed"),
-                    )
-                )
-    return rows
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_parse_company_facts(payload, wanted_tags)
 
 
 def _span_days(start: Optional[str], end: str) -> Optional[int]:
     """Length of a duration fact in days, or None if it is an instant."""
-    if not start:
-        return None
-    try:
-        return (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days
-    except (ValueError, TypeError):
-        return None
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_span_days(start, end)
 
 
 def _canonical_period_ends(
@@ -513,33 +452,8 @@ def _canonical_period_ends(
     what make the corroboration lopsided, and they belong to other tags than the
     income-statement rows the typo landed on.
     """
-    counts: Dict[str, int] = {}
-    for spans in spans_by_tag.values():
-        for _start, end in spans:
-            counts[end] = counts.get(end, 0) + 1
-
-    canonical: Dict[str, str] = {}
-    cluster: List[str] = []
-
-    def close_cluster() -> None:
-        if not cluster:
-            return
-        # Most-reported wins; the later date breaks a tie, so the answer does not
-        # depend on dictionary order.
-        best = max(cluster, key=lambda end: (counts[end], end))
-        for end in cluster:
-            canonical[end] = best
-
-    for end in sorted(counts):
-        # Measured from the first end in the cluster, not the previous one, so a
-        # run of near-misses cannot chain into a wide cluster.
-        if cluster and (_span_days(cluster[0], end) or 0) <= _PERIOD_END_TOLERANCE_DAYS:
-            cluster.append(end)
-            continue
-        close_cluster()
-        cluster = [end]
-    close_cluster()
-    return canonical
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_canonical_period_ends(spans_by_tag)
 
 
 def _apply_canonical_ends(
@@ -552,13 +466,8 @@ def _apply_canonical_ends(
     one filed there wins: it is the corroborated reading, and letting the typo
     overwrite it would trade a wrong date for a wrong value.
     """
-    rewritten: Dict[Tuple[str, str], Tuple[float, str]] = {}
-    for (start, end), value in spans.items():
-        target = canonical.get(end, end)
-        key = (start, target)
-        if target == end or key not in rewritten:
-            rewritten[key] = value
-    return rewritten
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_apply_canonical_ends(spans, canonical)
 
 
 def _filing_basis_factors(filings: List[Filing]) -> Dict[Tuple[str, str], float]:
@@ -588,26 +497,13 @@ def _filing_basis_factors(filings: List[Filing]) -> Dict[Tuple[str, str], float]
     whose filings simply do not overlap is left as it was rather than quietly
     reshaped, the same concession `split_consistent_series` makes annually.
     """
-    placed: Dict[Tuple[str, str], float] = {}
-    factors: Dict[Tuple[str, str], float] = {}
-    for key, spans in filings:
-        ratios = [
-            placed[span] / value
-            for span, (value, _unit) in spans.items()
-            if value and span in placed
-        ]
-        factors[key] = _median(ratios) if ratios else 1.0
-        for span, (value, _unit) in spans.items():
-            placed.setdefault(span, value * factors[key])
-    return factors
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_filing_basis_factors(filings)
 
 
 def _median(values: List[float]) -> float:
-    ordered = sorted(values)
-    middle = len(ordered) // 2
-    if len(ordered) % 2:
-        return ordered[middle]
-    return (ordered[middle - 1] + ordered[middle]) / 2
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_median(values)
 
 
 def parse_company_quarterly_facts(
@@ -622,49 +518,8 @@ def parse_company_quarterly_facts(
     only ever as (full year − nine months). `_derive_quarterly_series` does that
     subtraction; this just has to preserve the ingredients.
     """
-    if wanted_tags is None:
-        wanted_tags = set(all_tags())
-
-    try:
-        cik = str(payload["cik"]).zfill(10)
-    except (KeyError, TypeError, ValueError):
-        return []
-
-    us_gaap = payload.get("facts", {}).get("us-gaap", {})
-    if not us_gaap:
-        return []
-
-    rows: List[Tuple] = []
-    for tag, tag_body in us_gaap.items():
-        if tag not in wanted_tags:
-            continue
-        for unit, entries in tag_body.get("units", {}).items():
-            for entry in entries:
-                if entry.get("form") not in _QUARTERLY_FORMS:
-                    continue
-                end = entry.get("end")
-                if not end:
-                    continue
-                start = entry.get("start")
-                span = _span_days(start, end)
-                # Instants are balance-sheet points and are kept as filed;
-                # durations are kept up to a year (the year-to-date ladder).
-                if span is not None and not (0 < span <= _MAX_YTD_DAYS):
-                    continue
-                rows.append(
-                    (
-                        cik,
-                        tag,
-                        start or "",
-                        end,
-                        entry.get("val"),
-                        unit,
-                        entry.get("form"),
-                        entry.get("accn", ""),
-                        entry.get("filed"),
-                    )
-                )
-    return rows
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_parse_company_quarterly_facts(payload, wanted_tags)
 
 
 def _derive_quarterly_series(
@@ -695,52 +550,11 @@ def _derive_quarterly_series(
 
     As-filed quarters win over derived ones wherever both exist.
     """
-    instants: Dict[str, Tuple[float, str]] = {}
-    direct: Dict[str, Tuple[float, str]] = {}
-    shortest: Dict[str, Tuple[int, float, str]] = {}
-    ladders: Dict[str, List[Tuple[str, float, str]]] = {}
-
-    for (start, end), (value, unit) in spans.items():
-        if not start:
-            instants[end] = (value, unit)
-            continue
-        span = _span_days(start, end)
-        if span is None:
-            continue
-        if _MIN_QUARTER_DAYS <= span <= _MAX_QUARTER_DAYS:
-            direct[end] = (value, unit)
-        held = shortest.get(end)
-        if held is None or span < held[0]:
-            shortest[end] = (span, value, unit)
-        ladders.setdefault(start, []).append((end, value, unit))
-
-    if not additive:
-        return {
-            **instants,
-            **{end: (value, unit) for end, (_span, value, unit) in shortest.items()},
-        }
-
-    derived: Dict[str, Tuple[float, str]] = {}
-    for _start, rungs in ladders.items():
-        rungs.sort(key=lambda r: r[0])
-        for i in range(1, len(rungs)):
-            end, value, unit = rungs[i]
-            prev_end, prev_value, _ = rungs[i - 1]
-            gap = _span_days(prev_end, end)
-            if gap is None or not (
-                _MIN_QUARTER_GAP_DAYS <= gap <= _MAX_QUARTER_GAP_DAYS
-            ):
-                continue
-            derived[end] = (value - prev_value, unit)
-
-    # Instants are already per-period; the quarter-length durations are the
-    # authority for everything they cover.
-    return {**instants, **derived, **direct}
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_derive_quarterly_series(spans, additive)
 
 
 # --- ingest -----------------------------------------------------------------
-
-
 def download_bulk_archive(
     dest_path: Optional[str] = None, force: bool = False
 ) -> Optional[str]:
@@ -804,22 +618,8 @@ def iter_bulk_documents(
     Streaming member-by-member keeps peak memory at one JSON document rather
     than the whole 1.4 GB archive.
     """
-    with zipfile.ZipFile(zip_path) as archive:
-        for info in archive.infolist():
-            if not info.filename.startswith("CIK") or not info.filename.endswith(
-                ".json"
-            ):
-                continue
-            if ciks is not None:
-                # Filenames are CIK##########.json
-                cik = info.filename[3:-5].zfill(10)
-                if cik not in ciks:
-                    continue
-            try:
-                with archive.open(info) as handle:
-                    yield json.load(io.TextIOWrapper(handle, encoding="utf-8"))
-            except (json.JSONDecodeError, KeyError, OSError) as exc:
-                logging.warning(f"EDGAR: skipping {info.filename}: {exc}")
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.BulkDocuments(zip_path, ciks)
 
 
 def ingest_bulk(
@@ -834,56 +634,14 @@ def ingest_bulk(
     Restricting to `ciks` (the rankable universe) avoids storing facts for the
     ~5,000 filers that are not listed common stock.
     """
-    store = get_store()
-    stats = {"companies": 0, "facts": 0, "empty": 0}
-    batch: List[Tuple] = []
-    wanted = set(all_tags())
-
-    for document in iter_bulk_documents(zip_path, ciks=ciks):
-        rows = parse_company_facts(document, wanted_tags=wanted)
-        cik = str(document.get("cik", "")).zfill(10)
-
-        if rows:
-            batch.extend(rows)
-            stats["facts"] += len(rows)
-        else:
-            stats["empty"] += 1
-
-        store.mark_ingested(cik, len(rows))
-        stats["companies"] += 1
-
-        if len(batch) >= 50_000:
-            store.upsert_facts(batch)
-            batch = []
-
-        if stats["companies"] % progress_every == 0:
-            logging.info(
-                f"EDGAR: ingested {stats['companies']} companies, {stats['facts']} facts"
-            )
-        if limit and stats["companies"] >= limit:
-            break
-
-    if batch:
-        store.upsert_facts(batch)
-
-    logging.info(
-        f"EDGAR: bulk ingest complete — {stats['companies']} companies, "
-        f"{stats['facts']} facts, {stats['empty']} with no usable data"
-    )
-    return stats
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_ingest_bulk(zip_path, ciks, limit, progress_every)
 
 
 def ingest_company(cik: str) -> int:
     """Refresh a single CIK from the REST API. Returns the number of facts stored."""
-    cik = str(cik).zfill(10)
-    payload = sec_get_json(_COMPANY_FACTS_URL.format(cik=cik))
-    if not payload:
-        return 0
-    rows = parse_company_facts(payload)
-    store = get_store()
-    store.upsert_facts(rows)
-    store.mark_ingested(cik, len(rows))
-    return len(rows)
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_ingest_company(cik)
 
 
 def ingest_company_quarterly(
@@ -909,38 +667,13 @@ def ingest_company_quarterly(
     indistinguishable in a row count, which had the 548 foreign issuers whose
     facts are empty re-downloading a multi-megabyte document every hour.
     """
-    cik = str(cik).zfill(10)
-    store = get_store()
-
-    state = store.quarterly_ingest_state(cik)
-    if state is not None:
-        last, count = state
-        age = (datetime.now() - last).total_seconds()
-        cooldown = (
-            empty_retry_hours * 3600
-            if count == _QUARTERLY_FETCH_FAILED
-            else max_age_days * 86400
-        )
-        if age < cooldown:
-            return 0
-
-    payload = sec_get_json(
-        _COMPANY_FACTS_URL.format(cik=cik), timeout=timeout, retries=retries
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_ingest_company_quarterly(
+        cik, max_age_days, empty_retry_hours, timeout, retries
     )
-    if not payload:
-        store.mark_quarterly_ingested(cik, _QUARTERLY_FETCH_FAILED)
-        return 0
-
-    rows = parse_company_quarterly_facts(payload)
-    store.upsert_quarterly_facts(rows)
-    store.mark_quarterly_ingested(cik, len(rows))
-    logging.info(f"EDGAR: {len(rows)} quarterly facts for CIK {cik}")
-    return len(rows)
 
 
 # --- concept resolution -----------------------------------------------------
-
-
 def resolve_concept(
     tag_series: Dict[str, Dict[str, Tuple[float, str]]], chain: List[str]
 ) -> Tuple[Dict[str, float], Dict[str, str]]:
@@ -953,18 +686,8 @@ def resolve_concept(
     older years and `RevenueFromContractWithCustomer...` for the newer ones, in
     one continuous series.
     """
-    values: Dict[str, float] = {}
-    provenance: Dict[str, str] = {}
-
-    for tag in chain:
-        series = tag_series.get(tag)
-        if not series:
-            continue
-        for period_end, (value, _unit) in series.items():
-            if period_end not in values:
-                values[period_end] = value
-                provenance[period_end] = tag
-    return values, provenance
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_resolve_concept(tag_series, chain)
 
 
 def get_concept_values(
@@ -973,18 +696,8 @@ def get_concept_values(
     """
     {concept: {period_end: value}} for the requested concepts (default: all).
     """
-    chains = all_concepts()
-    wanted = concepts or list(chains)
-    tags_needed = {tag for name in wanted for tag in chains.get(name, [])}
-
-    tag_series = get_store().get_many_tag_series(cik, tags_needed)
-
-    resolved: Dict[str, Dict[str, float]] = {}
-    for name in wanted:
-        values, _prov = resolve_concept(tag_series, chains.get(name, []))
-        if values:
-            resolved[name] = values
-    return resolved
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_get_concept_values(cik, concepts)
 
 
 def _values_by_filing(cik: str, concept: str) -> List[Dict[str, float]]:
@@ -999,27 +712,16 @@ def _values_by_filing(cik: str, concept: str) -> List[Dict[str, float]]:
     there the newest filing is the answer, which is the same rule the rest of
     this module follows.
     """
-    tags = all_concepts().get(concept, [])
-    if not tags:
-        return []
-    by_filing = get_store().get_tag_series_by_filing(cik, tags)
-    ordered: List[Dict[str, float]] = []
-    for tag in tags:
-        # Already newest-filed first: the store orders on the filing date, which
-        # the accession number cannot be trusted to encode.
-        ordered.extend(dict(filing) for filing in by_filing.get(tag) or [])
-    return ordered
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_values_by_filing(cik, concept)
 
 
 def _filed_ratio(
     by_filing: List[Dict[str, float]], earlier: str, later: str
 ) -> Optional[float]:
     """The later-over-earlier ratio as the most authoritative filing reported it."""
-    for values in by_filing:
-        first, second = values.get(earlier), values.get(later)
-        if first and second:
-            return second / first
-    return None
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_filed_ratio(by_filing, earlier, later)
 
 
 def split_consistent_series(cik: str, concept: str) -> Dict[str, float]:
@@ -1045,27 +747,8 @@ def split_consistent_series(cik: str, concept: str) -> Dict[str, float]:
     take part, so a backtest reconstructs the series an investor could have
     built at the time.
     """
-    assembled = get_concept_values(cik, [concept]).get(concept, {})
-    ordered = sorted(assembled)
-    if len(ordered) < 2:
-        return dict(assembled)
-
-    by_filing = _values_by_filing(cik, concept)
-
-    corrected: Dict[str, float] = {ordered[-1]: assembled[ordered[-1]]}
-    for earlier, later in reversed(list(zip(ordered, ordered[1:]))):
-        ratio = _filed_ratio(by_filing, earlier, later)
-        if not ratio:
-            # No filing reports both years: absence of evidence is not a step.
-            first, second = assembled.get(earlier), assembled.get(later)
-            ratio = (second / first) if first and second else None
-        anchor = corrected.get(later)
-        if not ratio or anchor is None:
-            corrected[earlier] = assembled[earlier]
-            continue
-        corrected[earlier] = anchor / ratio
-
-    return corrected
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_split_consistent_series(cik, concept)
 
 
 # Concepts whose value a stock split rescales. Excluded from revision detection:
@@ -1107,70 +790,16 @@ def revisions(
 
     `min_change` is relative; below a percent is rounding, not a restatement.
     """
-    chains = all_concepts()
-    wanted = [
-        name
-        for name in (concepts or list(chains))
-        if name not in _SPLIT_RESCALED_CONCEPTS
-    ]
-    tag_to_concept = {tag: name for name in wanted for tag in chains.get(name, [])}
-    if not tag_to_concept:
-        return []
-
-    history = get_store().get_tag_revisions(cik, list(tag_to_concept))
-    provenance = get_concept_provenance(cik, wanted)
-
-    found: List[Dict[str, Any]] = []
-    for (tag, period_end), entries in history.items():
-        if len(entries) < 2:
-            continue
-        concept = tag_to_concept[tag]
-        if provenance.get(concept, {}).get(period_end) != tag:
-            continue
-        first_filed, original, first_form = entries[0]
-        last_filed, current, last_form = entries[-1]
-        if original is None or current is None or not original:
-            continue
-        change = (current - original) / abs(original)
-        if abs(change) < min_change:
-            continue
-        found.append(
-            {
-                "concept": concept,
-                "tag": tag,
-                "period_end": period_end,
-                "original": original,
-                "current": current,
-                "change_pct": change * 100.0,
-                "first_filed": first_filed,
-                "restated_filed": last_filed,
-                "first_form": first_form,
-                "restated_form": last_form,
-                "revision_count": len(entries),
-            }
-        )
-
-    # Largest revisions first: a 30% change to revenue is the story, and a 1.2%
-    # tweak to inventory three years ago is not.
-    found.sort(key=lambda row: abs(row["change_pct"]), reverse=True)
-    return found
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_revisions(cik, concepts, min_change)
 
 
 def get_concept_provenance(
     cik: str, concepts: Optional[List[str]] = None
 ) -> Dict[str, Dict[str, str]]:
     """Which tag answered for each concept and period. Used by the coverage report."""
-    chains = all_concepts()
-    wanted = concepts or list(chains)
-    tags_needed = {tag for name in wanted for tag in chains.get(name, [])}
-    tag_series = get_store().get_many_tag_series(cik, tags_needed)
-
-    provenance: Dict[str, Dict[str, str]] = {}
-    for name in wanted:
-        _values, prov = resolve_concept(tag_series, chains.get(name, []))
-        if prov:
-            provenance[name] = prov
-    return provenance
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_get_concept_provenance(cik, concepts)
 
 
 # --- statement assembly -----------------------------------------------------
@@ -1230,13 +859,14 @@ _PER_SHARE_SCALED = ("eps_diluted", "eps_basic")
 
 def _all_chain_tags() -> List[str]:
     """Every tag a concept chain reads: what scoring one company asks for in all."""
-    return [tag for chain in all_concepts().values() for tag in chain]
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_all_chain_tags()
 
 
 def _tags_for(concepts: Tuple[str, ...]) -> List[str]:
     """The tags behind some concepts, in the order their fallback chains rank them."""
-    chains = all_concepts()
-    return [tag for concept in concepts for tag in chains.get(concept, [])]
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_tags_for(concepts)
 
 
 def _quarterly_basis_factors(cik: str) -> Dict[Tuple[str, str], float]:
@@ -1254,20 +884,8 @@ def _quarterly_basis_factors(cik: str) -> Dict[Tuple[str, str], float]:
     Sharing one factor between the share rows and the per-share rows is also what
     keeps `EPS x shares = net income` true across the table.
     """
-    ordered_tags = _tags_for(_SHARE_SCALED)
-    if not ordered_tags:
-        return {}
-    by_filing = get_store().get_many_tag_spans_by_filing(cik, ordered_tags)
-
-    factors: Dict[Tuple[str, str], float] = {}
-    # Chain order, so the preferred share tag speaks for a filing it appears in.
-    for tag in ordered_tags:
-        filings = by_filing.get(tag)
-        if not filings:
-            continue
-        for key, factor in _filing_basis_factors(filings).items():
-            factors.setdefault(key, factor)
-    return factors
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_quarterly_basis_factors(cik)
 
 
 def _spans_on_latest_basis(
@@ -1284,13 +902,8 @@ def _spans_on_latest_basis(
     on neither basis. Shares move with a split and per-share figures against it,
     so `inverse` divides where the share rows multiply.
     """
-    corrected: Dict[Tuple[str, str], Tuple[float, str]] = {}
-    for key, spans in filings:
-        factor = factors.get(key) or 1.0
-        for span, (value, unit) in spans.items():
-            if span not in corrected:
-                corrected[span] = (value / factor if inverse else value * factor, unit)
-    return corrected
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_spans_on_latest_basis(filings, factors, inverse)
 
 
 def split_adjustment_factors(cik: str) -> Dict[str, float]:
@@ -1303,20 +916,8 @@ def split_adjustment_factors(cik: str) -> Dict[str, float]:
     whole table. The newest period's factor is 1.0 by construction — that is the
     basis everything is restated onto.
     """
-    factors: Dict[str, float] = {}
-    for concept in ("shares_diluted", "shares_basic", "shares_outstanding"):
-        assembled = get_concept_values(cik, [concept]).get(concept, {})
-        if not assembled:
-            continue
-        corrected = split_consistent_series(cik, concept)
-        for period in assembled:
-            if (
-                period not in factors
-                and assembled.get(period)
-                and corrected.get(period)
-            ):
-                factors[period] = corrected[period] / assembled[period]
-    return factors
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_split_adjustment_factors(cik)
 
 
 def _apply_split_adjustment(
@@ -1329,22 +930,8 @@ def _apply_split_adjustment(
     no factor there is nothing to restate onto, and inventing one would be worse
     than a visible step.
     """
-    if not factors:
-        return
-    for concept in _SHARE_SCALED:
-        series = values.get(concept)
-        if not series:
-            continue
-        for period, factor in factors.items():
-            if period in series and factor:
-                series[period] *= factor
-    for concept in _PER_SHARE_SCALED:
-        series = values.get(concept)
-        if not series:
-            continue
-        for period, factor in factors.items():
-            if period in series and factor:
-                series[period] /= factor
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_apply_split_adjustment(values, factors)
 
 
 def concept_labels() -> Dict[str, str]:
@@ -1356,12 +943,8 @@ def concept_labels() -> Dict[str, str]:
     look at. Includes the sign-flipped concepts — `capex` is still "Capital
     Expenditure" whichever way the cash flows.
     """
-    return {
-        **_INCOME_LABELS,
-        **_BALANCE_LABELS,
-        **_CASHFLOW_LABELS,
-        **_NEGATE_ON_EMIT,
-    }
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_concept_labels()
 
 
 def _frame_from_concepts(
@@ -1370,26 +953,8 @@ def _frame_from_concepts(
     negate: Optional[Dict[str, str]] = None,
 ) -> pd.DataFrame:
     """Build a yfinance-shaped frame: rows are line items, columns are periods."""
-    columns: Dict[str, Dict[str, float]] = {}
-
-    def add(concept: str, label: str, sign: int) -> None:
-        for period_end, value in values.get(concept, {}).items():
-            columns.setdefault(period_end, {})[label] = value * sign
-
-    for concept, label in labels.items():
-        add(concept, label, 1)
-    for concept, label in (negate or {}).items():
-        add(concept, label, -1)
-
-    if not columns:
-        return pd.DataFrame()
-
-    frame = pd.DataFrame(columns)
-    frame.columns = pd.to_datetime(frame.columns, errors="coerce")
-    frame = frame.loc[:, frame.columns.notna()]
-    # yfinance orders newest-first, and `financial_ratios` reads columns[0] as
-    # the latest period.
-    return frame.sort_index(axis=1, ascending=False)
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_frame_from_concepts(values, labels, negate)
 
 
 def get_statements(cik: str) -> Dict[str, pd.DataFrame]:
@@ -1405,22 +970,8 @@ def get_statements(cik: str) -> Dict[str, pd.DataFrame]:
     newest period is its own basis, so the columns the valuation models read
     (they take the latest one) are unchanged.
     """
-    concept_names = (
-        list(INCOME_CONCEPTS) + list(BALANCE_CONCEPTS) + list(CASHFLOW_CONCEPTS)
-    )
-    with company_session(cik):
-        values = get_concept_values(cik, concept_names)
-        for concept in list(_SHARE_SCALED) + list(_PER_SHARE_SCALED):
-            if concept in values:
-                values[concept] = split_consistent_series(cik, concept)
-
-    income = _frame_from_concepts(values, _INCOME_LABELS)
-    balance = _frame_from_concepts(values, _BALANCE_LABELS)
-    cashflow = _frame_from_concepts(values, _CASHFLOW_LABELS, negate=_NEGATE_ON_EMIT)
-
-    _add_derived_rows(income, balance, values, cashflow)
-
-    return {"financials": income, "balance_sheet": balance, "cashflow": cashflow}
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_get_statements(cik)
 
 
 def get_quarterly_concept_values(
@@ -1437,47 +988,8 @@ def get_quarterly_concept_values(
     basis, rebased before anything is derived — a quarter differenced out of two
     filings that disagree about the basis is not a quarter at all.
     """
-    chains = all_concepts()
-    wanted = concepts or list(chains)
-    tags_needed = {tag for name in wanted for tag in chains.get(name, [])}
-
-    store = get_store()
-    spans = store.get_many_tag_spans(cik, tags_needed)
-
-    # Split-sensitive tags are put on one basis first. The default reader takes
-    # the newest filing per span independently, which leaves a restated annual
-    # span and the never-restated quarters inside it on two different bases — and
-    # differencing across that produces a quarter that was never reported.
-    share_tags = set(_tags_for(_SHARE_SCALED))
-    per_share_tags = set(_tags_for(_PER_SHARE_SCALED))
-    sensitive = tags_needed & (share_tags | per_share_tags)
-    if sensitive:
-        factors = _quarterly_basis_factors(cik)
-        if factors:
-            by_filing = store.get_many_tag_spans_by_filing(cik, sensitive)
-            for tag, filings in by_filing.items():
-                spans[tag] = _spans_on_latest_basis(
-                    filings, factors, inverse=tag in per_share_tags
-                )
-
-    # Before deriving anything: a period end mistyped in one filing is one
-    # period, not two, and merging the ends here keeps the typo out of the
-    # ladder as well as out of the series.
-    canonical = _canonical_period_ends(spans)
-    tag_series = {
-        tag: _derive_quarterly_series(
-            _apply_canonical_ends(rows, canonical),
-            additive=tag not in _NON_ADDITIVE_TAGS,
-        )
-        for tag, rows in spans.items()
-    }
-
-    resolved: Dict[str, Dict[str, float]] = {}
-    for name in wanted:
-        values, _prov = resolve_concept(tag_series, chains.get(name, []))
-        if values:
-            resolved[name] = values
-    return resolved
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_get_quarterly_concept_values(cik, concepts)
 
 
 def get_quarterly_statements(cik: str) -> Dict[str, pd.DataFrame]:
@@ -1495,20 +1007,8 @@ def get_quarterly_statements(cik: str) -> Dict[str, pd.DataFrame]:
     `get_quarterly_concept_values`, before the differencing that a mixed basis
     would have corrupted. Rescaling the derived series again would double it.
     """
-    concept_names = (
-        list(INCOME_CONCEPTS) + list(BALANCE_CONCEPTS) + list(CASHFLOW_CONCEPTS)
-    )
-    values = get_quarterly_concept_values(cik, concept_names)
-    if not values:
-        return {}
-
-    income = _frame_from_concepts(values, _INCOME_LABELS)
-    balance = _frame_from_concepts(values, _BALANCE_LABELS)
-    cashflow = _frame_from_concepts(values, _CASHFLOW_LABELS, negate=_NEGATE_ON_EMIT)
-
-    _add_derived_rows(income, balance, values, cashflow)
-
-    return {"financials": income, "balance_sheet": balance, "cashflow": cashflow}
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_get_quarterly_statements(cik)
 
 
 def _add_derived_rows(
@@ -1527,85 +1027,8 @@ def _add_derived_rows(
     time, each of which could enlarge the frame. That was a fifth of the
     ranking batch.
     """
-    stamps = _period_stamps(values)
-
-    def stamp_of(period_end: str) -> Any:
-        if period_end not in stamps:
-            stamps[period_end] = pd.to_datetime(period_end, errors="coerce")
-        return stamps[period_end]
-
-    def cells(frame: pd.DataFrame, items) -> list:
-        """(column, value) for the periods the frame has, in the given order."""
-        out = []
-        for period_end, value in items:
-            stamp = stamp_of(period_end)
-            if pd.isna(stamp) or stamp not in frame.columns:
-                continue
-            out.append((stamp, value))
-        return out
-
-    # Total Debt is rarely tagged as such; it is short-term plus long-term.
-    short_term = values.get("short_term_debt", {})
-    long_term = values.get("long_term_debt", {})
-    debt_periods = set(short_term) | set(long_term)
-    if debt_periods and not balance.empty:
-        _write_row(
-            balance,
-            "Total Debt",
-            cells(
-                balance,
-                (
-                    (p, short_term.get(p, 0.0) + long_term.get(p, 0.0))
-                    for p in debt_periods
-                ),
-            ),
-        )
-
-    # EBIT: pretax income plus interest expense is closer to the definition than
-    # operating income, which excludes non-operating items inconsistently.
-    pretax = values.get("pretax_income", {})
-    interest = values.get("interest_expense", {})
-    if pretax and not income.empty:
-        _write_row(
-            income,
-            "Ebit",
-            cells(
-                income,
-                ((p, v + interest.get(p, 0.0)) for p, v in pretax.items()),
-            ),
-        )
-
-    # Free cash flow is not a filed concept — no filer tags it — so without this
-    # the row would exist only for the handful of periods Yahoo covers while
-    # operating cash flow beside it ran back to 2009.
-    operating = values.get("operating_cash_flow", {})
-    capex = values.get("capex", {})
-    if cashflow is not None and not cashflow.empty:
-        # `capex` is filed as a payment; the frame emits it negated.
-        _write_row(
-            cashflow,
-            "Free Cash Flow",
-            cells(
-                cashflow,
-                ((p, ocf - capex[p]) for p, ocf in operating.items() if p in capex),
-            ),
-        )
-
-    # Some filers omit Liabilities entirely; assets minus equity recovers it.
-    assets = values.get("total_assets", {})
-    equity = values.get("equity", {})
-    if (
-        not balance.empty
-        and "Total Liabilities Net Minority Interest" not in balance.index
-    ):
-        _write_row(
-            balance,
-            "Total Liabilities Net Minority Interest",
-            cells(
-                balance,
-                ((p, v - equity[p]) for p, v in assets.items() if p in equity),
-            ),
-        )
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_add_derived_rows(income, balance, values, cashflow)
 
 
 _ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -1617,18 +1040,8 @@ def _period_stamps(values: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
     format guessing; for `YYYY-MM-DD` strings the vectorised parse gives the
     same Timestamp (NaT for an impossible day). Other strings are left to the
     caller's one-at-a-time parse."""
-    ends = sorted(
-        {
-            p
-            for series in values.values()
-            for p in series
-            if type(p) is str and _ISO_DAY.fullmatch(p)
-        }
-    )
-    if not ends:
-        return {}
-    parsed = pd.to_datetime(pd.Index(ends), errors="coerce", format="%Y-%m-%d")
-    return dict(zip(ends, parsed))
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_period_stamps(values)
 
 
 def _write_row(frame: pd.DataFrame, label: str, cells: list) -> None:
@@ -1639,27 +1052,8 @@ def _write_row(frame: pd.DataFrame, label: str, cells: list) -> None:
     does not cover exactly (anything but unique float64 columns, or a label
     already present more than once) are written cell by cell.
     """
-    if not cells:
-        return
-    simple = (
-        frame.columns.is_unique
-        and all(isinstance(d, np.dtype) and d == np.float64 for d in frame.dtypes)
-        and all(type(v) is float for _c, v in cells)
-        and (label not in frame.index or frame.index.get_indexer_for([label]).size == 1)
-    )
-    if not simple:
-        for column, value in cells:
-            frame.loc[label, column] = value
-        return
-    by_column = dict(cells)
-    if label in frame.index:
-        frame.loc[label, list(by_column)] = list(by_column.values())
-    else:
-        row = np.full(len(frame.columns), np.nan)
-        position = {c: j for j, c in enumerate(frame.columns)}
-        for column, value in by_column.items():
-            row[position[column]] = value
-        frame.loc[label] = row
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_write_row(frame, label, cells)
 
 
 def get_sector_concepts(cik: str, sector_model: str) -> Dict[str, Dict[str, float]]:
@@ -1669,8 +1063,5 @@ def get_sector_concepts(cik: str, sector_model: str) -> Dict[str, Dict[str, floa
     Returns {} for an unknown model rather than raising, so a caller iterating a
     mixed universe never needs to branch defensively.
     """
-    if sector_model == "bank":
-        return get_concept_values(cik, list(BANK_CONCEPTS))
-    if sector_model == "reit":
-        return get_concept_values(cik, list(REIT_CONCEPTS))
-    return {}
+    # Ported to Rust: rust/investa_core/src/ep.rs
+    return investa_core.ep_get_sector_concepts(cik, sector_model)
