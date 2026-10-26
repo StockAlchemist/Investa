@@ -54,7 +54,7 @@ The crate builds in four places:
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
-| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers **done**; (c) input prep and daily valuation **done**; (d) accumulation and the daily results; (e) `calculate_historical_performance` | In progress |
+| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers **done**; (c) input prep and daily valuation **done**; (d) accumulation and the daily results **done**; (e) `calculate_historical_performance` | In progress |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
@@ -699,8 +699,27 @@ Eight `portfolio_history` helpers are now Rust (`ph_small.rs`): price unadjustme
   - It runs the valuation over random grids, every price layout, published NAVs and manual prices, and FX tables under every pair spelling or missing.
 - **Real data:** every one of these calls in the three books' daily and intraday histories is identical: 24 input preparations, 18 holdings loads and 18 valuations.
 
+## Phase 14d (26 Oct 2026): the daily results and the accumulation
+
+`_load_or_calculate_daily_results` and `_calculate_accumulated_gains_and_resample` are now Rust (`ph_daily.rs`).
+- **What moved:**
+  - The feather cache's validation, load and save.
+  - The chronological pass: the intraday grid clipped to market hours and NYSE days, the L1 slice or the replay, and the split re-adjustment of prices.
+  - The single- and multi-process worker fallback.
+  - The TWR return, with its flow-driven spike cap and transfer healing.
+  - The resampling, and the t-1 normalisation of the requested range.
+
+  The kernels were already Rust, and every operation here is Python's own.
+- **A traceback difference that cannot be avoided:** the two `traceback.print_exc()` calls print the exception without this function's frame, as in Phase 13e.
+- **Parity:**
+  - The accumulation fuzz covers every interval, windows inside, across and outside the data, NaN, duplicate-date and all-zero benchmarks, and near-zero divisors.
+  - The daily results run the chronological pass with and without L1, daily and intraday, filtered; the worker pass; and a cache written and read back.
+  - The cache's validation is covered too: a stale key, a newer CSV, a missing CSV and corrupt metadata.
+- **Real data:** all 18 calls the three books' daily and intraday histories make are identical, compared with the feather cache off.
+
 ## Found while porting
 
+- **The worker-failure log never shows the worker's error** (not changed). `_load_or_calculate_daily_results` logs `r.get('error_message', 'Unknown Error')`, but the worker stores the message under `worker_error_msg`, so the sample always reads "Unknown Error".
 - **The vectorized cash-flow pass writes to another tool's scratch file** (not changed). A transfer that neither the price history nor another trade can price appends `Missing price for transfer: <symbol>` to `/Users/kmatan/.gemini/antigravity/brain/19ed956f-…/scratch/missing_transfer_prices.txt`, a path left behind by a debugging session. The directory exists on this machine, so the server really does write there. The port keeps it, and the parity test captures the writes instead of making them. Removing it is a one-line change once you want it gone.
 - **A short holding's "Avg Cost (Local)" is the previous long holding's cost basis divided by the short quantity** (not changed). `_build_summary_rows` assigns `cost_basis_display_local` only in the long branch but reads it for every holding with a non-zero quantity. A short row therefore divides whatever the last long holding left behind, and a book whose first non-zero holding is short raises `UnboundLocalError` out of the summary. No real book holds a short, so no one has seen it. The port keeps both behaviours, and `test_short_holding_reads_the_previous_cost_basis` pins them.
 - **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
