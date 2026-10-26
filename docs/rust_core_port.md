@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; then `buffett_pipeline`, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; then EDGAR statement assembly and the rest of `financial_ratios` | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -772,8 +772,15 @@ The gates, the confidence factor, the universe frame, the per-model quality scor
   - the latest stored run's 1,219 scored rows, re-blended and re-ranked at nine quality/AI weightings;
   - 400 real filers' gates, quality scores (63 eligible) and composite.
 
+## Phase 15f (26 Oct 2026): `buffett_pipeline`
+
+The ranking run itself now runs in Rust (`bp.rs`): the universe collapsed to one listing per filer, sector routing with inference from the facts, the metrics and gates under per-company sessions, the price-quality gate, the archived market data with batched share-count fetches, the value score, the composite, and the snapshot. `RunResult` stays Python. With 15d and 15e, the whole ranking pass is Rust apart from the EDGAR and market-data reads it orchestrates.
+- **Parity:** 36 rounds of the market-data fetch, the price-quality gate and the exclusion records match, through a fake archive and provider. They cover missing closes, stale counts, failing batches, zero and text share counts, a failing quality scan, and both severities.
+- **Real data:** a whole-universe run (market data and persistence off, so no network and no writes) is identical over all 5,561 filers: 1,219 ranked and 4,342 excluded, every row and every exclusion reason. It took 43.4 s against 47.1 s.
+
 ## Found while porting
 
+- **Fetched share counts are stamped with the server's date** (not changed). `buffett_pipeline.fetch_market_data` passes `date.today()` to `upsert_share_counts`, the same server-clock reading `market_db.get_share_counts` ages them by. Both are a day ahead of the US market on the Bangkok host.
 - **The ranking's age is counted on the server's clock** (not changed). `strategies.ranking_age_days` defaults `today` to `date.today()`, while the same allocation's `as_of` uses the market clock. On the Bangkok host a run finished late on a US day can read a day older than it is.
 - **Valuation bands use the server's clock and vanish on a leap day** (not changed). `valuation_history.bands` defaults `today` to `date.today()`, against the market-local-time rule. On 29 February, `today.replace(year=today.year - 15)` raises, the error is caught, and every company shows no bands that day.
 - **Two unbound variables in `calculate_historical_performance`** (not changed).
