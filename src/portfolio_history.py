@@ -25,9 +25,9 @@ from config import (
     CASH_SYMBOL_CSV,
     DAILY_RESULTS_CACHE_PATH_PREFIX,
     HISTORICAL_CALC_METHOD,
-    HISTORICAL_COMPARE_METHODS,
+    HISTORICAL_COMPARE_METHODS,  # noqa: F401 -- read by the Rust port at call time
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
-    LOGGING_LEVEL,
+    LOGGING_LEVEL,  # noqa: F401 -- read by the Rust port at call time
     SHORTABLE_SYMBOLS,
     STOCK_QUANTITY_CLOSE_TOLERANCE,
 )
@@ -41,13 +41,13 @@ from market_data import get_shared_mdp
 # matching the original try/except-raise. The flag is kept for the runtime check.
 MARKET_PROVIDER_AVAILABLE = True
 from portfolio_cashflows import (
-    _calculate_daily_net_cash_flow,
+    _calculate_daily_net_cash_flow,  # noqa: F401 -- read by the Rust port at call time
     _calculate_daily_net_cash_flow_vectorized,
 )
 from portfolio_valuation_kernels import (
     _calculate_daily_holdings_chronological_numba,
-    _calculate_portfolio_value_at_date_unadjusted,
-    _calculate_portfolio_value_at_date_unadjusted_python,
+    _calculate_portfolio_value_at_date_unadjusted,  # noqa: F401 -- read by the Rust port at call time
+    _calculate_portfolio_value_at_date_unadjusted_python,  # noqa: F401 -- read by the Rust port at call time
     _normalize_series,
 )
 from portfolio_version import CURRENT_HIST_VERSION
@@ -98,174 +98,10 @@ def _unadjust_prices(
             - combined_ignored_reasons (Dict[int, str]): Maps 'original_index' to a string describing the reason the row was ignored.
             - final_status (str): Overall status message indicating success, warnings, or errors.
     """
-    # logging.info("--- Starting Price Unadjustment ---")
-    unadjusted_prices_yf = {}
-    unadjusted_count = 0
-
-    for yf_symbol, adj_price_df in adjusted_prices_yf.items():
-        # --- DEBUG FLAG ---
-        IS_DEBUG_SYMBOL = yf_symbol == "AAPL"
-
-        # --- Handle Empty/Invalid Input DataFrame ---
-        # Prefer the UNADJUSTED Close column. yfinance is fetched with
-        # auto_adjust=False so "Close" is the raw historical price (the price
-        # the user actually saw/paid on that date). "Adj Close" includes
-        # split + dividend back-adjustment, which systematically deflates
-        # historical values for dividend-paying assets — never use it here.
-        # "price" is kept first only for legacy cache compatibility (the
-        # function may also be passed an already-renamed DataFrame).
-        col_to_use = None
-        if not adj_price_df.empty:
-            if "price" in adj_price_df.columns:
-                col_to_use = "price"
-            elif "Close" in adj_price_df.columns:
-                col_to_use = "Close"
-            elif "Adj Close" in adj_price_df.columns:
-                col_to_use = "Adj Close"
-
-        if not col_to_use:
-            if IS_DEBUG_SYMBOL:
-                logging.debug(
-                    "    Skipping: Adjusted price DataFrame is empty or missing 'price'/'Adj Close'."
-                )
-            unadjusted_prices_yf[yf_symbol] = (
-                adj_price_df.copy()
-            )  # Return copy of input
-            continue
-
-        # Renaming for internal consistency within this function
-        # We will work with a 'price' column locally
-        adj_price_df_working = adj_price_df.copy()
-        if col_to_use != "price":
-            adj_price_df_working["price"] = adj_price_df_working[col_to_use]
-
-        # --- END Handle Empty/Invalid Input ---
-
-        # --- Get Splits ---
-        internal_symbol = yf_to_internal_map.get(yf_symbol)
-        symbol_splits = (
-            splits_by_internal_symbol.get(internal_symbol) if internal_symbol else None
-        )
-
-        # --- Handle No Splits ---
-        if not symbol_splits:
-            if IS_DEBUG_SYMBOL:
-                logging.debug(
-                    f"    No splits found for internal symbol '{internal_symbol}'. Copying adjusted prices."
-                )
-            unadjusted_prices_yf[yf_symbol] = (
-                adj_price_df_working.copy()
-            )  # Return copy of input
-            continue
-        # --- END Handle No Splits ---
-        else:
-            if IS_DEBUG_SYMBOL:
-                logging.debug(
-                    f"    Found splits for '{internal_symbol}'. Proceeding with unadjustment."
-                )
-
-        # --- Prepare DataFrame for Unadjustment ---
-        unadj_df = adj_price_df_working.copy()
-        # FIX: Ensure index is UTC Timestamp for precise comparison and preservation
-        unadj_df.index = pd.to_datetime(unadj_df.index, utc=True)
-
-        if unadj_df.empty:  # Check if empty after index conversion/filtering
-            unadjusted_prices_yf[yf_symbol] = unadj_df
-            continue
-        unadj_df.sort_index(inplace=True)  # Ensure chronological order
-
-        # --- Calculate Forward Split Factor ---
-        forward_split_factor = pd.Series(1.0, index=unadj_df.index, dtype=float)
-        sorted_splits_desc = sorted(
-            symbol_splits, key=lambda x: x.get("Date", date.min), reverse=True
-        )
-        if IS_DEBUG_SYMBOL:
-            logging.debug(f"    Splits (newest first): {sorted_splits_desc}")
-
-        # --- Process Splits (Robust Loop) ---
-        for split_info in sorted_splits_desc:
-            try:
-                split_date_raw = split_info.get("Date")
-                split_ratio = float(split_info["Split Ratio"])  # Convert to float early
-                if split_date_raw is None:
-                    raise ValueError("Split info missing 'Date'")
-                # Convert split date to date object
-                split_date = (
-                    split_date_raw.date()
-                    if isinstance(split_date_raw, datetime)
-                    else (split_date_raw if isinstance(split_date_raw, date) else None)
-                )
-                if split_date is None:
-                    raise TypeError(f"Invalid split date type: {type(split_date_raw)}")
-                # Validate split ratio
-                if split_ratio <= 0:
-                    if IS_DEBUG_SYMBOL:
-                        logging.warning(
-                            f"    Invalid split ratio {split_ratio} on {split_date}. Skipping."
-                        )
-                    continue  # Skip this invalid split
-
-                # FIX: Use date-based comparison to ensure precision and avoid off-by-one spikes
-                # All dates STRICTLY BEFORE the split_date get unadjusted.
-                # The split_date itself uses the already-adjusted (new) price.
-                mask = pd.Series(forward_split_factor.index).dt.date < split_date
-                mask = mask.values  # Convert back to numpy mask for index selection
-                if IS_DEBUG_SYMBOL and split_date == date(
-                    2020, 8, 31
-                ):  # Example debug date
-                    logging.debug(
-                        f"    Applying ratio {split_ratio} for split on {split_date}. Mask sum (dates before): {mask.sum()}"
-                    )
-                forward_split_factor.loc[mask] *= split_ratio
-
-            except (KeyError, ValueError, TypeError, AttributeError) as e:
-                # Catch specific errors related to bad split data format
-                warn_key = (
-                    f"unadjust_split_proc_{yf_symbol}_{split_info.get('Date', 'N/A')}"
-                )
-                if warn_key not in processed_warnings:
-                    logging.warning(
-                        f"Hist WARN: Error processing split for {yf_symbol} around {split_info.get('Date', 'N/A')}: {e}"
-                    )
-                    processed_warnings.add(warn_key)
-                if IS_DEBUG_SYMBOL:
-                    logging.warning(
-                        f"    Error processing split around {split_info.get('Date', 'N/A')}: {e}"
-                    )
-                continue  # Skip this problematic split, but continue with others
-        # --- END Process Splits ---
-
-        # --- Apply Factor to Prices ---
-        original_prices = unadj_df["price"].copy()
-        # Align factor series with price series (handles potential missing dates)
-        aligned_factor, aligned_prices = forward_split_factor.align(
-            unadj_df["price"],
-            join="right",
-            fill_value=1.0,  # Fill missing factor dates with 1.0
-        )
-        unadj_df["unadjusted_price"] = aligned_prices * aligned_factor
-
-        # --- Debug Output (Conditional) ---
-        if IS_DEBUG_SYMBOL:
-            # ... (debug logging remains the same) ...
-            pass
-        # --- END Debug Output ---
-
-        # --- Prepare Output ---
-        if not unadj_df["unadjusted_price"].equals(
-            original_prices.reindex_like(unadj_df["unadjusted_price"])
-        ):
-            unadjusted_count += 1
-        # Return DataFrame with only the unadjusted price column, renamed to 'price'
-        result_df = unadj_df[["unadjusted_price"]].rename(
-            columns={"unadjusted_price": "price"}
-        )
-        unadjusted_prices_yf[yf_symbol] = result_df
-
-    logging.info(
-        f"--- Finished Price Unadjustment ({unadjusted_count} symbols processed with splits) ---"
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_unadjust_prices(
+        adjusted_prices_yf, yf_to_internal_map, splits_by_internal_symbol, processed_warnings
     )
-    return unadjusted_prices_yf
 
 
 @profile
@@ -328,139 +164,29 @@ def _calculate_daily_metrics_worker(
             Returns a dictionary with error flags set on critical failure within the worker.
             Returns None only if the function entry itself fails unexpectedly.
     """
-    # ... (Function body remains unchanged) ...
-    logging.basicConfig(
-        level=LOGGING_LEVEL,
-        format="%(asctime)s [%(levelname)-8s] PID:%(process)d {%(module)s:%(lineno)d} %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        force=True,
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_daily_metrics_worker(
+        eval_date,
+        transactions_df,
+        historical_prices_yf_unadjusted,
+        historical_prices_yf_adjusted,
+        historical_fx_yf,
+        target_currency,
+        internal_to_yf_map,
+        account_currency_map,
+        default_currency,
+        manual_overrides_dict,
+        symbol_to_id,
+        id_to_symbol,
+        account_to_id,
+        id_to_account,
+        type_to_id,
+        currency_to_id,
+        id_to_currency,
+        calc_method,
+        included_accounts,
+        account_cash_mode_map,
     )
-    try:
-        start_time = time.time()
-        dummy_warnings_set = set()
-
-        portfolio_value_main, val_lookup_failed_main = (
-            _calculate_portfolio_value_at_date_unadjusted(
-                eval_date,
-                transactions_df,
-                historical_prices_yf_unadjusted,
-                historical_fx_yf,
-                target_currency,
-                internal_to_yf_map,
-                account_currency_map,
-                default_currency,
-                manual_overrides_dict,  # Pass through
-                dummy_warnings_set,
-                # --- PASS MAPPINGS and METHOD ---
-                symbol_to_id,
-                id_to_symbol,
-                account_to_id,
-                id_to_account,
-                type_to_id,
-                currency_to_id,
-                id_to_currency,
-                # STOCK_QUANTITY_CLOSE_TOLERANCE is implicitly passed to numba version via _calculate_daily_metrics_worker
-                method=calc_method,
-                included_accounts=included_accounts,  # Pass included_accounts
-                account_cash_mode_map=account_cash_mode_map,  # AUTO CASH
-            )
-        )
-        end_time_main = time.time()
-
-        # --- Comparison Logic (Optional) ---
-        if HISTORICAL_COMPARE_METHODS and calc_method == "numba":
-            try:
-                start_time_py = time.time()
-                portfolio_value_py, val_lookup_failed_py = (
-                    _calculate_portfolio_value_at_date_unadjusted_python(
-                        eval_date,
-                        transactions_df,
-                        historical_prices_yf_unadjusted,
-                        historical_fx_yf,
-                        target_currency,
-                        internal_to_yf_map,
-                        account_currency_map,
-                        default_currency,
-                        manual_overrides_dict,  # Pass through to Python version for comparison
-                        dummy_warnings_set,
-                    )
-                )
-                end_time_py = time.time()
-                diff = (
-                    abs(portfolio_value_main - portfolio_value_py)
-                    if pd.notna(portfolio_value_main) and pd.notna(portfolio_value_py)
-                    else np.nan
-                )
-
-                if diff > 1e-3:  # Log significant differences
-                    logging.warning(
-                        f"COMPARE {eval_date}: Numba={portfolio_value_main:.4f} ({end_time_main - start_time:.4f}s), Python={portfolio_value_py:.4f} ({end_time_py - start_time_py:.4f}s), Diff={diff:.4f}"
-                    )
-                elif eval_date.day == 1:  # Log first day of month for timing check
-                    logging.info(
-                        f"COMPARE {eval_date}: Numba={portfolio_value_main:.4f} ({end_time_main - start_time:.4f}s), Python={portfolio_value_py:.4f} ({end_time_py - start_time_py:.4f}s), Diff={diff:.4f}"
-                    )
-
-            except Exception as e_comp:
-                logging.error(
-                    f"Error during comparison calculation for {eval_date}: {e_comp}"
-                )
-        elif HISTORICAL_COMPARE_METHODS and calc_method == "python":
-            # If primary is python, comparison logic would go here if needed
-            pass
-        # --- End Comparison Logic ---
-
-        portfolio_value = portfolio_value_main
-        val_lookup_failed = val_lookup_failed_main
-
-        if val_lookup_failed_main:
-            # Per-position cause was already logged at WARNING level inside the
-            # valuation loop with symbol/account context. Demote this aggregate
-            # marker to debug so logs aren't doubled.
-            logging.debug(f"Valuation failed for date: {eval_date}")
-        if pd.isna(portfolio_value):
-            net_cash_flow = np.nan
-            flow_lookup_failed = True  # If value failed, flow is irrelevant/failed
-        else:
-            net_cash_flow, flow_lookup_failed = _calculate_daily_net_cash_flow(
-                eval_date,
-                transactions_df,
-                target_currency,
-                historical_fx_yf,
-                account_currency_map,
-                default_currency,
-                dummy_warnings_set,
-                included_accounts=included_accounts,  # FIX: Pass the actual included_accounts list
-                historical_prices_yf_unadjusted=historical_prices_yf_unadjusted,
-                internal_to_yf_map=internal_to_yf_map,
-            )
-
-        # Benchmark processing moved to main process
-        bench_lookup_failed = False
-
-        result_row = {
-            "Date": eval_date,
-            "value": portfolio_value,
-            "net_flow": net_cash_flow,
-            "value_lookup_failed": val_lookup_failed,
-            "flow_lookup_failed": flow_lookup_failed,
-            "bench_lookup_failed": bench_lookup_failed,
-        }
-        # result_row.update(benchmark_prices) # Removed
-        return result_row
-    except Exception as e:
-        logging.critical(
-            f"!!! CRITICAL ERROR in worker process for date {eval_date}: {e}"
-        )
-        logging.exception("Worker Traceback:")
-        failed_row = {"Date": eval_date, "value": np.nan, "net_flow": np.nan}
-        # Benchmark columns removed from failure row
-        failed_row["value_lookup_failed"] = True
-        failed_row["flow_lookup_failed"] = True
-        failed_row["bench_lookup_failed"] = True
-        failed_row["worker_error"] = True
-        failed_row["worker_error_msg"] = str(e)
-        return failed_row
 
 
 @profile
@@ -963,27 +689,8 @@ def manual_prices_by_symbol_id(
     case-insensitively because the engine normalizes symbols but the override
     file keeps whatever case the user typed.
     """
-    if not manual_overrides_dict:
-        return {}
-
-    by_name: Dict[str, float] = {}
-    for key, override in manual_overrides_dict.items():
-        raw_price = override.get("price") if isinstance(override, dict) else override
-        try:
-            price = float(raw_price)
-        except (TypeError, ValueError):
-            continue
-        if np.isfinite(price) and price > 1e-9:
-            by_name[str(key).upper().strip()] = price
-
-    if not by_name:
-        return {}
-
-    return {
-        sym_id: by_name[str(symbol).upper().strip()]
-        for sym_id, symbol in id_to_symbol.items()
-        if str(symbol).upper().strip() in by_name
-    }
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_manual_prices_by_symbol_id(manual_overrides_dict, id_to_symbol)
 
 
 def _fund_nav_series(
@@ -997,54 +704,8 @@ def _fund_nav_series(
     a fresh clone) returns nothing rather than raising — valuation then falls
     through to the manual override exactly as it did before.
     """
-    if not symbol_ids:
-        return {}
-
-    try:
-        from market_db import MarketDatabase
-
-        db = MarketDatabase()
-        coverage = db.get_fund_nav_coverage()
-    except Exception as exc:
-        logging.debug(f"Fund NAV store unavailable: {exc}")
-        return {}
-
-    if not coverage:
-        return {}
-
-    # Match case-insensitively but query with the code as stored: the ledger
-    # normalizes symbols while the override file (which seeded these codes)
-    # keeps whatever case the user typed.
-    have = {str(code).upper().strip(): code for code in coverage}
-    start = date_range.min().date()
-    end = date_range.max().date()
-
-    out: Dict[int, pd.Series] = {}
-    for sym_id, symbol in symbol_ids.items():
-        stored_code = have.get(str(symbol).upper().strip())
-        if not stored_code:
-            continue
-        try:
-            frame = db.get_fund_nav(stored_code, start, end)
-        except Exception as exc:
-            logging.debug(f"Fund NAV read failed for {symbol}: {exc}")
-            continue
-        if frame is None or frame.empty or "price" not in frame.columns:
-            continue
-
-        series = frame["price"].dropna()
-        if series.empty:
-            continue
-        if not isinstance(series.index, pd.DatetimeIndex) or series.index.tz is None:
-            series = series.copy()
-            series.index = pd.to_datetime(series.index, utc=True)
-        out[sym_id] = series
-        logging.info(
-            f"Fund NAV: {symbol} valued from {len(series)} published NAVs "
-            f"({series.index.min().date()} to {series.index.max().date()})"
-        )
-
-    return out
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_fund_nav_series(symbol_ids, date_range)
 
 
 def align_prices_to_grid(
@@ -1062,9 +723,8 @@ def align_prices_to_grid(
     against a 16:00 grid point) from being dropped before the fill. A leading
     backfill still covers grid points that precede a symbol's first quote.
     """
-    raw_prices = pd.DataFrame(price_series_by_id).sort_index()
-    fill_index = raw_prices.index.union(date_range)
-    return raw_prices.reindex(fill_index).ffill().bfill().reindex(date_range)
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_align_prices_to_grid(price_series_by_id, date_range)
 
 
 @profile
@@ -2626,21 +2286,8 @@ def _prune_holdings_cache(
     Runs only on cache-miss saves (roughly once per user per day), so a full
     directory listing is cheap.
     """
-    try:
-        cutoff = time.time() - max_age_days * 86400
-        removed = 0
-        with os.scandir(holdings_cache_dir) as entries:
-            for entry in entries:
-                try:
-                    if entry.is_file() and entry.stat().st_mtime < cutoff:
-                        os.remove(entry.path)
-                        removed += 1
-                except OSError:
-                    continue
-        if removed:
-            logging.info(f"L1 Cache PRUNE: removed {removed} stale cache files.")
-    except Exception as e:
-        logging.warning(f"L1 Cache PRUNE Error: {e}")
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_prune_holdings_cache(holdings_cache_dir, max_age_days)
 
 
 @profile
@@ -3257,23 +2904,18 @@ def _intraday_symbols_for_window(
     end_date, id_to_symbol, internal_to_yf_map, transactions,
 ):
     """Include positions held in the window and trades absent from daily closes."""
-    if holdings_qty is None or holdings_qty.shape[0] == 0:
-        return list(symbols_yf)
-    start_offset = max(0, (start_date - full_start_date).days)
-    active_slice = holdings_qty[start_offset:]
-    if active_slice.shape[0] == 0:
-        return list(symbols_yf)
-    held_sids = np.where(np.any(np.abs(active_slice) > 1e-6, axis=(0, 2)))[0]
-    needed = set(benchmark_symbols_yf)
-    internal_symbols = {id_to_symbol[int(sid)] for sid in held_sids}
-    # A position bought and sold on the same day can be zero in every daily
-    # holdings snapshot, but its intraday prices still affect that day's path.
-    if not transactions.empty:
-        days = pd.to_datetime(transactions["Date"]).dt.date
-        traded = transactions.loc[(days >= start_date) & (days <= end_date), "Symbol"]
-        internal_symbols.update(traded.dropna())
-    needed.update(internal_to_yf_map[s] for s in internal_symbols if s in internal_to_yf_map)
-    return [s for s in symbols_yf if s in needed]
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_intraday_symbols_for_window(
+        symbols_yf,
+        benchmark_symbols_yf,
+        holdings_qty,
+        full_start_date,
+        start_date,
+        end_date,
+        id_to_symbol,
+        internal_to_yf_map,
+        transactions,
+    )
 
 
 def calculate_historical_performance(
@@ -4053,49 +3695,7 @@ def calculate_historical_performance(
 
 def generate_mappings(transactions_df_effective):
     """Generates string-to-ID mappings based on the effective transaction data."""
-    symbol_to_id, id_to_symbol = {}, {}
-    account_to_id, id_to_account = {}, {}
-    type_to_id = {}
-    currency_to_id, id_to_currency = {}, {}
+    # Ported to Rust: rust/investa_core/src/ph_small.rs
+    return investa_core.ph_generate_mappings(transactions_df_effective)
 
-    all_symbols = _normalize_series(transactions_df_effective["Symbol"]).unique()
-    symbol_to_id = {symbol: i for i, symbol in enumerate(all_symbols)}
-    id_to_symbol = {i: symbol for symbol, i in symbol_to_id.items()}
 
-    # --- MODIFIED: Include "To Account" in unique account list --- # type: ignore
-    accounts_source = set(
-        _normalize_series(transactions_df_effective["Account"]).unique()
-    )
-    accounts_dest = set()
-    if "To Account" in transactions_df_effective.columns:
-        accounts_dest = set(
-            _normalize_series(transactions_df_effective["To Account"]).dropna().unique()
-        )
-    # --- END MODIFIED ---
-    all_accounts = sorted(list(accounts_source | accounts_dest))
-    # --- END MODIFIED ---
-    account_to_id = {account: i for i, account in enumerate(all_accounts)}
-
-    id_to_account = {i: account for account, i in account_to_id.items()}
-
-    all_types = transactions_df_effective["Type"].unique()
-    type_to_id = {tx_type.lower().strip(): i for i, tx_type in enumerate(all_types)}
-
-    all_currencies = transactions_df_effective["Local Currency"].unique()
-    currency_to_id = {curr: i for i, curr in enumerate(all_currencies)}
-    id_to_currency = {i: curr for curr, i in currency_to_id.items()}
-
-    if CASH_SYMBOL_CSV not in symbol_to_id:
-        cash_id = len(symbol_to_id)
-        symbol_to_id[CASH_SYMBOL_CSV] = cash_id
-        id_to_symbol[cash_id] = CASH_SYMBOL_CSV
-
-    return (
-        symbol_to_id,
-        id_to_symbol,
-        account_to_id,
-        id_to_account,
-        type_to_id,
-        currency_to_id,
-        id_to_currency,
-    )

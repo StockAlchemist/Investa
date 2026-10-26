@@ -28,6 +28,7 @@ pub mod pa_reports;
 pub mod pa_rows;
 pub mod pa_small;
 pub mod pc_flows;
+pub mod ph_small;
 pub mod pl_helpers;
 pub mod pl_summary;
 pub mod projection;
@@ -347,5 +348,19 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(pc_flows::pc_daily_net_cash_flow, m)?)?;
+    m.add_function(wrap_pyfunction!(ph_small::ph_unadjust_prices, m)?)?;
+    m.add_function(wrap_pyfunction!(ph_small::ph_daily_metrics_worker, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        ph_small::ph_manual_prices_by_symbol_id,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(ph_small::ph_fund_nav_series, m)?)?;
+    m.add_function(wrap_pyfunction!(ph_small::ph_align_prices_to_grid, m)?)?;
+    m.add_function(wrap_pyfunction!(ph_small::ph_prune_holdings_cache, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        ph_small::ph_intraday_symbols_for_window,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(ph_small::ph_generate_mappings, m)?)?;
     Ok(())
 }

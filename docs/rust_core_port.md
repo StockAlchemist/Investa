@@ -54,7 +54,7 @@ The crate builds in four places:
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
-| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | In progress |
+| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers **done**; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | In progress |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
@@ -678,6 +678,17 @@ The daily net external cash flow, over a date range (the vectorized pass the his
   - The ledgers cover cash and stock deposits, transfers across and within a selection, Note-named clean-ups, flows before the range, and currencies with and without FX history, over UTC and naive ranges.
   - Unpriced transfers fall back to the price history (date or Timestamp index, sorted or not) and then to another trade.
 - **Real data:** every vectorized call that the history for the three books makes is identical: USD and THB, all accounts and IBKR alone.
+
+## Phase 14b (26 Oct 2026): the history's helpers
+
+Eight `portfolio_history` helpers are now Rust (`ph_small.rs`): price unadjustment, the per-date multiprocessing worker, the manual-price and published-NAV lookups, the price grid, the L1-cache pruning, the intraday symbol window, and the id mappings.
+- **Every operation is Python's own, in the original's order.** The in-place `factor.loc[mask] *= ratio` is `operator.imul` between the read and the write, as the interpreter does it.
+- **The worker still calls `logging.basicConfig(force=True)` on every call**, which replaces the root logger's handlers (a multiprocessing leftover, kept).
+- **Parity:**
+  - The fuzz covers unadjustment over every price-column layout, naive and UTC indexes, splits dated every way with good and bad ratios, and the warnings set.
+  - It also covers the worker in both comparison modes, with each stage failing in turn; its `basicConfig` calls are recorded and compared.
+  - Manual prices, the NAV series through a fake fund store, the grid, pruning over a real directory, the intraday window and the mappings are fuzzed too.
+- **Real data:** for the three books, every call the history makes is identical: daily runs in USD and THB, with and without a filter, and 5-minute and hourly runs. That covers the mappings, the NAV series, the grid, the manual prices and the intraday window. `_unadjust_prices` is reached only from `portfolio_logic`'s profiling `__main__`, so the fuzz is its check.
 
 ## Found while porting
 
