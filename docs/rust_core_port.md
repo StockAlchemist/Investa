@@ -54,7 +54,7 @@ The crate builds in four places:
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
-| 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
+| 14 | History engine: (a) `portfolio_cashflows` **done**; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | In progress |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
@@ -667,8 +667,21 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
 - **Speed:** `/summary` end to end is level with the Phase-13 Python: 359 vs 375 ms (kitmatan) and 288 vs 285 ms (dheematan). atchamatan's small book is 5–8 ms slower (119 vs 111–114 ms).
 - All 1,474 tests pass.
 
+## Phase 14a (26 Oct 2026): `portfolio_cashflows`
+
+The daily net external cash flow, over a date range (the vectorized pass the history uses) and for one day, is now Rust (`pc_flows.rs`). `portfolio_cashflows.py` is down to 80 lines.
+- **It is pandas and per-row Python**, so every operation is Python's own, in the original's order.
+- **A frame the original rebinds (`df_cash = df_cash[mask]`) is reassigned here, not shadowed.** A Rust shadowing `let` would keep the parent frame alive until the end of the scope. Pandas' SettingWithCopy check, a weak reference from the slice to its parent, would then warn on the next column assignment where the original never did.
+- **The original's side effects are kept.** It rewrites the index of the FX and price series it is handed, and it appends to a scratch file (see "Found while porting").
+- **Parity:**
+  - 320 random rounds of the vectorized pass and 240 of the per-day pass match the frozen original. The comparison covers results, logs, warnings, the scratch-file lines (captured, not written), and the FX and price tables left behind.
+  - The ledgers cover cash and stock deposits, transfers across and within a selection, Note-named clean-ups, flows before the range, and currencies with and without FX history, over UTC and naive ranges.
+  - Unpriced transfers fall back to the price history (date or Timestamp index, sorted or not) and then to another trade.
+- **Real data:** every vectorized call that the history for the three books makes is identical: USD and THB, all accounts and IBKR alone.
+
 ## Found while porting
 
+- **The vectorized cash-flow pass writes to another tool's scratch file** (not changed). A transfer that neither the price history nor another trade can price appends `Missing price for transfer: <symbol>` to `/Users/kmatan/.gemini/antigravity/brain/19ed956f-…/scratch/missing_transfer_prices.txt`, a path left behind by a debugging session. The directory exists on this machine, so the server really does write there. The port keeps it, and the parity test captures the writes instead of making them. Removing it is a one-line change once you want it gone.
 - **A short holding's "Avg Cost (Local)" is the previous long holding's cost basis divided by the short quantity** (not changed). `_build_summary_rows` assigns `cost_basis_display_local` only in the long branch but reads it for every holding with a non-zero quantity. A short row therefore divides whatever the last long holding left behind, and a book whose first non-zero holding is short raises `UnboundLocalError` out of the summary. No real book holds a short, so no one has seen it. The port keeps both behaviours, and `test_short_holding_reads_the_previous_cost_basis` pins them.
 - **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
   - atchamatan's `E*Trade` account reads as `E*Trade`, i.e. any number of E's followed by "trade". So a transfer of the same symbol whose Note contains "trade" anywhere, such as "TD Ameritrade", is pulled into the E*Trade holding's flows.

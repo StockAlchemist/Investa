@@ -27,6 +27,7 @@ pub mod pa_holdings;
 pub mod pa_reports;
 pub mod pa_rows;
 pub mod pa_small;
+pub mod pc_flows;
 pub mod pl_helpers;
 pub mod pl_summary;
 pub mod projection;
@@ -341,5 +342,10 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(pl_helpers::pl_enrich_sector_geo, m)?)?;
     m.add_function(wrap_pyfunction!(pl_helpers::pl_prepare_historical_fx, m)?)?;
     m.add_function(wrap_pyfunction!(pl_summary::pl_portfolio_summary, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        pc_flows::pc_daily_net_cash_flow_vectorized,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(pc_flows::pc_daily_net_cash_flow, m)?)?;
     Ok(())
 }
