@@ -697,7 +697,7 @@ Eight `portfolio_history` helpers are now Rust (`ph_small.rs`): price unadjustme
   - The fuzz runs input preparation over every include/exclude shape, a CSV path that exists or does not, and with and without a cache directory.
   - It runs the L1 cache as a miss that saves and then a hit that loads, in separate directories, plus a run with no directory.
   - It runs the valuation over random grids, every price layout, published NAVs and manual prices, and FX tables under every pair spelling or missing.
-- **Real data:** every one of these calls in kitmatan's daily and intraday histories is identical. The dheematan and atchamatan runs were cut short and still need repeating.
+- **Real data:** every one of these calls in the three books' daily and intraday histories is identical: 24 input preparations, 18 holdings loads and 18 valuations.
 
 ## Found while porting
 
