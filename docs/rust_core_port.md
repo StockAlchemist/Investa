@@ -55,7 +55,7 @@ The crate builds in four places:
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
-| 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record`; then `strategies`, the `buffett_*` glue, EDGAR statement assembly and the rest of `financial_ratios` | In progress |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
 
 ## Phase 1 results (24 Oct 2026)
@@ -731,8 +731,15 @@ The history request itself is now Rust (`ph_performance.rs`). With 14a–d, the 
 - **Real data:** for all three books, with the real market provider, the whole result (daily frame and status) is identical in 15 requests: all history daily, a year weekly in THB, IBKR monthly, five days hourly and one day at 5 minutes. The original, run again, is stable, so no live bar moved under the comparison.
 - All 1,561 tests pass.
 
+## Phase 15a (26 Oct 2026): `valuation_history`
+
+A company's multiples against its own fifteen-year record now run in Rust (`vh.rs`). The band statistics were already Rust; what moved is the glue: the store and EDGAR reads, the point-in-time `as_of` context, and the per-year arithmetic, all with Python's own operations. The oracle is `tests/reference/valuation_history_p15.py`, frozen just before this port; the older reference predates `_describe_percentile`.
+- **Parity:** 80 random requests through fake EDGAR and price stores match: losses, missing cash flows or capex, short share series that take the fallbacks, non-date period keys, gappy and non-positive prices, failing stores, and a leap-day `today`. The helpers are checked separately.
+- **Real data:** 407 real companies from the CIK map, 92 of them with bands, are identical.
+
 ## Found while porting
 
+- **Valuation bands use the server's clock and vanish on a leap day** (not changed). `valuation_history.bands` defaults `today` to `date.today()`, against the market-local-time rule. On 29 February, `today.replace(year=today.year - 15)` raises, the error is caught, and every company shows no bands that day.
 - **Two unbound variables in `calculate_historical_performance`** (not changed).
   - An account filter that leaves no transactions makes the date-range `try` fail before `full_end_date_tx` is set. A few lines later `max(..., full_end_date_tx + 1 day)` reads it, and the request raises `UnboundLocalError` instead of returning an empty history.
   - A benchmark frame with no `price`/`Adj Close`/`Close` column reuses the previous benchmark's `bm_series`, so it draws the wrong benchmark. If it is the first benchmark, the request raises.
