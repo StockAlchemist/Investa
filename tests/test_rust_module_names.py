@@ -31,6 +31,16 @@ def _reads():
                 reads.setdefault(module, set()).add(name)
         for module, name in re.findall(r'py\.import\("(\w+)"\)\?\s*\.getattr\("(\w+)"\)', text):
             reads.setdefault(module, set()).add(name)
+        # `let m = py.import("module")?;` then `m.getattr("name")`, per function;
+        # a name bound to two modules in one function is skipped as ambiguous.
+        for body in re.split(r"\n(?:pub )?fn ", text):
+            lets = {}
+            for var, module in re.findall(r'let (\w+) = py\.import\("(\w+)"\)\?;', body):
+                lets.setdefault(var, set()).add(module)
+            for var, modules in lets.items():
+                if len(modules) == 1:
+                    for name in re.findall(rf'\b{var}\s*\.getattr\("(\w+)"\)', body):
+                        reads.setdefault(next(iter(modules)), set()).add(name)
     return reads
 
 

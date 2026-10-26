@@ -53,7 +53,7 @@ The crate builds in four places:
 | 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
 | 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
 | 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
-| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors **done**; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | In progress |
+| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers **done**; (b) the report extractors **done**; (c) the holdings pass and FIFO **done**; (d) the summary rows and totals; (e) `portfolio_logic` | In progress |
 | 14 | History engine: the rest of `portfolio_history`, `portfolio_cashflows` | Planned |
 | 15 | Valuation and ranking: EDGAR statement assembly, the rest of `financial_ratios`, the `buffett_*`, `strategies`, `track_record` and `valuation_history` glue | Planned |
 | 16 | Utilities: what is left of `finutils`, `risk_metrics` and the helpers | Planned |
@@ -621,6 +621,19 @@ Every `BuffettRankStore` method except `__init__` and `_connect`, and the helper
 **Parity:**
 - 125 random rounds of each extractor match the frozen originals: histories on DatetimeIndex and RangeIndex across weekends and holidays; ledgers with taxes, interest, text amounts and missing FX; account and date filters on a non-datetime `Date`. That covers results, logs, warnings, and the inputs left behind.
 - **Real data:** for all three books, the summaries in USD and THB (which run the dividend history), the realized gains under three account filters, and the 8,883-day periodic returns are identical.
+
+## Phase 13c (26 Oct 2026): the holdings pass and the FIFO shim
+
+`_process_transactions_to_holdings` and `calculate_fifo_lots_and_gains` are now Rust (`pa_holdings.rs`, `pa_fifo.rs`). With them, everything between the loaded ledger and the replay kernel or the FIFO book is Rust.
+- **The holdings pass** normalises the caller's frame in place, as the original did. It deduplicates splits and encodes the columns with the same pandas operations; the price, cash and split-ratio masks over the encoded columns are native. The kernel's state is unpacked into holdings whose values stay NumPy scalars.
+- **The FIFO shim** reads each row with the original's Python operations: `pd.isna`, `pd.to_numeric`, `str().upper().strip()`, and the parse `try`/`except`. Its arithmetic stays on the row's own objects, so a gains record's quantity keeps its NumPy type. The lot events go straight to `fifo::run`, with no round trip through Python lists.
+- The FX bridge and the conversion fallback are looked up on `portfolio_analyzer` at call time. The bridge's import is now marked as read by Rust, and the module-name guard also follows `let m = py.import(...)` bindings.
+- **Parity:**
+  - 240 random rounds of the holdings pass match the frozen original: all nine outputs, the frame it leaves behind, logs and warnings.
+  - So do 320 rounds of the FIFO shim on rougher ledgers: text and junk in numeric columns, NaT and string dates, None symbols, NaN ids, a missing required column, and the real USD-bridge lookup.
+  - `test_rust_fifo_parity.py` still matches the pure-Python FIFO bitwise on 1,500 ledgers.
+- **Real data:** for all three books, in USD and THB, the summaries, the FIFO output and the holdings pass are identical, and so is the frame the holdings pass leaves behind.
+- All 1,445 tests pass.
 
 ## Found while porting
 
