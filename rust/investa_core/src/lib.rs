@@ -24,6 +24,7 @@ pub mod fr_blend;
 pub mod fr_growth;
 pub mod fr_models;
 pub mod fu;
+pub mod fu_flows;
 pub mod history;
 pub mod holdings;
 pub mod irr;
@@ -593,5 +594,11 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rm::rm_returns, m)?)?;
     m.add_function(wrap_pyfunction!(rm::rm_all_risk_metrics, m)?)?;
     m.add_function(wrap_pyfunction!(rm::rm_benchmark_scoreboard, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        fu_flows::fu_cash_flows_for_symbol_account,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(fu_flows::fu_cash_flows_for_mwr, m)?)?;
+    m.add_class::<fu_flows::CashFlowLedger>()?;
     Ok(())
 }

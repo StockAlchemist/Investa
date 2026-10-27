@@ -23,7 +23,6 @@ import config
 import logging
 import investa_core
 from typing import List, Tuple, Dict, Optional, Any, Set
-from collections import defaultdict
 
 # Import constants needed within these utility functions
 # Assuming config.py is in the same directory or accessible via PYTHONPATH
@@ -310,209 +309,19 @@ def _cell_text(values: Optional[list], i: int, default: str = "") -> str:
     return investa_core.fu_cell_text(values, i, default)
 
 
-class CashFlowLedger:
-    """A transactions frame read once, for any number of per-holding IRR flows.
-
-    `get_cash_flows_for_symbol_account` re-filtered the whole frame on every
-    call: an equality mask, a case-insensitive regex over every Note, and an
-    iterrows pass. That cost a summary about half its time (243 holdings,
-    780,000 regex searches). Here the rows are grouped by symbol once, each
-    account's mask is built once with the original's own pandas expressions,
-    and each row is parsed once. The flow rules run in investa_core.
-
-    Nothing is read until the first request, so a frame the original could
-    not read fails inside the caller's handler exactly as before.
-    """
-
-    def __init__(self, transactions_df: pd.DataFrame):
-        self.df = transactions_df
-        self._by_symbol: Optional[Dict[str, List[int]]] = None
-        self._account_masks: Dict[Any, np.ndarray] = {}
-        self._parsed = None
-        self._is_transfer: Optional[Tuple[bool, Any]] = None
-        self._ids: Optional[list] = None
-
-    def _symbol_positions(self, symbol: Any) -> List[int]:
-        if not isinstance(symbol, str):
-            return np.flatnonzero((self.df["Symbol"] == symbol).to_numpy()).tolist()
-        if self._by_symbol is None:
-            groups: Dict[str, List[int]] = defaultdict(list)
-            for i, s in enumerate(self.df["Symbol"].tolist()):
-                if isinstance(s, str):
-                    groups[s].append(i)
-            self._by_symbol = groups
-        return self._by_symbol.get(symbol, [])
-
-    def _account_mask(self, account: Any) -> np.ndarray:
-        if account in self._account_masks:
-            return self._account_masks[account]
-        df = self.df
-        if "To Account" in df.columns:
-            mask = (df["Account"] == account) | (df["To Account"] == account)
-        else:
-            mask = df["Account"] == account
-        # Legacy transfers whose Account column is misaligned name the account
-        # in the Note. str.contains reads the account name as a regex.
-        if "Note" in df.columns:
-            mask |= (
-                df["Note"].str.contains(account, case=False, na=False)
-                & self._transfer_rows()
-            )
-        mask = mask.to_numpy(dtype=bool)
-        self._account_masks[account] = mask
-        return mask
-
-    def _transfer_rows(self) -> pd.Series:
-        """`df["Type"].str.lower() == "transfer"`, the same for every account."""
-        if self._is_transfer is None:
-            try:
-                self._is_transfer = (True, self.df["Type"].str.lower() == "transfer")
-            except Exception as exc:  # raised again for every account, as before
-                self._is_transfer = (False, exc)
-        ok, value = self._is_transfer
-        if not ok:
-            raise value
-        return value
-
-    def _rows(self):
-        if self._parsed is None:
-            df = self.df
-            columns = df.columns
-
-            def texts(name):
-                return df[name].tolist() if name in columns else None
-
-            types = texts("Type")
-            self._parsed = {
-                "kind": np.array(
-                    [
-                        _FLOW_KINDS.get(_cell_text(types, i).lower().strip(), 0)
-                        for i in range(len(df))
-                    ],
-                    dtype=np.uint8,
-                ),
-                "qty": _numeric_column(df, "Quantity"),
-                "price": _numeric_column(df, "Price/Share"),
-                "commission": _commission_column(df),
-                "total": _numeric_column(df, "Total Amount"),
-                "date": df["Date"].tolist(),
-                "account": texts("Account"),
-                "to_account": texts("To Account"),
-                "note": texts("Note"),
-            }
-        return self._parsed
-
-    def _sorted(self, positions: List[int]) -> List[int]:
-        """The positions in the original's `sort_values(["Date", "original_index"])`
-        order: a stable sort, missing keys last."""
-        if "original_index" not in self.df.columns:
-            raise KeyError("original_index")
-        dates = self._rows()["date"]
-        if self._ids is None:
-            self._ids = self.df["original_index"].tolist()
-        id_values = self._ids
-        clean = all(
-            isinstance(dates[p], pd.Timestamp) and dates[p] is not pd.NaT
-            for p in positions
-        ) and all(isinstance(id_values[p], (int, np.integer)) for p in positions)
-        if clean:
-            return sorted(positions, key=lambda p: (dates[p], id_values[p]))
-        keys = self.df.iloc[positions][["Date", "original_index"]].copy()
-        keys["_position"] = positions
-        return keys.sort_values(by=["Date", "original_index"])["_position"].tolist()
-
-    def flows_for(
-        self,
-        symbol: str,
-        account: Optional[str],
-        final_market_value: float,
-        is_transfer_a_flow: bool,
-        report_date: Optional[date] = None,
-    ) -> Tuple[List[date], List[float]]:
-        """`get_cash_flows_for_symbol_account` for one holding."""
-        positions = self._symbol_positions(symbol)
-        if account is not None:
-            mask = self._account_mask(account)
-            positions = [p for p in positions if mask[p]]
-        if not positions:
-            return [], []
-        order = self._sorted(positions)
-        rows = self._rows()
-        take = np.asarray(order, dtype=np.intp)
-        kind = rows["kind"][take]
-        tx_dates = [rows["date"][p].date() for p in order]
-
-        # A transfer's direction, when it counts as a flow: into the account
-        # (by To Account or "to <account>" in the Note) is money in (-), out
-        # of it is money out (+); when both or neither match, To Account decides.
-        direction = np.zeros(len(order), dtype=np.int8)
-        if is_transfer_a_flow:
-            for j, p in enumerate(order):
-                if kind[j] != _TRANSFER:
-                    continue
-                to_account = _cell_text(rows["to_account"], p).strip()
-                acct_col = _cell_text(rows["account"], p).strip()
-                note = _cell_text(rows["note"], p).lower()
-                is_from_note = f"from {account.lower()}" in note
-                is_to_note = f"to {account.lower()}" in note
-                is_incoming = (to_account == account) or is_to_note
-                is_outgoing = (acct_col == account) or is_from_note
-                if is_incoming and not is_outgoing:
-                    direction[j] = -1
-                elif is_outgoing and not is_incoming:
-                    direction[j] = 1
-                else:
-                    direction[j] = -1 if to_account == account else 1
-
-        flows = investa_core.holding_flows(
-            kind.tolist(),
-            rows["qty"][take].tolist(),
-            rows["price"][take].tolist(),
-            rows["commission"][take].tolist(),
-            rows["total"][take].tolist(),
-            direction.tolist(),
-            bool(symbol == CASH_SYMBOL_CSV),
-            symbol in SHORTABLE_SYMBOLS,
-            bool(is_transfer_a_flow),
-        )
-        dates_flows = defaultdict(float)
-        for tx_date, cash_flow_local in zip(tx_dates, flows):
-            if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
-                dates_flows[tx_date] += float(cash_flow_local)
-
-        sorted_dates = sorted(dates_flows.keys())
-        if not sorted_dates and abs(final_market_value) < 1e-9:
-            return [], []
-        final_dates = list(sorted_dates)
-        final_flows = [float(dates_flows[d]) for d in final_dates]
-        final_market_value_abs = (
-            abs(final_market_value) if pd.notna(final_market_value) else 0.0
-        )
-        if final_market_value_abs > 1e-9 and isinstance(report_date, date):
-            if not final_dates:
-                first_tx_date_for_holding = self.df["Date"].iloc[order].min().date()
-                if report_date >= first_tx_date_for_holding:
-                    final_dates.append(report_date)
-                    final_flows.append(final_market_value_abs)
-                else:
-                    return [], []
-            elif report_date >= final_dates[-1]:
-                if final_dates[-1] == report_date:
-                    final_flows[-1] += final_market_value_abs
-                else:
-                    final_dates.append(report_date)
-                    final_flows.append(final_market_value_abs)
-
-        if len(final_dates) < 2:
-            return [], []
-        non_zero_final_flows = [cf for cf in final_flows if abs(cf) > 1e-9]
-        if (
-            not non_zero_final_flows
-            or all(cf >= -1e-9 for cf in non_zero_final_flows)
-            or all(cf <= 1e-9 for cf in non_zero_final_flows)
-        ):
-            return [], []
-        return final_dates, final_flows
+# A transactions frame read once, for any number of per-holding IRR flows.
+#
+# `get_cash_flows_for_symbol_account` re-filtered the whole frame on every
+# call: an equality mask, a case-insensitive regex over every Note, and an
+# iterrows pass. That cost a summary about half its time (243 holdings,
+# 780,000 regex searches). Here the rows are grouped by symbol once, each
+# account's mask is built once with the original's own pandas expressions,
+# and each row is parsed once. The flow rules run in investa_core.
+#
+# Nothing is read until the first request, so a frame the original could
+# not read fails inside the caller's handler exactly as before.
+# Ported to Rust: rust/investa_core/src/fu_flows.rs
+CashFlowLedger = investa_core.CashFlowLedger
 
 
 def get_cash_flows_for_symbol_account(
@@ -540,8 +349,14 @@ def get_cash_flows_for_symbol_account(
     For many holdings of one frame, build a ``CashFlowLedger`` once and call
     ``flows_for``; this reads the frame afresh.
     """
-    return CashFlowLedger(transactions_df).flows_for(
-        symbol, account, final_market_value, is_transfer_a_flow, report_date
+    # Ported to Rust: rust/investa_core/src/fu_flows.rs
+    return investa_core.fu_cash_flows_for_symbol_account(
+        symbol,
+        account,
+        transactions_df,
+        final_market_value,
+        is_transfer_a_flow,
+        report_date,
     )
 
 
@@ -576,144 +391,11 @@ def get_cash_flows_for_mwr(
     Returns:
         Tuple[List[date], List[float]]: Sorted dates and cash flows in target currency.
     """
-    if account_transactions.empty:
-        return [], []
-    acc_tx = account_transactions.sort_values(
-        by=["Date", "original_index"], ascending=True
-    )
-
-    # Pre-calculate the scope of accounts for "Internal vs External" flow detection.
-    # Transfers between accounts WITHIN this scope are 0-flow (internal).
-    # Transfers to/from accounts OUTSIDE this scope are external flows (deposits/withdrawals).
-    if include_accounts:
-        included_set = {str(a).strip().upper() for a in include_accounts if a}
-    else:
-        # If no explicit list, the scope is the entire set of accounts in the provided transactions.
-        # This is critical for the "All Accounts" dashboard view.
-        all_accs = set(account_transactions["Account"].dropna().unique())
-        if "To Account" in account_transactions.columns:
-            all_accs.update(account_transactions["To Account"].dropna().unique())
-        included_set = {str(a).strip().upper() for a in all_accs if a}
-
-    types = [str(t).lower().strip() for t in acc_tx["Type"].tolist()]
-    symbols = acc_tx["Symbol"].tolist()
-    acc_tx["Quantity"], acc_tx["Price/Share"]  # read strictly, as the original did
-    qty, qty_np = _numeric_column(acc_tx, "Quantity", with_types=True)
-    price, price_np = _numeric_column(acc_tx, "Price/Share", with_types=True)
-    commission = _commission_column(acc_tx)
-    total, total_np = _numeric_column(acc_tx, "Total Amount", with_types=True)
-    tx_dates = [d.date() for d in acc_tx["Date"].tolist()]
-
-    # --- PHASE 2 BUG FIX: Skip any transactions that occur after the evaluated end_date ---
-    kept = [i for i, d in enumerate(tx_dates) if not d > end_date]
-    if not kept:
-        local_currencies: list = []
-    else:
-        local_currencies = acc_tx["Local Currency"].tolist()
-
-    accounts = acc_tx["Account"].tolist() if "Account" in acc_tx.columns else None
-    to_accounts = (
-        acc_tx["To Account"].tolist() if "To Account" in acc_tx.columns else None
-    )
-    kind = np.array([_FLOW_KINDS.get(types[i], 0) for i in kept], dtype=np.uint8)
-    # A transfer crossing the scope: leaving it is money out (+), entering it
-    # money in (-); within it, or outside it entirely, no flow.
-    direction = np.zeros(len(kept), dtype=np.int8)
-    for j, i in enumerate(kept):
-        if kind[j] != _TRANSFER:
-            continue
-        acct = _cell_text(accounts, i).strip().upper()
-        to_acct = _cell_text(to_accounts, i).strip().upper()
-        is_outbound = acct in included_set
-        is_inbound = bool(to_acct) and to_acct in included_set
-        if is_outbound and not is_inbound:
-            direction[j] = 1
-        elif not is_outbound and is_inbound:
-            direction[j] = -1
-
-    take = np.asarray(kept, dtype=np.intp)
-    flows = investa_core.mwr_flows(
-        kind.tolist(),
-        qty[take].tolist(),
-        price[take].tolist(),
-        commission[take].tolist(),
-        total[take].tolist(),
-        direction.tolist(),
-        [bool(symbols[i] == CASH_SYMBOL_CSV) for i in kept],
-        flow_basis == "portfolio",
-    )
-
-    dates_flows = defaultdict(float)
-    for i, (cash_flow_local, uses) in zip(kept, flows):
-        if uses and (
-            (uses & 1 and qty_np[i])
-            or (uses & 2 and price_np[i])
-            or (uses & 4 and total_np[i])
-        ):
-            cash_flow_local = np.float64(cash_flow_local)
-        tx_date = tx_dates[i]
-        local_currency = local_currencies[i]
-        cash_flow_target = cash_flow_local
-        if pd.notna(cash_flow_local) and abs(cash_flow_local) > 1e-9:
-            if local_currency != target_currency:
-                rate = np.nan
-                # Try Historical Lookup
-                if historical_fx_rates:
-                    lookup_date = tx_date
-                    if (lookup_date, local_currency) in historical_fx_rates:
-                        rate = historical_fx_rates[(lookup_date, local_currency)]
-
-                # Fallback to Current Rate
-                if pd.isna(rate):
-                    rate = get_conversion_rate(
-                        local_currency, target_currency, fx_rates
-                    )
-
-                if pd.isna(rate):
-                    logging.warning(
-                        f"MWR calc conversion failed for {local_currency} on {tx_date}. Skipping."
-                    )
-                    cash_flow_target = 0.0
-                else:
-                    cash_flow_target = cash_flow_local * rate
-
-            if pd.notna(cash_flow_target) and abs(cash_flow_target) > 1e-9:
-                dates_flows[tx_date] += cash_flow_target
-
-    sorted_dates = sorted(dates_flows.keys())
-    if not sorted_dates and abs(final_account_market_value) < 1e-9:
-        return [], []
-
-    final_dates = list(sorted_dates)
-    final_flows = [dates_flows[d] for d in final_dates]
-    final_market_value_target = (
-        float(final_account_market_value)
-        if pd.notna(final_account_market_value)
-        else 0.0
-    )
-    final_market_value_abs = abs(final_market_value_target)
-
-    if final_market_value_abs > 1e-9 and isinstance(end_date, date):
-        if not final_dates:
-            return [], []
-        elif end_date >= final_dates[-1]:
-            if final_dates[-1] == end_date:
-                final_flows[-1] += final_market_value_abs
-            else:
-                final_dates.append(end_date)
-                final_flows.append(final_market_value_abs)
-
-    if len(final_dates) < 2:
-        return [], []
-
-    non_zero_final_flows = [cf for cf in final_flows if abs(cf) > 1e-9]
-    if (
-        not non_zero_final_flows
-        or all(cf >= -1e-9 for cf in non_zero_final_flows)
-        or all(cf <= 1e-9 for cf in non_zero_final_flows)
-    ):
-        return [], []
-    return final_dates, final_flows
+    # Ported to Rust: rust/investa_core/src/fu_flows.rs
+    return investa_core.fu_cash_flows_for_mwr(
+        account_transactions, final_account_market_value, end_date, target_currency,
+        fx_rates, display_currency, historical_fx_rates, include_accounts, flow_basis,
+    )  # fmt: skip
 
 
 # --- Currency Conversion Helpers ---

@@ -56,7 +56,7 @@ The crate builds in four places:
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
-| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; then the cash-flow ledger and builders, FX and historical prices, symbol mapping and formatting | In progress |
+| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; then FX and historical prices, symbol mapping and formatting | In progress |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -898,6 +898,27 @@ Checks:
 - **Real data:** all identical.
   - The spies saw 24,386 calls during real summaries and full histories of all three books: IRR, the cash classifiers, the column readers and the period inference.
   - Direct comparisons: 12,398. They cover risk metrics and scoreboards on each book's real return series over three windows, the dividend helpers on 4,092 cached profiles, and the hashes of the real databases.
+
+## Phase 16b (27 Oct 2026): `CashFlowLedger` and the cash-flow builders
+
+`CashFlowLedger` is now a Rust class, `investa_core.CashFlowLedger`, and the per-holding and MWR cash-flow builders run in Rust too (`fu_flows.rs`). The per-row flow rules were already Rust (`cashflows.rs`).
+
+The ledger keeps the original's lazy caches:
+- the symbol groups;
+- each account's mask, built with the original's own pandas expressions (the Note still read as a regex);
+- the parsed rows;
+- the transfer test. When the transfer test fails, the same exception is raised again for every account, as before.
+
+Daily flows are summed with Python's own arithmetic, so a NumPy market value still makes the total a NumPy scalar.
+
+**One visible difference: pandas' warnings point at a different line.** pandas attributes its warnings to the nearest Python frame, and Rust has none. The regex-group warning for `IBKR (1)` (see "Found while porting") is therefore blamed on the caller's line, where it used to be blamed on one line inside `finutils`. Every warning still fires, and the parity tests compare them with the `always` filter. Python deduplicates warnings once per location, though, and there are now more locations, so the full suite records 2,411 warnings where it used to record 2,011.
+
+Checks:
+- **Parity:** random ledgers match through a shared ledger, through the one-shot builder, and through the ledger's internals.
+  - They come from the phase 13 generator: regex account names, Note-named transfers, every row type, odd amounts, same-day rows, integer and text columns, missing columns.
+  - Also covered: no `original_index`, a non-text `Type` column, NaT dates, mixed id types, NumPy market values and datetime report dates.
+  - MWR runs under both bases, with every kind of scope and FX source.
+- **Real data:** all identical, through spies in real summaries of all three books: 606 ledger answers and 42 MWR builds. Separately, the one-shot builder is identical on all 806 symbol/account pairs. Summary time is unchanged: 0.229, 0.220 and 0.116 s with the Rust ledger, against 0.224, 0.233 and 0.114 s with the Python one.
 
 ## Found while porting
 
