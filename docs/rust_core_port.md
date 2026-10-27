@@ -56,7 +56,7 @@ The crate builds in four places:
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
-| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; then symbol mapping and formatting | In progress |
+| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; (d) symbol mapping and formatting **done** | Done |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -940,6 +940,21 @@ Checks:
   - The cache is exercised by repeating lookups and by growing a frame between them.
   - Built tables are compared by their answers on 52 ticks each.
 - **Real data:** all identical, through spies in real summaries and USD and THB full histories of all three books: 5,536 historical prices, 3,592 bridged rates and 1,054 current rates.
+
+## Phase 16d (27 Oct 2026): symbol mapping and formatting
+
+The rest of `finutils` now runs in Rust (`fu_fmt.rs`): the Yahoo symbol mapper, `safe_sum`, and the five display formatters.
+- **Symbols are matched with Python's own tools.** That means its string methods, `len` and `re`. A ticker can carry non-ASCII text, `len` counts code points, and the pattern's `$` behaves as Python's does.
+- **Numbers are rendered by Python's `format`** with the original's nested specs. A `decimals` that cannot build a spec (2.5, "2", −1) still gives "N/A". An infinite integer rounding still raises the `OverflowError` the original never catches.
+
+Checks:
+- **Parity:** 35 symbols cover every mapping rule, under two user maps and two exclusion sets. Sums take numeric, text, boolean, infinite and list columns. The formatters take 21 odd values at six `decimals`.
+- **Real data:** all identical:
+  - 24,652 mappings: every symbol in the three books and all 4,095 cached tickers, with and without each book's own map and exclusions;
+  - 594 `safe_sum` calls, spied in real summaries;
+  - 112,896 formatter calls on every number in the real summary rows.
+
+`finutils.py` is now 611 lines, down from 1,655, and `risk_metrics.py` is 220, down from 327. Phase 16, and with it the second port (Phases 10–16), is done. Python now keeps only the FastAPI routes, the network fetchers, PDF parsing, the market calendar, Gemini, pandas frame construction, and the dataclasses and registries.
 
 ## Found while porting
 

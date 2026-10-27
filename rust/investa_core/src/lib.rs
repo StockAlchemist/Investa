@@ -25,6 +25,7 @@ pub mod fr_growth;
 pub mod fr_models;
 pub mod fu;
 pub mod fu_flows;
+pub mod fu_fmt;
 pub mod fu_fx;
 pub mod history;
 pub mod holdings;
@@ -606,5 +607,12 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fu_fx::fu_build_price_table, m)?)?;
     m.add_function(wrap_pyfunction!(fu_fx::fu_historical_price, m)?)?;
     m.add_function(wrap_pyfunction!(fu_fx::fu_rate_via_usd_bridge, m)?)?;
+    m.add_function(wrap_pyfunction!(fu_fmt::fu_map_to_yf_symbol, m)?)?;
+    m.add_function(wrap_pyfunction!(fu_fmt::fu_safe_sum, m)?)?;
+    m.add_function(wrap_pyfunction!(fu_fmt::fu_format_currency_value, m)?)?;
+    m.add_function(wrap_pyfunction!(fu_fmt::fu_format_percentage_value, m)?)?;
+    m.add_function(wrap_pyfunction!(fu_fmt::fu_format_large_number_display, m)?)?;
+    m.add_function(wrap_pyfunction!(fu_fmt::fu_format_integer_with_commas, m)?)?;
+    m.add_function(wrap_pyfunction!(fu_fmt::fu_format_float_with_commas, m)?)?;
     Ok(())
 }

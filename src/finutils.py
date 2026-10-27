@@ -542,109 +542,10 @@ def map_to_yf_symbol(
         Optional[str]: The corresponding Yahoo Finance ticker (e.g., 'AAPL', 'BRK-B', 'ADVANC.BK'),
                        or None if the symbol is excluded, is cash, or has an invalid format.
     """
-
-    if not internal_symbol or not isinstance(internal_symbol, str):
-        return None
-
-    # --- ADDED Logging ---
-    logging.debug(f"map_to_yf_symbol: Received internal_symbol='{internal_symbol}'")
-
-    # Normalize the input symbol (uppercase, strip whitespace)
-    normalized_symbol = internal_symbol.upper().strip()
-    logging.debug(f"  Normalized to: '{normalized_symbol}'")
-
-    # --- 1. Check Excluded and Cash Symbols FIRST ---
-    if is_cash_symbol(internal_symbol):
-        logging.debug(f"  Symbol '{normalized_symbol}' is CASH. Returning None.")
-        return None
-
-    if normalized_symbol in user_excluded_symbols:
-        logging.debug(
-            f"  map_to_yf_symbol: Symbol '{normalized_symbol}' is in EXCLUSION list. Returning None."
-        )
-        return None
-
-    # --- 2. Check Explicit Map (if not excluded) ---
-    # Ensure keys in the map are also normalized for comparison
-    normalized_map = {
-        k.upper().strip(): v.upper().strip() for k, v in user_symbol_map.items()
-    }  # Use user-defined map
-
-    # ADDED: Default system mappings for common problematic tickers
-    SYSTEM_MAP = {
-        "BRK.B": "BRK-B",
-        "BRK.A": "BRK-A",
-        "BF.B": "BF-B",
-        "BF.A": "BF-A",
-        "RDS.A": "RDS-A",
-        "RDS.B": "RDS-B",
-    }
-
-    if normalized_symbol in normalized_map:
-        mapped_symbol = normalized_map[normalized_symbol]
-        logging.debug(
-            f"  Found in explicit map: '{normalized_symbol}' -> '{mapped_symbol}'"
-        )
-        return mapped_symbol
-
-    if normalized_symbol in SYSTEM_MAP:
-        mapped_symbol = SYSTEM_MAP[normalized_symbol]
-        logging.debug(
-            f"  Applied SYSTEM_MAP: '{normalized_symbol}' -> '{mapped_symbol}'"
-        )
-        return mapped_symbol
-
-    # --- 3. Apply Automatic Conversion Rules (if not found in map) ---
-    # Handle Thai stocks (:BKK -> .BK)
-    if ":BKK" in normalized_symbol:
-        base_symbol = normalized_symbol.replace(":BKK", "")
-        # Handle cases like "ADVANC:BKK" -> "ADVANC.BK"
-        if "." in base_symbol or len(base_symbol) == 0:
-            logging.warning(
-                f"map_to_yf_symbol: Skipping potentially invalid BKK conversion: {internal_symbol}"
-            )
-            return None
-        return f"{base_symbol.upper()}.BK"
-
-    # --- 4. Sanitization and Heuristics ---
-
-    # Rule 4a: Replace dots with dashes for short US-style tickers (e.g. BRK.B -> BRK-B)
-    # This catches variations not in the explicit SYSTEM_MAP.
-    if "." in normalized_symbol and len(normalized_symbol) <= 6:
-        # Check if it looks like a class (e.g. TKR.A)
-        parts = normalized_symbol.split(".")
-        if len(parts) == 2 and len(parts[1]) <= 2:
-            # Explicitly skip known valid exchange suffixes like .BK
-            if parts[1].upper() not in ["BK", "L", "TO", "V"]:
-                converted = normalized_symbol.replace(".", "-")
-                logging.debug(
-                    f"  Applied DOT-to-DASH heuristic: '{normalized_symbol}' -> '{converted}'"
-                )
-                return converted
-
-    # Rule 4b: Skip obviously invalid tickers (Custom names, fund tags, etc.)
-    # Valid tickers typically only contain letters, numbers, and very few special chars (. - :)
-    import re
-
-    # Allowing : for BKK (handled above) and ^ for indices
-    if not re.match(r"^[A-Z0-9\.\-\^:]+$", normalized_symbol):
-        logging.warning(
-            f"map_to_yf_symbol: Skipping symbol with invalid characters: {internal_symbol}"
-        )
-        return None
-
-    # Rule 4c: Extremely long symbols (likely descriptive names or mutual fund tags)
-    if len(normalized_symbol) > 15:
-        logging.warning(
-            f"map_to_yf_symbol: Skipping excessively long symbol: {internal_symbol}"
-        )
-        return None
-
-    # --- 5. Return normalized symbol if no rules applied ---
-    logging.debug(
-        f"  No rules applied. Returning normalized symbol: '{normalized_symbol.upper()}'"
+    # Ported to Rust: rust/investa_core/src/fu_fmt.rs
+    return investa_core.fu_map_to_yf_symbol(
+        internal_symbol, user_symbol_map, user_excluded_symbols
     )
-    return normalized_symbol.upper()
 
 
 # --- DataFrame Aggregation Helper ---
@@ -663,20 +564,11 @@ def safe_sum(df, col):
     Returns:
         float: The sum of the numeric values in the column, or 0.0 on failure or if empty.
     """
-    if col not in df.columns:
-        return 0.0
-    try:
-        data_series = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
-        total = data_series.sum()
-        return float(total) if pd.notna(total) else 0.0
-    except Exception as e:
-        logging.error(f"Error in safe_sum for column {col}: {e}")
-        return 0.0
+    # Ported to Rust: rust/investa_core/src/fu_fmt.rs
+    return investa_core.fu_safe_sum(df, col)
 
 
 # --- Value Formatting Utilities ---
-
-
 def format_currency_value(
     value: Optional[float],
     currency_symbol: str = "$",
@@ -685,97 +577,35 @@ def format_currency_value(
     is_abs: bool = False,  # If true, formats absolute value
 ) -> str:
     """Formats a numeric value as a currency string."""
-    if value is None or pd.isna(value):
-        return "N/A"
-    try:
-        val_to_format = abs(float(value)) if is_abs else float(value)
-        if (
-            abs(val_to_format) < 1e-9 and not is_abs
-        ):  # Treat near-zero as zero unless we want absolute display
-            val_to_format = 0.0
-
-        sign = ""
-        if (
-            show_plus_sign and val_to_format > 1e-9
-        ):  # Only show plus for positive non-zero
-            sign = "+"
-        elif (
-            val_to_format < -1e-9
-        ):  # Negative sign is handled by f-string if not is_abs
-            pass  # Negative sign will be part of the number
-
-        formatted_num = f"{val_to_format:,.{decimals}f}"
-        return (
-            f"{sign}{currency_symbol}{formatted_num}"
-            if not is_abs
-            else f"{currency_symbol}{formatted_num}"
-        )
-    except (ValueError, TypeError):
-        return "N/A"
+    # Ported to Rust: rust/investa_core/src/fu_fmt.rs
+    return investa_core.fu_format_currency_value(
+        value, currency_symbol, decimals, show_plus_sign, is_abs
+    )
 
 
 def format_percentage_value(
     value: Optional[float], decimals: int = 2, show_plus_sign: bool = False
 ) -> str:
     """Formats a numeric value (decimal fraction) as a percentage string."""
-    if value is None or pd.isna(value):
-        return "N/A"
-    try:
-        val_float = float(value)
-        if np.isinf(val_float):
-            return "Inf %"
-
-        sign = ""
-        # For percentages, value is already scaled (e.g., 25.0 for 25%).
-        # If it's a factor (e.g., 0.25 for 25%), multiply by 100 first.
-        # Assuming 'value' is already the percentage number (e.g., 2.5 for 2.5%)
-        # If it's a factor (e.g. 0.025 for 2.5%), then it should be multiplied by 100.
-        # Let's assume for now 'value' is the actual percentage number.
-        # If it's consistently a factor, we'd add: val_float *= 100
-
-        if show_plus_sign and val_float > 1e-9:
-            sign = "+"
-
-        return f"{sign}{val_float:,.{decimals}f}%"
-    except (ValueError, TypeError):
-        return "N/A"
+    # Ported to Rust: rust/investa_core/src/fu_fmt.rs
+    return investa_core.fu_format_percentage_value(value, decimals, show_plus_sign)
 
 
 def format_large_number_display(
     value: Optional[float], currency_symbol: str = "$", decimals: int = 2
 ) -> str:
     """Formats large numbers with T, B, M suffixes (e.g., for Market Cap)."""
-    if value is None or pd.isna(value):
-        return "N/A"
-    try:
-        val_float = float(value)
-        if val_float >= 1e12:
-            return f"{currency_symbol}{val_float / 1e12:,.{decimals}f} T"
-        elif val_float >= 1e9:
-            return f"{currency_symbol}{val_float / 1e9:,.{decimals}f} B"
-        elif val_float >= 1e6:
-            return f"{currency_symbol}{val_float / 1e6:,.{decimals}f} M"
-        else:
-            return f"{currency_symbol}{val_float:,.{decimals}f}"  # Default to standard currency format
-    except (ValueError, TypeError):
-        return "N/A"
+    # Ported to Rust: rust/investa_core/src/fu_fmt.rs
+    return investa_core.fu_format_large_number_display(value, currency_symbol, decimals)
 
 
 def format_integer_with_commas(value: Optional[float]) -> str:
     """Formats a number as an integer string with commas."""
-    if value is None or pd.isna(value):
-        return "N/A"
-    try:
-        return f"{int(round(float(value))):,}"
-    except (ValueError, TypeError):
-        return "N/A"
+    # Ported to Rust: rust/investa_core/src/fu_fmt.rs
+    return investa_core.fu_format_integer_with_commas(value)
 
 
 def format_float_with_commas(value: Optional[float], decimals: int = 2) -> str:
     """Formats a float string with commas and specified decimal places."""
-    if value is None or pd.isna(value):
-        return "N/A"
-    try:
-        return f"{float(value):,.{decimals}f}"
-    except (ValueError, TypeError):
-        return "N/A"
+    # Ported to Rust: rust/investa_core/src/fu_fmt.rs
+    return investa_core.fu_format_float_with_commas(value, decimals)
