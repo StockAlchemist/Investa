@@ -16,10 +16,9 @@ SPDX-License-Identifier: MIT
 
 import pandas as pd
 import numpy as np
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import hashlib  # noqa: F401 -- read by the Rust port at call time
-import weakref
-import config
+import config  # noqa: F401 -- read by the Rust port at call time
 import logging
 import investa_core
 from typing import List, Tuple, Dict, Optional, Any, Set
@@ -423,83 +422,8 @@ def get_conversion_rate(
                `fx_rates` dictionary, or if inputs are invalid.
                Returns 1.0 if `from_curr` equals `to_curr`.
     """
-    if (
-        not from_curr
-        or not isinstance(from_curr, str)
-        or not to_curr
-        or not isinstance(to_curr, str)
-    ):
-        logging.debug("get_conversion_rate: Invalid from_curr or to_curr input.")
-        return np.nan  # Return NaN on invalid input
-    if from_curr == to_curr:
-        return 1.0
-    if not isinstance(fx_rates, dict):
-        # Changed to debug as this might be expected in some initial states
-        # or if no FX data was fetched at all.
-        logging.debug(
-            "Warning: get_conversion_rate received invalid fx_rates type. Returning NaN"
-        )
-        return np.nan  # Return NaN on invalid rates dict
-
-    from_curr_upper = from_curr.upper()
-    to_curr_upper = to_curr.upper()
-    rate_A_per_USD = fx_rates.get(from_curr_upper)
-    if rate_A_per_USD is None:
-        pair_A = "USDTHB=X" if from_curr_upper == "THB" else f"{from_curr_upper}=X"
-        rate_A_per_USD = fx_rates.get(pair_A)
-
-    # --- NEW: Static Fallback Injection ---
-    # If a rate is missing from the provided API-based dictionary, try the static fallback.
-    if pd.isna(rate_A_per_USD) and hasattr(config, "STATIC_FX_FALLBACK"):
-        rate_A_per_USD = config.STATIC_FX_FALLBACK.get(from_curr_upper)
-        if pd.notna(rate_A_per_USD):
-            logging.info(f"FX Fallback: Using STATIC rate for {from_curr_upper}")
-
-    # Added debug log for lookup
-    logging.debug(
-        f"get_conversion_rate: Looking up {from_curr_upper}/USD (key '{from_curr_upper}'): {rate_A_per_USD}"
-    )
-    if from_curr_upper == "USD":
-        rate_A_per_USD = 1.0
-    rate_B_per_USD = fx_rates.get(to_curr_upper)
-    if rate_B_per_USD is None:
-        pair_B = "USDTHB=X" if to_curr_upper == "THB" else f"{to_curr_upper}=X"
-        rate_B_per_USD = fx_rates.get(pair_B)
-
-    if pd.isna(rate_B_per_USD) and hasattr(config, "STATIC_FX_FALLBACK"):
-        rate_B_per_USD = config.STATIC_FX_FALLBACK.get(to_curr_upper)
-        if pd.notna(rate_B_per_USD):
-            logging.info(f"FX Fallback: Using STATIC rate for {to_curr_upper}")
-    # --------------------------------------
-
-    # Added debug log for lookup
-    logging.debug(
-        f"get_conversion_rate: Looking up {to_curr_upper}/USD (key '{to_curr_upper}'): {rate_B_per_USD}"
-    )
-    if to_curr_upper == "USD":
-        rate_B_per_USD = 1.0
-
-    rate_B_per_A = np.nan
-    if pd.notna(rate_A_per_USD) and pd.notna(rate_B_per_USD):
-        if abs(rate_A_per_USD) > 1e-9:
-            try:
-                rate_B_per_A = rate_B_per_USD / rate_A_per_USD
-                logging.debug(  # Keep debug log for successful calculation
-                    f"DEBUG get_conv_rate: {to_curr}/{from_curr} = {rate_B_per_USD} / {rate_A_per_USD} = {rate_B_per_A}"
-                )
-            except (ZeroDivisionError, TypeError):
-                pass
-
-    if pd.isna(rate_B_per_A):
-        # Log the warning but return a neutral rate (1.0) to avoid breaking calculations?
-        # Or return NaN to signal failure? Let's return NaN for clarity.
-        logging.warning(  # Keep warning for failed conversion
-            f"Warning: Current FX rate lookup failed for {from_curr}->{to_curr}. Returning NaN"
-        )
-        return np.nan  # Fallback to NaN to indicate failure
-        # return 1.0  # Fallback to 1.0 might hide errors
-    else:
-        return float(rate_B_per_A)
+    # Ported to Rust: rust/investa_core/src/fu_fx.rs
+    return investa_core.fu_conversion_rate(from_curr, to_curr, fx_rates)
 
 
 # --- Historical Price/Rate Helpers ---
@@ -521,49 +445,13 @@ def _price_table(df: pd.DataFrame) -> Optional["investa_core.PriceTable"]:
     already shares them between requests. A frame whose length, columns or
     first/last date change gets a new table.
     """
-    key = id(df)
-    signature = (len(df), tuple(df.columns), df.index[0], df.index[-1])
-    hit = _PRICE_TABLES.get(key)
-    if hit is not None and hit[0]() is df and hit[1] == signature:
-        return hit[2]
-    table = _build_price_table(df)
-    try:
-        ref = weakref.ref(df, lambda _r, k=key: _PRICE_TABLES.pop(k, None))
-    except TypeError:
-        return table
-    _PRICE_TABLES[key] = (ref, signature, table)
-    return table
+    # Ported to Rust: rust/investa_core/src/fu_fx.rs
+    return investa_core.fu_price_table(df)
 
 
 def _build_price_table(df: pd.DataFrame) -> Optional["investa_core.PriceTable"]:
-    idx = df.index
-    if not isinstance(idx, pd.DatetimeIndex):
-        return None
-    if idx.tz is not None and str(idx.tz) != "UTC":
-        return None  # midnight in another zone: leave the localisation to pandas
-    if not df.columns.is_unique:
-        return None
-    columns = [c for c in ("price", "Adj Close", "Close") if c in df.columns]
-    if not columns:
-        return None
-    column = df[columns[0]]
-    if not pd.api.types.is_numeric_dtype(column) or pd.api.types.is_bool_dtype(column):
-        return None
-    if not idx.is_monotonic_increasing:
-        df = df.sort_index()  # as the original sorts before its asof
-        column = df[columns[0]]
-    valid = ~df.isna().any(axis=1).to_numpy()
-    try:
-        ticks = df.index.as_unit("ns").asi8  # an index may count in s/ms/us
-    except (ValueError, OverflowError):
-        return None
-    values = column.to_numpy(dtype=np.float64)
-    return investa_core.PriceTable(
-        np.ascontiguousarray(ticks[valid]),
-        np.ascontiguousarray(values[valid]),
-        int(ticks[0]),
-        float(values[0]),
-    )
+    # Ported to Rust: rust/investa_core/src/fu_fx.rs
+    return investa_core.fu_build_price_table(df)
 
 
 def get_historical_price(
@@ -588,129 +476,8 @@ def get_historical_price(
                before it). Returns np.nan if the symbol is not found, the date is before
                the first available price point, or an error occurs during lookup.
     """
-    if target_date is None or not isinstance(
-        target_date, (date, datetime, pd.Timestamp)
-    ):
-        return np.nan
-
-    if symbol_key not in prices_dict or prices_dict[symbol_key].empty:
-        # logging.debug(f"get_historical_price: {symbol_key} missing or empty.")
-        return np.nan
-
-    # Avoid modifying the original DataFrame in prices_dict (it might be shared)
-    df = prices_dict[symbol_key]
-
-    # A calendar day against a frame the Rust table covers: binary search
-    # instead of a pandas asof call (same answer, see _price_table).
-    if type(target_date) is date:
-        ns = (target_date.toordinal() - _EPOCH_ORDINAL) * _DAY_NS
-        if _TS_MIN_NS <= ns <= _TS_MAX_NS:
-            table = _price_table(df)
-            if table is not None:
-                return table.asof(ns)
-
-    try:
-        # Optimization: Use asof for efficient lookup
-        # If not sorted, sort into a NEW object (do not modify inplace)
-        if not df.index.is_monotonic_increasing:
-            df = df.sort_index()
-
-        # Try asof with original target_date
-        try:
-            # Force target_date to Timestamp for more reliable awareness checks in pandas
-            target_ts = pd.Timestamp(target_date)
-
-            # Align awareness and type BEFORE calling asof
-            if isinstance(df.index, pd.DatetimeIndex):
-                idx_tz = df.index.tz
-                target_tz = target_ts.tz
-
-                if idx_tz is not None and target_tz is None:
-                    target_ts = target_ts.tz_localize(idx_tz)
-                elif idx_tz is None and target_tz is not None:
-                    target_ts = target_ts.tz_localize(None)
-                elif idx_tz is not None and target_tz is not None:
-                    target_ts = target_ts.tz_convert(idx_tz)
-            elif (
-                len(df.index) > 0
-                and isinstance(df.index[0], date)
-                and not isinstance(df.index[0], datetime)
-            ):
-                # index is likely date objects, asof(Timestamp) might fail.
-                # Convert target_ts back to date for lookup if index is date objects.
-                target_ts = target_ts.date()
-
-            res = df.asof(target_ts)
-
-        except (TypeError, ValueError) as e_asof:
-            logging.debug(
-                f"AsOf initial fail for {symbol_key} on {target_date}: {e_asof}"
-            )
-            # Fallback: Try converting to Timestamp
-            ts_target = pd.Timestamp(target_date)
-
-            # Handle Timezone if index is tz-aware
-            if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
-                if ts_target.tz is None:
-                    ts_target = ts_target.tz_localize(df.index.tz)
-
-            res = df.asof(ts_target)
-
-        # Extract price from result
-        price = np.nan
-        if isinstance(res, pd.Series):
-            price = res.get("price")
-            if price is None or pd.isna(price):
-                price = res.get("Adj Close")
-            if price is None or pd.isna(price):
-                price = res.get("Close")
-        elif isinstance(res, pd.DataFrame):
-            # Duplicate index case
-            if not res.empty:
-                if "price" in res.columns:
-                    price = res["price"].iloc[-1]
-                elif "Adj Close" in res.columns:
-                    price = res["Adj Close"].iloc[-1]
-                elif "Close" in res.columns:
-                    price = res["Close"].iloc[-1]
-        elif pd.notna(res):
-            pass  # Scalar?
-
-        if price is None or pd.isna(price):
-            # Check if target_date is before the start of the data (Backfill Strategy)
-            # Use Timestamps for robust comparison
-            try:
-                first_ts = pd.Timestamp(df.index[0])
-                target_ts_eval = pd.Timestamp(target_date)
-
-                # Align awareness for comparison
-                if first_ts.tz is not None and target_ts_eval.tz is None:
-                    target_ts_eval = target_ts_eval.tz_localize(first_ts.tz)
-                elif first_ts.tz is None and target_ts_eval.tz is not None:
-                    target_ts_eval = target_ts_eval.tz_localize(None)
-
-                if target_ts_eval < first_ts:
-                    col = "price"
-                    if "price" not in df.columns:
-                        if "Adj Close" in df.columns:
-                            col = "Adj Close"
-                        elif "Close" in df.columns:
-                            col = "Close"
-
-                    backfill_price = df[col].iloc[0]
-                    if pd.notna(backfill_price):
-                        # logging.debug(f"BACKFILL: {symbol_key} using {backfill_price} for {target_date}")
-                        return float(backfill_price)
-            except Exception as e_comp:
-                logging.debug(f"Comparison fail in get_historical_price: {e_comp}")
-
-        return float(price) if pd.notna(price) else np.nan
-
-    except Exception as e:
-        logging.error(
-            f"ERROR getting historical price for {symbol_key} on {target_date}: {e}"
-        )
-        return np.nan
+    # Ported to Rust: rust/investa_core/src/fu_fx.rs
+    return investa_core.fu_historical_price(symbol_key, target_date, prices_dict)
 
 
 def get_historical_rate_via_usd_bridge(
@@ -746,64 +513,10 @@ def get_historical_rate_via_usd_bridge(
                or if a calculation error occurs (e.g., division by zero).
                Returns 1.0 if `from_curr` == `to_curr`.
     """
-    if (
-        not from_curr
-        or not isinstance(from_curr, str)
-        or not to_curr
-        or not isinstance(to_curr, str)
-        or not isinstance(target_date, date)
-    ):
-        logging.debug(  # Changed to debug as this might be expected for invalid inputs
-            f"Hist FX Bridge: Invalid input - from={from_curr}, to={to_curr}, date={target_date}"
-        )
-        return np.nan
-    if from_curr == to_curr:
-        return 1.0
-    if not isinstance(historical_fx_data, dict):
-        logging.warning("Hist FX Bridge: Invalid historical_fx_data type received.")
-        return np.nan  # Return NaN on invalid input dict
-
-    from_curr_upper = from_curr.upper()
-    to_curr_upper = to_curr.upper()
-    rate_A_per_USD = np.nan
-    if from_curr_upper == "USD":
-        rate_A_per_USD = 1.0
-    else:
-        pair_A = "USDTHB=X" if from_curr_upper == "THB" else f"{from_curr_upper}=X"
-        logging.debug(
-            f"Hist FX Bridge: Getting historical price for {pair_A} on {target_date}"
-        )  # Added debug log
-        price_A = get_historical_price(pair_A, target_date, historical_fx_data)
-        if price_A is not None and pd.notna(price_A):
-            rate_A_per_USD = price_A
-    rate_B_per_USD = np.nan
-    if to_curr_upper == "USD":
-        rate_B_per_USD = 1.0
-    else:
-        pair_B = "USDTHB=X" if to_curr_upper == "THB" else f"{to_curr_upper}=X"
-        logging.debug(
-            f"Hist FX Bridge: Getting historical price for {pair_B} on {target_date}"
-        )  # Added debug log
-        price_B = get_historical_price(pair_B, target_date, historical_fx_data)
-        if price_B is not None and pd.notna(price_B):
-            rate_B_per_USD = price_B
-
-    rate_B_per_A = np.nan
-    if pd.notna(rate_A_per_USD) and pd.notna(rate_B_per_USD):
-        if abs(rate_A_per_USD) > 1e-12:
-            try:
-                rate_B_per_A = rate_B_per_USD / rate_A_per_USD
-            except (ZeroDivisionError, TypeError, OverflowError):
-                pass
-
-    if pd.isna(rate_B_per_A):
-        if pd.notna(rate_A_per_USD) and pd.notna(rate_B_per_USD):
-            logging.warning(  # Keep warning for calculation failure despite finding intermediate rates
-                f"Hist FX Bridge: Calculation failed for {from_curr}->{to_curr} on {target_date} despite finding intermediate rates ({rate_A_per_USD}, {rate_B_per_USD})."
-            )
-        return np.nan
-    else:
-        return float(rate_B_per_A)
+    # Ported to Rust: rust/investa_core/src/fu_fx.rs
+    return investa_core.fu_rate_via_usd_bridge(
+        from_curr, to_curr, target_date, historical_fx_data
+    )
 
 
 # --- Symbol Mapping Helper ---

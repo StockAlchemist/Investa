@@ -56,7 +56,7 @@ The crate builds in four places:
 | 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
-| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; then FX and historical prices, symbol mapping and formatting | In progress |
+| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; then symbol mapping and formatting | In progress |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -919,6 +919,27 @@ Checks:
   - Also covered: no `original_index`, a non-text `Type` column, NaT dates, mixed id types, NumPy market values and datetime report dates.
   - MWR runs under both bases, with every kind of scope and FX source.
 - **Real data:** all identical, through spies in real summaries of all three books: 606 ledger answers and 42 MWR builds. Separately, the one-shot builder is identical on all 806 symbol/account pairs. Summary time is unchanged: 0.229, 0.220 and 0.116 s with the Rust ledger, against 0.224, 0.233 and 0.114 s with the Python one.
+
+## Phase 16c (27 Oct 2026): FX and historical prices
+
+These lookups now run in Rust (`fu_fx.rs`):
+- the current conversion rate: cross rates via USD, Yahoo pair keys, and the static fallback;
+- the per-frame price-table cache and its builder;
+- the historical price: the Rust table's binary search where it applies, pandas' `asof` otherwise, and the backfill rule;
+- the historical USD bridge.
+
+How it is done:
+- **The cache stays the module's `_PRICE_TABLES` dict.** It is keyed by `id(frame)`, with a weakref that evicts the entry when the frame dies. The eviction callback holds the dict itself, as the original's lambda holds the module's globals. The first draft re-imported `finutils` inside the callback, and that fails when the callback fires at interpreter shutdown. The parity test's exit printed `sys.meta_path is None`, which is how it was caught.
+- **Day ticks are Python integers.** A far date's nanoseconds overflow 64 bits.
+- **The conversion's debug log stays inside the division's `try`**, so a formatting error is swallowed as before.
+
+Checks:
+- **Parity:**
+  - Current rates take codes of every case and type, and rate tables with NaN, zero and text values, with and without the static fallback.
+  - Historical prices take naive, UTC and New York indexes; unsorted, duplicated, date-object and text indexes; every price column; NaN rows; and boolean and object columns. The target days are dates, datetimes and aware Timestamps, from year 1 to 9999.
+  - The cache is exercised by repeating lookups and by growing a frame between them.
+  - Built tables are compared by their answers on 52 ticks each.
+- **Real data:** all identical, through spies in real summaries and USD and THB full histories of all three books: 5,536 historical prices, 3,592 bridged rates and 1,054 current rates.
 
 ## Found while porting
 
