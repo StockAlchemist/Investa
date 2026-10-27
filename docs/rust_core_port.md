@@ -1,0 +1,1219 @@
+# Rust Calculation Core: Port Plan and Status
+
+**Status:** Phases 1–18 done (calculations, storage and import in Rust; all SQL through `rusqlite`; pandas overhead cut). The merge to `main` waits on the user. See "Benchmark after Phase 17" for the port against the Python app.
+**Branch:** `feat/rust-core`. One long-lived branch, merged to `main` when the whole port is verified.
+**Started:** 24 Oct 2026
+**Scope:** every calculation module in `src/` moves into one Rust crate, `rust/investa_core`. Python calls it through PyO3. These stay Python:
+
+- FastAPI routes, auth and caches.
+- Data fetching: yfinance, Tiingo, FMP, SEC EDGAR, BOT and ECB.
+- PDF statement parsing (pdfplumber), exchange calendars (pandas-market-calendars) and Gemini.
+
+The API, the OpenAPI types and all three clients are untouched.
+
+This reverses the recommendation in [go_rust_evaluation.md](go_rust_evaluation.md), by decision on 24 Oct 2026. That document's measurements still stand: whole requests are dominated by market-data sync, not calculation. So expect speed gains in the batch and cold-start paths, not in a typical request.
+
+---
+
+## How each module is ported
+
+1. **Port line for line.** Each Python branch keeps its order of operations, so floating-point results are bit-identical rather than merely close.
+   - Python's `min()` is reproduced exactly. It differs from `f64::min` when NaN is involved.
+   - Negative indices wrap as they do in NumPy.
+   - Quirks are preserved, not fixed. A fix is a separate, deliberate change.
+2. **Freeze the original as an oracle.** The Python original moves to `tests/reference/` unchanged, apart from removing JIT decorators.
+3. **Differential-test it.** Seeded random inputs reach every branch, and `tests/test_rust_*_parity.py` requires *bitwise* equality with the oracle.
+4. **Check real data.** Both users' summary and history are computed with old and new code in one process, with market data recorded and replayed so both see identical prices.
+5. **Swap in a thin shim.** The runtime module calls Rust under the original function name and argument order, so no call site changes.
+
+## Building
+
+The crate builds in four places:
+
+- **CI:** `pip install ./rust/investa_core` runs after the Python requirements. A `rust-core` job runs `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test`.
+- **Docker:** the builder stage installs Rust and builds the wheel. The runtime image gets only the compiled module.
+- **`./start_investa.sh`:** it runs `scripts/ensure_rust_core.py`, which rebuilds the module when it was built from older sources. It compares the hash `build.rs` bakes into the module with the hash of the sources on disk.
+- **By hand:** `python3 scripts/ensure_rust_core.py`, or `maturin develop --release` in `rust/investa_core`.
+
+`portfolio_version.CURRENT_HIST_VERSION` includes the crate's source hash, so changing a kernel invalidates cached histories, just as changing a Python engine file does.
+
+## Phases
+
+| Phase | Modules | Status |
+|---|---|---|
+| 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. | **Done** |
+| 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
+| 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
+| 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
+| 5 | `projections`; the aggregations in `valuation_history`, `strategies` and `track_record` | **Done** |
+| 6 | Pandas-heavy portfolio engine: (a) FIFO lots and realized gains; (b) daily holdings valuation; (c) TWR accumulation | **Done** |
+| 7 | What the final benchmark left on the request path: (a) the historical FX lookup and the IRR/MWR cash flows; (b) statement assembly and the ratio history | **Done** |
+| 8 | What a profile after Phase 7 left: the daily price read (Rust), plus three Python fixes: the NYSE calendar cache, per-company EDGAR read sessions, a cheaper UTC index | **Done** |
+| 9 | The summary's per-holding and per-account filters, selected once (Python) | **Done** |
+| 10 | Storage foundation: SQL in Rust on Python's own connections (`sql.rs`, `rust_sql.py`) | **Done** |
+| 11 | Storage modules: (a) `db_utils`; (b) `market_db`; (c) `buffett_store`; (d) the EDGAR fact store and company session | **Done** |
+| 12 | Import: `data_loader`, `csv_utils`, `io_handlers`, `db_utils.migrate_csv_to_db` | **Done** |
+| 13 | Summary engine: (a) `corporate_actions` and the analyzer's standalone helpers; (b) the report extractors; (c) the holdings pass and FIFO; (d) the summary rows and totals; (e) `portfolio_logic` | **Done** |
+| 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
+| 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
+| 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; (d) symbol mapping and formatting **done** | Done |
+| 17 | SQL in Rust: (a) the database layer on `rusqlite`, linked to the system SQLite Python uses **done**; (b) the routes', services' and AI workers' SQL **done** | Done |
+| 18 | Pandas overhead inside the port: (a) calls whose answer is known without pandas **done**; (b) row views in place of `iterrows` **done**; (c) the history's per-table fill and grid alignment without pandas' frame machinery **done** | Done |
+
+## Phase 1 results (24 Oct 2026)
+
+**Parity**
+
+- Fuzz, 9,000 seeded ledgers: bit-identical to the original source run as Python.
+- Against production Numba, the analyzer core is bit-identical. The two holdings kernels differ by at most 2.8 × 10⁻¹⁴ relative, because Numba's `fastmath` reorders floating-point arithmetic.
+- Real data (kitmatan and dheematan, USD and THB): summary metrics, every holdings cell and the full history series are **exactly** equal, old vs new.
+- Full suite: 1,145 tests pass.
+
+**Speed** (`scripts/benchmark_rust_core.py`; raw numbers in `profiles/benchmark_rust_core.json`):
+
+| | Rust | Numba (warm) | Plain Python |
+|---|---|---|---|
+| Daily holdings replay (8,885 days × ~5,000 tx) | 19.6–21.6 ms | 26.5–27.7 ms | 1.8 s |
+| Analyzer replay | 64–69 µs | 106–140 µs | 15–17 ms |
+| Single-date holdings | 37–39 µs | 33–37 µs | 7.2 ms |
+| First call after an edit or fresh deploy | 46–64 ms | 5.0 s (JIT compile) | n/a |
+| Full summary request | 2.05 s | 2.05–2.08 s | n/a |
+| History request, default one-year window* | 4.2 s / 6.3 s | 4.1 s / 6.4 s | n/a |
+
+\* The script asked for `period="max"`, which the service does not know, so it answered with its default one-year window. It now asks for `"all"`; the full-history numbers are in the final benchmark below.
+
+End-to-end differences are 10–75 ms in both directions, which is noise. The real gain is cold start: the 5-second JIT compile on each edit or deploy is gone.
+
+## Phase 2 results (24 Oct 2026)
+
+**What moved:**
+- `finutils.calculate_npv` and `calculate_irr`, ported line for line together with what they relied on:
+  - SciPy 1.16's secant `newton` and C `brentq`, including the wrapper rule that a NaN function value aborts the search.
+  - NumPy's `isclose`.
+  - CPython 3.12's compensated `sum()`. The IRR's total-loss check uses it, and the result depends on whether each flow is an exact `float` or a NumPy scalar. Real ledgers pass both.
+- All of `risk_metrics`, on exact ports of NumPy's pairwise sum and pandas' NaN-skipping mean, variance, min and cummax.
+- What stayed Python: index alignment, `dropna`, `infer_periods_per_year` (which works on a pandas `DatetimeIndex`), and beta's covariance.
+
+**Parity**
+- Fuzz: IRR, NPV and every risk metric are bitwise equal to the frozen originals.
+- Root finders compared directly with SciPy: 20,000 random brackets and iteration caps, every converge, raise and NaN case matching bit for bit.
+- Real data (kitmatan, dheematan, atchamatan in USD and THB): every summary figure and every holdings cell is bitwise equal, including both IRR columns. All risk metrics and the benchmark scoreboard are bitwise equal too.
+- **Rule adopted: BLAS/LAPACK-backed NumPy calls stay NumPy calls.** `np.cov`'s dot product (Accelerate here) sums in an order of its own; it matched neither sequential nor pairwise summation in 79% of trials. So `calculate_beta` keeps pandas' covariance and takes only its variance from Rust, and Beta and Alpha stay bitwise equal. The same rule covers `np.polyfit` (LAPACK) and `np.convolve` (BLAS `ddot`) in Phase 3.
+- Full suite: 1,172 tests pass.
+
+**SciPy fuses three operations on arm64.** The first `brentq` comparison was off by 1 ulp. The disassembly of SciPy's `_zeros.cpython-312-darwin.so` shows clang fused exactly three multiply-adds (`fmadd`/`fnmsub`):
+- `delta`
+- the extrapolation numerator
+- the step bound `3|sbis| - delta`
+
+The port uses `mul_add` at those three sites on aarch64 only. x86-64 wheels are built for baseline x86-64, which has no FMA, so nothing is fused there. On any other target, recheck it against the disassembly.
+
+**Speed:** the IRR over the 772 per-holding calls one round of summaries makes (three users, two currencies) takes 886 ms in Python and 13 ms in Rust, 68× faster. That is about 148 ms → 2 ms per summary request, roughly 7% of one.
+
+**Build fix: Xcode 27 linker.** `ld-27037` puts LINKEDIT's string pool directly after the indirect-symbol table, without padding. An odd number of 4-byte entries leaves the pool 4 bytes off an 8-byte boundary, and the macOS 27 loader rejects the binary ("mis-aligned LINKEDIT string pool"). The layout shifts as code changes, so earlier builds loaded by luck.
+- No alternative linker works: `-ld_classic` is gone, and rust-lld cannot read the macOS 27 SDK's `.tbd` stubs.
+- `rust/investa_core/.cargo/config.toml` routes macOS links through `build-support/macos_linker.py`. It links with `cc`, then, only when the pool is misaligned, drops the signature, inserts the missing padding, shifts the affected offsets, and ad-hoc signs again.
+- The release profile sets `strip = false`, because rustc's post-link `strip -S` re-lays-out LINKEDIT and undoes the fix.
+
+## Phase 3a results (25 Oct 2026): Monte Carlo models
+
+**What moved:** `_generate_mc_stats` and the twelve `run_monte_carlo_*` models (`mc.rs`).
+- **The draws stay NumPy's.** Each shim calls `np.random.normal` exactly as before, same order and arguments, and every operation that can raise stays on the same side of the draws. The models share one seeded stream per valuation, so drawing one sample more or less would shift every model after it.
+- **Everything after the draw is Rust:** clipping, the faded projection with mid-year discounting, terminal values, and the percentiles, standard deviation and histogram.
+- **`np.convolve` (the histogram smoothing) stays NumPy,** under the BLAS rule: its edges go through `ddot`.
+
+**NumPy semantics the port had to reproduce**, each measured on the installed NumPy 2.0:
+- **`array ** scalar` fast paths, by value:** an exponent of 2 squares, -1 takes the reciprocal, 0.5 the square root. Apple's `pow` is not correctly rounded for those, so the results differ from `pow`. Python's `float ** float` never takes a fast path. The port has `np_pow_scalar` for the first and `libm_pow` for the second, the latter kept out of LLVM's reach because LLVM folds a constant `pow(x, 2.0)` into `x * x`.
+- **`np.clip` is `MIN(MAX(x, lo), hi)`,** NaN passing through, and `hi` wins when `lo > hi` (negative EPS).
+- **`np.add.reduce` reduces in 8,192-element buffers:** `0.0 + pairwise(buffer 1) + pairwise(buffer 2) + …`. This was found here: a 10,000-sample standard deviation was 1 ulp off. It also corrects the Phase 2 reductions for series longer than 8,192 points, and negative zeros now sum to +0.0 as in NumPy.
+- **`np.percentile`** uses NumPy's two-sided `_lerp`. **`np.histogram`** uses `linspace` edges and NumPy's index corrections.
+
+**Parity**
+- Seeded fuzz over all twelve models: projection lengths -1 to 10, negative EPS, missing or zero shares, NaN inputs, and 10 to 10,000 iterations. Results are bitwise equal, *and NumPy's generator ends in the same state*.
+- Real data: a full intrinsic-value run for AAPL, KO, JPM, NVDA, MSFT, XOM, O and BRK-B has zero differences in the complete result, every model's Monte Carlo statistics, histogram and the blend included.
+- Full suite: 1,180 tests pass.
+
+## Phase 3b (25 Oct 2026): deterministic valuation arithmetic
+
+**What moved** (`valuation.rs`):
+- the scalar faded projection that DCF, DDM, D-CFO and D-NI share;
+- `calculate_wacc`'s arithmetic;
+- `blended_growth_estimate`'s median, mean, shrink and clamp;
+- the plausible-margin filter and median of `estimate_fcf_margin` and `through_cycle_fcf_margin`;
+- the medians in `normalized_base_fcf`, the EPV and `historical_mean_multiples` (with its percentiles);
+- `_model_reliability`;
+- `blend_intrinsic_values`' weighted mean, spread and confidence.
+
+**The boundary.** Loops and aggregations moved. What stays Python:
+- reading the statements and the company profile;
+- choosing between methods, the result dictionaries and their notes;
+- one-expression formulas such as Graham's `eps * (8.5 + 2g) * 4.4 / y` or Lynch's `eps * multiplier`. Moving a single expression behind a call adds an FFI hop and moves no logic;
+- `calculate_key_ratios_timeseries`, which is per-period single divisions assembled into a DataFrame, with no aggregation to port;
+- the log-linear growth regression, under the LAPACK rule (`np.polyfit`).
+
+**Python scalar semantics reproduced:**
+- `float ** x` and `np.float64 ** x` are always the C library's `pow`. NumPy *scalars* never take the array fast paths: 100,000 of 100,000 matched `pow`.
+- `sum(list)` is CPython's compensated sum. A projection's terms are NumPy scalars exactly when one of its inputs was, which changes both how `sum` adds them and the type that comes back; the shim mirrors both.
+- `max(a, b)` keeps `a` unless `b > a`.
+- Truthiness is reproduced: `None` and `0` are false, NaN is true.
+- Statement values pass through a strict converter, so a non-number still raises `TypeError` as the original arithmetic did.
+
+**Parity:** random statements and profiles drive every ported function against the module as it was before Phase 3b. The statements are multi-year with NaN gaps, FCF reported or derived, with dividends and debt; the profiles have missing fields, NaN beta and analyst estimates. Results are bitwise and type-for-type equal. 65–83% of cases produce a valuation rather than an early error, and more than half pass NumPy-scalar arguments.
+
+**Real data:** complete intrinsic-value results for AAPL, KO, JPM, NVDA, MSFT, XOM, O, BRK-B, BAC, TRV, PLD and DUK are identical to the pre-3b module, with zero differences. That set covers operating companies, banks, an insurer, REITs and a utility, with 10–12 of 12 models valued each. Full suite: 1,193 tests pass.
+
+## Phase 4a (25 Oct 2026): Buffett quality metrics
+
+**What moved** (`buffett.rs`):
+- the generic, bank and REIT metric models (`_compute_*_metrics`) in full;
+- `_total_debt` and `_cagr`, which stay as Python wrappers over Rust so their unit tests exercise the running code;
+- the dead helpers `_aligned`, `_common_periods`, `_owner_earnings`, `_stdev` and `_median` are deleted.
+- What stays Python: `compute_metrics`, meaning the EDGAR loads, the split-consistent share series, the ratio bridge through `financial_ratios`, and coverage.
+
+**Python semantics reproduced:**
+- **Raw values flow through.** Several metrics read values without `_finite`: the revenue deltas (`current or 0`), loss-year counts (NaN counts as observed), and share counts (infinity passes `v > 0` and is filtered later by `_cagr`). So concept values cross with `None`, NaN and infinity intact.
+- **Counts stay Python ints,** and keys keep insertion order, the conditional ones included.
+- **`statistics.pstdev` is exact rational arithmetic.** The port computes the population variance as an exact big-integer fraction and takes CPython's correctly rounded `_float_sqrt_of_frac` (round-to-odd isqrt) of it. It is bit-identical on 5,000 random sets from 1e-300 to 1e300.
+- `statistics.median` is the middle element or `(a + b) / 2`, on a stable sort.
+
+**Parity**
+- Fuzz: 1,500 random companies through each of the three models are equal in keys, order, types and bits, with 66–78% of metric values populated.
+- Real data: `compute_metrics` on 618 filers, an even sample of the 5,561-filer universe (544 generic, 40 banks, 16 insurers, 18 REITs), has zero differences in any field.
+
+**Speed:** about 94 µs → 80 µs per company (1.2×). The cost at this size is moving the nested dicts across the boundary, not the arithmetic. The per-company EDGAR load dominates either way.
+
+## Phase 4b (25 Oct 2026): cross-sectional scoring
+
+**What moved** (`rank.rs`):
+- `_winsorised_percentile`: quantiles, clip and rank;
+- `_pillar_scores`' row means;
+- `_quality_score`'s weight-renormalised blend, which `score_value` reuses.
+
+**What stays pandas:**
+- the per-model `groupby`, the index and `metrics_to_frame`;
+- the final sort and rank in `combine`/`rerank`. pandas' default sort is NumPy's unstable quicksort, whose tie order is its own;
+- the one-expression blends in `combine` and `blend_scores`;
+- `compute_market_metrics`, which is EDGAR reads and one-line formulas.
+
+**pandas semantics reproduced:**
+- `Series.quantile` is NumPy's linear percentile at `q * 100.0` over the non-NaN values, so an infinite value can make a bound infinite or NaN.
+- `clip` ignores a NaN bound and swaps reversed bounds. Its second step compares the *original* value against the upper bound.
+- `rank(pct=True)` averages each tie group as an integer sum of positions over the group size, then divides by the non-NaN count.
+- Row means skip NaN and add left to right.
+
+**Parity:** in random groups (NaN, infinities, heavy ties, constant columns, groups of 1–4, object and integer columns, all four model specs), the percentile, pillar scores, quality score, `score_quality` and `score_value` match bitwise, with the same index, name and dtype.
+
+**Real data:**
+- `score_value` on the latest stored run (1,221 ranked companies: 799 generic, 246 banks, 111 REITs, 65 insurers) is identical.
+- `score_quality` on all 5,561 filers in the universe (metrics and gates recomputed, 1,225 eligible) is identical in every column.
+- Scoring speed: 9 → 3 ms for value, 93 → 45 ms for quality. A full metrics pass over the universe takes 75 s, nearly all of it EDGAR loads.
+- Full suite: 1,213 tests pass.
+
+## Phase 5a (25 Oct 2026): projections
+
+**What moved** (`projection.rs`):
+- `compute_projection`'s fit and cone: log returns, moments, drift shrinkage, and the parameter-uncertainty spread `σ²·t·(1 + t/n)`;
+- the whole of `walk_forward_errors`;
+- `summarize_errors`' statistics.
+- The dead helpers `_future_position`, `_predictive_moments` and `_norm_cdf` are deleted.
+- What stays Python: preparing the returns (pandas `pct_change`/`clip`), and `_build_replay` and `backtest_projection`, which are date arithmetic and orchestration.
+
+**Semantics measured:**
+- `np.log1p`, `math.log1p` and `math.erf` are the C library's here. `math.erf` has no Rust equivalent, so the port calls the C library's `erf` directly.
+- Python's `round` ties to even: ten years is `round(3652.5)` = 3,652 days.
+
+**Speed:** the walk-forward originally refitted the projection on a growing window at every monthly anchor, re-deriving that window's returns through pandas each time, which is quadratic in the history. In Rust each window's returns are a prefix of one array. The moments are still recomputed per window from scratch, so every number is the original's. `backtest_projection` on 20 years of daily closes drops from about 150 ms to about 7 ms, 20× faster.
+
+**Parity:**
+- Random wealth series (calendar-daily, business-daily and weekly dates, a plain integer index, gaps, crashes past the clip, partial benchmarks) match bitwise.
+- On the real 2005–2026 histories of SPY, AAPL, KO, BRK-B, MSFT and XOM, with SPY as the prior, the projection and the full backtest (four horizons plus the replay) are identical.
+
+## Phase 5b (25 Oct 2026): valuation bands, trend signal, stress response
+
+**What moved** (`records.rs`):
+- `valuation_history.bands`' statistics: median, quartiles, range, and today's percentile;
+- `strategies.evaluate_trend_signal`'s averages: the active and provisional SMAs, the flip price and the per-month history;
+- `track_record.stress_response`'s peak, trough and recovery search.
+- What stays Python: the EDGAR point-in-time reads, the price loads, `_apply_sector_cap`'s selection over a pandas sort, position sizing (one expression per position), and the result dictionaries.
+
+**Found during parity:**
+- **Iterating a pandas Series yields Python floats, not NumPy scalars,** so `sum(list(series))` takes CPython's compensated path. The provisional SMA was 1 ulp off until that was corrected.
+- **A one-month average's `iloc[-(1 - 1):]` is `iloc[0:]`, the whole history.** The port reproduces it.
+
+**Parity:**
+- Fuzz: random populations, month-end histories (window lengths 1–12) and annual series with gaps, losses, NaN and ties match bitwise.
+- Real data: bands and stress response for 253 real companies are identical (86 had enough history for bands), as is the trend signal on SPY, QQQ, IWM and EFA at 1-, 10- and 12-month windows.
+
+## Phase 6a (25 Oct 2026): FIFO lots and realized gains
+
+**What moved** (`fifo.rs`): the lot book behind `portfolio_analyzer.calculate_fifo_lots_and_gains`. That covers transfers that move lots and re-sort the destination, global splits, both spin-off legs, buys that open lots, and FIFO sells with their local and display cost bases.
+
+**What stays Python:**
+- Reading each row with the original's quirks. A missing destination reads as `"NAN"`; a currency that is not three letters falls back to the default.
+- The skip rules and the split de-duplication.
+- The FX lookups and the display-gain fallback.
+- Building the gains frame and the lot dicts. Each lot's date, FX and id are the original objects, reattached by the event that opened the lot.
+
+**Two changes to how the work is done** (the results are unchanged):
+- The shim reads the columns once instead of building a row Series per transaction with `iterrows`.
+- It asks the historical FX lookup once per (currency, day). kitmatan's book makes 1,495 lookups, of which only 326 are distinct cross-currency ones, and that lookup was 87% of the function's time.
+
+**Reproduced:**
+- `holdings_long` is a `defaultdict`, so reading a key creates it. The returned dict keeps the creation order, holdings left empty included.
+- Python's `min` tie rule.
+- Transfers drop a lot only when it is *at or below* the tolerance, while sells drop it only *below*.
+- The destination sort is stable by (purchase date, id); ids are compared by rank.
+
+**Parity:**
+- Fuzz: 1,500 random ledgers (about 2,000 sales and 3,400 lots, plus 460 holdings left empty) match bitwise, type for type. The gains frame's columns, dtypes and index order match too. The ledgers include NaN, zero and negative quantities, missing prices, all four kinds of FX answer (float, NumPy float, NaN, None), repeated splits, and same-day lots with shuffled ids.
+- Real data: kitmatan (5,024 rows, 207 sales) and dheematan (3,914 rows, 210 sales), in USD and THB. The FIFO output and the whole portfolio summary are identical; the only difference is the `calculated_at` timestamp.
+- **Speed:** 150–180 ms per call against 340–510 ms for the original.
+
+## Phase 6b–c (25 Oct 2026): daily valuation and TWR accumulation
+
+**What moved** (`history.rs`):
+- **6b, the valuation step of `_value_daily_holdings_vectorized`.** Each (day, symbol, account) cell is valued at qty × price × FX, using the last trade price where the market has none. Empty and excluded cells are zero. Cash is added and each day is summed.
+  - The original built four temporaries the size of the whole grid. On kitmatan that grid is 8,883 days × 89 symbols × 18 accounts, so 14M cells and 115 MB per array.
+  - It also ran `np.unique` over a 14M-element mask just to feed a debug log. The log now reads the (day, symbol) price matrix instead, and only when debug logging is on.
+- **6c, the daily scans of `_calculate_accumulated_gains_and_resample`:**
+  - the time-weighted gain, with its bridge over −100% days;
+  - each benchmark's accumulated gain;
+  - the cumulative flow, absolute gain and ROI;
+  - the drawdown.
+  - Two debug f-strings rendered `tail().to_string()` on every call even with debug off; they are now guarded.
+
+**What stays Python:**
+- Aligning prices and FX onto the grid: `reindex`, forward fill, interpolation, and the pair and orientation rules.
+- The fund-NAV and manual-override fallbacks.
+- Resampling, the 16:00 New York index shift, and the range filter with its t−1 baseline normalisation.
+- The requested period's `prod()` of the gain factors.
+
+**Reproduced:**
+- `np.sum(V, axis=(1, 2))` sums each day's contiguous (symbol, account) block as a single run, buffered in 8,192 elements like a 1-D sum.
+- pandas `cumsum`/`cumprod`/`cummax` are NumPy accumulations that start from the first element; `cummax` skips NaN and prefers 0.0 over −0.0.
+- A benchmark with duplicate dates fails the whole calculation exactly when the original's `reindex` refuses it, which is not when the indexes are identical. The shim runs the same pandas expression to decide.
+
+**Parity:**
+- 6b fuzz: 360 random grids match bitwise (series, error flag, status). They include market feeds in each price column, published NAVs, manual overrides, gaps with and without last-trade fallbacks, NaN and negative quantities, excluded accounts, missing FX pairs, and three grids wider than one reduction buffer per day.
+- 6c fuzz: 480 random daily frames match bitwise (frame, TWR factor, status) across D, 1d, W, M, ME and an unknown interval. They include NaN, −100%, −0.0 and doubling days, gappy, empty and missing benchmarks, negative cost bases and random ranges.
+- Real data: the recorded valuation and accumulation calls for kitmatan and dheematan in USD and THB are identical. So is the accumulation over D/W/M/ME × three ranges (48 combinations).
+  - The whole `/history` result (6,119 points for kitmatan) is identical with each function swapped on its own and with both swapped at once.
+- **Speed:**
+  - Valuation: 58–75 ms against 173–201 ms.
+  - Accumulation: 11 ms against 14 ms. The arithmetic was always under 1 ms; the gain is the debug guards.
+
+## Final benchmark (25 Oct 2026): the whole port against the Python it replaced
+
+`scripts/benchmark_rust_full.py`, on real data, with market data recorded once and replayed so only computation is timed. Each row is an interleaved median, Rust against the frozen original in `tests/reference/`. The three replay kernels are compared with warm Numba, which they replaced. "End to end" swaps every ported function at once: the kernels, IRR, FIFO, the valuation, the accumulation and the risk metrics. Raw numbers are in `profiles/benchmark_rust_full.json` (git-ignored).
+
+**Per portfolio** (kitmatan / dheematan; full history of 8,883 days, 89–94 symbols, 18 accounts):
+
+| Area | Rust | Original | Speed-up |
+|---|---|---|---|
+| Daily holdings replay (8,885 days × 5,024 / 3,914 tx) | 20.5 / 20.6 ms | 26.5 / 26.2 ms (Numba) | 1.3× |
+| Analyzer replay | 73 / 58 µs | 121 / 83 µs (Numba) | 1.4–1.7× |
+| Single-date holdings | 40 / 39 µs | 35 / 37 µs (Numba) | 0.9× |
+| IRR, every holding in one summary (144 / 149) | 2.6 / 2.9 ms | 128 / 260 ms | 49–89× |
+| Risk metrics, 8,883-day series | 0.47 / 0.42 ms | 1.4 / 0.96 ms | 2.3–2.9× |
+| FIFO lots and realized gains | 158 / 169 ms | 334 / 330 ms | 2.0–2.1× |
+| Daily holdings valuation | 54 / 68 ms | 182 / 165 ms | 2.4–3.4× |
+| TWR accumulation | 7.3 / 7.7 ms | 9.6 / 10.0 ms | 1.3× |
+| Projection backtest | 8.1 / 8.2 ms | 167 / 170 ms | 21× |
+| Projection cone | 0.52 / 0.53 ms | 0.59 / 0.60 ms | 1.1× |
+| **`/summary` computation** | **1.68 / 1.60 s** | **1.96 / 2.03 s** | **1.2–1.3×** |
+| **`/history` computation, full history** | **1.01 / 1.14 s** | **1.12 / 1.32 s** | **1.1–1.2×** |
+| **First call in a fresh process** | **47 / 48 ms** | **4.9 / 5.4 s (JIT)** | **~110×** |
+
+**Market-wide:**
+
+| Area | Rust | Original | Speed-up |
+|---|---|---|---|
+| Intrinsic value, 12 companies, all models | 1.74 s | 1.75 s | 1.0× |
+| Buffett metrics arithmetic, 306 filers | 36 ms | 38 ms | 1.1× |
+| Ranking: value scoring, 1,221 companies | 1.4 ms | 6.6 ms | 4.7× |
+| Ranking: quality scoring, 5,561 filers | 43 ms | 80 ms | 1.9× |
+| Valuation bands, 60 companies | 1.00 s | 1.02 s | 1.0× |
+| Track record, 60 companies | 2.98 s | 2.95 s | 1.0× |
+| Trend signal, SPY | 0.53 ms | 1.0 ms | 2.0× |
+
+**What this says:**
+- **Requests got 10–25% faster:** about 0.3–0.4 s per summary and 0.1–0.2 s per full history. The summary saving is mostly IRR and FIFO; the history saving is the valuation grid.
+  - Much of the summary's remaining 1.6 s is the pandas and data plumbing the port deliberately left in Python.
+- **The big multiples are on what was slow Python arithmetic:** IRR (50–90×), the projection backtest (21×), the value scoring (4.7×). They are small in absolute terms per request.
+- **Cold start is the largest single win.** The 5-second Numba JIT compile on every edit, restart or deploy is now under 50 ms.
+- **The per-company views (intrinsic value, bands, track record, Buffett metrics) are unchanged.** Their time is EDGAR and statement loading, which stayed Python.
+- **Against Numba the kernels are 1.3–1.7× faster,** except the single-date holdings kernel. It is about 10% slower, but at 40 µs and off the request path.
+- **Nothing changed in the numbers:** every area is bitwise identical to the original on fuzzed and real inputs.
+
+## Phase 7a (25 Oct 2026): historical FX lookups and the IRR/MWR cash flows
+
+The final benchmark's profile put most of a summary's remaining time here, in pandas called once per row or per holding rather than in arithmetic.
+
+**The historical lookup** (`asof.rs`): `get_historical_price` made a pandas `asof` call for each of about 1,300 lookups per summary. Each price frame now gets an `investa_core.PriceTable`, built once and found again by the frame's identity, which is checked by weak reference, length, columns and first and last dates.
+- A plain-date lookup becomes a binary search.
+- The table reproduces `DataFrame.asof` exactly: it takes the last row at or before the day with no NaN in *any* column, and NaN when there is none. For a day before the first row, the original backfills with that row's price even if another column of the row is NaN, and the table does the same.
+- What the table doesn't cover keeps the original pandas path: indexes in another time zone, datetime targets, dates outside the nanosecond range, and frames without a numeric price column. An index stored in s/ms/us is converted to nanoseconds first.
+- Price frames are treated as immutable once built, as the market-data cache already shares them between requests.
+
+**The cash flows** (`cashflows.rs`): `get_cash_flows_for_symbol_account` re-filtered the whole ledger for every holding. Each call ran an equality mask, a case-insensitive regex over every Note (780,000 searches per summary) and an `iterrows` pass. `get_cash_flows_for_mwr` ran `iterrows` with four `pd.to_numeric` calls per row.
+- A `CashFlowLedger` now reads the frame once. It groups rows by symbol, builds each account's mask once with the original's own pandas expressions, and parses each row once. `_build_summary_rows` shares one ledger across all its holdings.
+- Every row's flow is computed in Rust, branch for branch, for both builders.
+- Python keeps the row selection and sort, each transfer's direction (decided from account names and Notes), the MWR's FX conversion and the result assembly.
+- A text cell that `pd.to_numeric` turns into a NumPy scalar makes the original's MWR flow a NumPy float, and the IRR solver treats NumPy floats differently. So Rust reports which inputs each flow used, and the shim gives the flow that type. The holding builder casts every flow to `float` anyway.
+
+**Parity:**
+- Lookup fuzz: 1,500 random frames, each asked 21 questions, match bitwise and type for type. The frames are naive, UTC or New York indexed, in four time units, sorted, unsorted or with duplicate dates, with rows missing a column, NaN prices and integer prices, and each price-column name. A frame that grows in place gets a new table.
+- Cash-flow fuzz:
+  - 480 random ledgers × 12 holdings, through both the one-shot function and a shared ledger, plus 720 MWR cases under both flow bases, with and without a scope, with historical and current FX.
+  - All match bitwise and type for type, with the 410 failures matched exception for exception.
+  - The ledgers include regex-like account names, transfers named only in the Note, a shortable symbol, every row type, NaN, zero and negative amounts, same-day rows with shuffled ids, and integer and text-typed numeric columns.
+- Real data: the full summary for kitmatan, dheematan and atchamatan, in USD and THB, is identical. So is the full history for kitmatan and dheematan.
+- **Speed:** a summary takes 0.49–0.58 s against 1.33–1.67 s on the two large books, and 0.14–0.25 s against 0.34–0.74 s on atchamatan's. That is about 3× faster.
+
+## Phase 7b (25 Oct 2026): the ratio history and the derived statement rows
+
+These dominated the ranking batch, about 27 ms per company, and they are the same code the per-stock pages run.
+
+**The ratio history** (`ratios.rs`): `calculate_key_ratios_timeseries` read statements one cell at a time through `_get_statement_value`, about 330 pandas `.loc` reads per company. It also re-parsed every column's date to find each period's column, which is quadratic in the number of periods.
+- Each frame now resolves a line item once across all its periods: the label's value, else the first alias that has one.
+- Each column's date is parsed once.
+- About 48 lookups per period feed Rust, which does the arithmetic. That covers margins, returns, liquidity, solvency, ROIC, free-cash-flow margin, growth and the multiples at the period's price.
+- Python's truthiness is reproduced exactly. `a or b` returns `a` only when it is a non-zero number, so a filed 0.0 falls through to the next label. The level figures and the price stay `None` where the original stores None, so an all-missing column keeps its object dtype.
+- Resolving lookups up front equals reading them in the original's order only when no read can fail. Frames with duplicate labels or columns, or with non-numeric cells, keep the original code, retained verbatim as `_key_ratios_python`.
+
+**The derived rows** (`edgar_provider._add_derived_rows`) are Total Debt, EBIT, Free Cash Flow and Total Liabilities. There is no arithmetic worth porting here; the cost was one `.loc` write per period, each of which could grow the frame.
+- Each line is now written once, with the same last-write-wins order and the same new row at the end.
+- A company's ISO period ends are parsed together. For `YYYY-MM-DD` strings the vectorised parse gives exactly the single-string result, NaT and time unit included.
+- Frames that aren't unique float64 keep the cell-by-cell write.
+
+**Parity:**
+- Fuzz: 900 random statement sets (5,139 periods) match bitwise and type for type, frame dtypes and index included. They cover every label and alias read, filed zeros, negatives, NaN, integers, object columns with None, partly overlapping periods, a missing or empty cash flow, annual and quarterly spacing, and prices as a frame, a series or none, some too stale to count. 60 frames with text cells or duplicate labels take the original code and match.
+- Derived rows fuzz: 800 random concept sets produce identical frames. They include invalid and out-of-range period ends, labels already present, and object frames.
+- Real data:
+  - Annual statements and ratio histories for all 5,561 filers (49,907 periods) are identical, as are the quarterly ones for the 33 filers that have them.
+  - For AAPL, MSFT, KO, JPM, O, BRK-B, XOM, NVDA, PG, META, COST and V, the stock-detail path is identical three ways: annual with prices, quarterly trailing-twelve-month with prices, and the ranking's unpriced call. No real frame needed the fallback.
+- **Speed:**
+  - Over the universe, statements take 31.7 s against 46.1 s, and the ratio history 5.8 s against 16.7 s.
+  - The ranking's full metrics pass (`collect_metrics`, 5,561 filers) takes **45.8 s against 81 s**.
+  - What remains is mostly SQLite: a new connection per concept read (about 2,900 per 279 filers) and the reads themselves, plus pandas frame construction.
+
+## Phase 8 (25 Oct 2026): the price read, the calendar, the EDGAR reads
+
+A profile after Phase 7 found the arithmetic almost all in Rust. What was left was I/O and pandas:
+- On `/history` (1.43 s for dheematan), 0.8 s went on reading prices out of SQLite and parsing their dates, against 0.04 s in the Rust kernels.
+- On the ranking, the time went on about ten EDGAR reads per company, each with its own connection.
+- On every request, the NYSE calendar was rebuilt per call.
+
+One item is a Rust port; the other three were cheaper to fix in Python.
+
+**The daily price read** (`sqlite_read.rs`, behind `market_db.get_ohlcv_batch` and `get_ohlcv`):
+- **The cost:** `pd.read_sql_query` built a Python tuple per row and an object per cell (about 340k rows × 8 for a full history), then `pd.to_datetime` parsed every date string.
+- **The port:** Rust steps the rows in C and writes column arrays; Python builds each symbol's frame from slices of them.
+- **One SQLite in the process.** Two copies of SQLite in one process can corrupt a database through POSIX locks. So the crate links no SQLite: `sqlite_bind` is handed the path of Python's `_sqlite3` extension, opens that already-loaded image with `RTLD_NOLOAD`, and resolves the C API through it. It is the same library Python calls, on macOS, in Docker and in CI. If it can't be resolved, the reader stays off and pandas reads.
+- **dtypes as pandas infers them over the whole result:** int64 when every cell is an INTEGER, float64 (NULL as NaN) otherwise. An all-NULL column is float64 NaN, which is what the original's `to_numeric` makes of the object column `read_sql_query` returns.
+- **Declines to the original:**
+  - a date that isn't `YYYY-MM-DD` inside the datetime64[ns] range (the original then raises or parses exactly as before);
+  - text or a blob in a price;
+  - a non-UTF-8 symbol;
+  - a symbols argument that isn't a list of `str`;
+  - a database it can't open;
+  - an empty single-symbol read, whose frame keeps the SQL column names.
+- **Python fix on the same path:** `market_data.get_historical_data` then made each index UTC with `pd.to_datetime(index, utc=True)`, about 3.4 ms per symbol. For a naive DatetimeIndex, `index.tz_localize("UTC")` gives the identical index in 6 µs. That was checked with NaT, ns/us/s units, a business-day frequency, intraday stamps and duplicate dates.
+
+**The NYSE calendar** (`utils_time.nyse_schedule`): every `cal.schedule()` call rebuilt the holiday table, about 30 ms warm and 130 ms cold, and a summary made several of them.
+- One schedule is now built per process, from 1970 to five years ahead (0.28 s, once), and each call is a 0.1 ms slice of it.
+- A range with no session returns the calendar's own empty frame, whose columns are object rather than UTC stamps.
+- Anything else goes to the calendar itself: a reversed range (which raises), a datetime, Timestamp or string, or a day outside the window.
+- The five direct call sites and `_cached_schedule` use it.
+
+**EDGAR read sessions** (`edgar_provider.company_session`): scoring one company read its facts about ten times, each through a new connection. Those reads were the whole concept set, the statement subset, then one concept at a time for every split-sensitive series.
+- Inside a session the reads share one connection. The assembled-series and by-filing readers query each tag once (the first read prefetches every chain tag) and answer later subsets from what is loaded.
+- That is exact because a tag's rows don't depend on which other tags share the query. That was checked on all 50 tags that hold same-day ties between two filings, against 350 random tag sets and the full set.
+- The cache dies with the block. A session is per company, per as-of date and per thread, and a context copied into another thread reads without it.
+- Callers get copies, so mutating an answer can't change a later one.
+- `compute_metrics`, `get_statements` and each company in `collect_metrics` open one.
+- Valuation bands do not: they read a few concepts once, and the prefetch made them slower (0.8 s → 1.4 s for 60 companies).
+
+**Parity:**
+- **Price read, fuzz:** 48 random archives with 672 requests match the frozen originals (`tests/reference/ohlcv_read.py`) bitwise and type for type: dict order, columns, dtypes, index and every cell, exceptions included.
+  - The archives carry NULL prices and volumes, all-NULL columns, integral prices, fractional volumes, text prices, impossible, misshapen and out-of-range dates, odd symbols, another interval, price bases and corporate actions.
+  - 446 reads went through Rust, 909 were empty and 108 declined.
+- **Price read, real data:** all 5,670 symbols in the archive (20,708,291 rows) read identically, in 9.5 s against 33.1 s. Single-symbol reads match for 100 symbols under all three adjustments.
+- **Calendar:** 360 random ranges plus the edges, holidays, weekends, reversed ranges and non-date arguments give the same frames as `cal.schedule()`.
+- **EDGAR sessions:** `collect_metrics` over all 5,561 filers, `get_statements` for all of them, bands and track records for 60 companies, and a 2016 as-of run are identical with sessions on and off. A unit test covers restatements, same-day ties, NULLs, subsets, nesting, threads and mutation.
+- **End to end against the last commit (da400ec7):** the summary for all three books in USD and THB and both history windows are identical. That covers every change above, including the UTC index. Both sides ran with `PYTHONHASHSEED=0`: at the time the summary's account rows came out in a different order in every process, on the old code as on the new (since fixed, see below).
+
+**Speed**, computation with market data replayed (median of five, last commit → now):
+
+| | kitmatan | dheematan | atchamatan |
+|---|---|---|---|
+| `/history`, full | 1.06 → **0.48 s** | 1.17 → **0.49 s** | 0.71 → **0.28 s** |
+| `/history`, default window | 1.01 → 0.51 s | 1.14 → 0.50 s | 0.71 → 0.27 s |
+| `/summary` USD / THB | 0.59 / 0.57 → 0.48 / 0.46 s | 0.48 / 0.51 → 0.44 / 0.46 s | 0.13 / 0.25 → 0.13 / 0.19 s |
+
+| Batch | Before | After |
+|---|---|---|
+| Ranking metrics, 5,561 filers (`collect_metrics`) | 47.0 s | **29.6 s** |
+| Statements, 5,561 filers | 28.2 s | 20.0 s |
+| Whole price archive read | 33.1 s | 9.5 s |
+
+## Phase 9 (25 Oct 2026): the summary's per-holding filters
+
+After Phase 8 the summary's remaining cost was pandas filtering, not arithmetic. Python fixes only; no Rust.
+
+- **Same-day flows and last-trade price** (`_build_summary_rows`). For every holding the summary masked the whole ledger by symbol, account and date, and converted every row's date (`.dt.date`) each time. It did this once for the day's flows, and again for the last-trade price fallback on holdings with no market price.
+  - `_HoldingRows` selects the report-date rows, and the priced rows up to the report date, once per summary. Each holding then filters only those by symbol and account. That is the same rows, in the same order, with the same labels.
+  - When nothing traded on the report date, a holding skips the filter entirely.
+  - A failure in the shared step is kept and raised again inside each holding's own handler, so the same messages are logged.
+- **Per-account MWR** (`_calculate_aggregate_metrics`): the normalised `Account` and `To Account` columns (`astype(str).str.strip().str.upper()`) were rebuilt for every account. They are now built once, and a failure is replayed the same way.
+- **`CashFlowLedger`:** the `Type == "transfer"` mask, which every account's Note match used, is built once, and `original_index` is read into a list once instead of once per holding.
+
+**Parity:**
+- **Fuzz:** 72 random books through the real holdings pass match the frozen originals (`tests/reference/summary_rows.py`) bitwise and type for type: rows, account currencies, flags, account-level and overall metrics, and every warning and error logged.
+  - The books cover holdings without a market price, trades and transfers on the report date, days with none, text and zero prices, a text `Date` column (so the shared filters fail and every holding's handler must fail as before), no `To Account` column, and an account filter.
+  - Across them the report-date filter returned rows 576 times, nothing 205 times and failed 174 times; the priced filter returned rows 380 times and failed 76 times.
+- **Ledger:** the existing parity test against the original per-holding function passes unchanged.
+- **Real data, against the previous commit (eee1987e):** the summary for all three books in USD and THB and both history windows are identical, in four old/new pairings (`PYTHONHASHSEED=0`).
+
+**Speed**, computation with market data replayed (median of ten over two alternating rounds):
+
+| `/summary` | Before | After | |
+|---|---|---|---|
+| kitmatan USD / THB | 0.507 / 0.489 s | **0.288 / 0.261 s** | 43–47% faster |
+| dheematan USD / THB | 0.427 / 0.435 s | **0.222 / 0.222 s** | 48–49% faster |
+| atchamatan USD / THB | 0.135 / 0.192 s | **0.082 / 0.122 s** | 36–39% faster |
+
+History is unchanged (within ±3%), as expected: it does not run these functions.
+
+**What remains** (dheematan, profiled): the account and overall totals (0.10 s, MWR flows and `safe_sum`), the dividend history (0.10 s, an `iterrows` pass over about 1,200 dividends) and the FIFO setup (0.10 s, about 15,600 single-value `pd.to_numeric` calls). All three are per-row Python work.
+
+## Phases 10–16: the second port (25 Oct 2026 onward)
+
+On 25 Oct 2026 the user widened the scope: every module that *can* move to Rust does, whether or not it speeds the app up. That covers calculations, storage and import. Python keeps the FastAPI routes, the network fetchers (yfinance and the HTTP clients), PDF parsing (pdfplumber), the market calendar (pandas_market_calendars) and Gemini. Two kinds of code still stay in Python: pandas frame construction, because the routes take DataFrames, and BLAS/LAPACK-backed NumPy calls, which can't be reproduced bitwise. The method is unchanged: freeze the original, fuzz for bitwise parity, then check real data.
+
+## Phase 10 (25 Oct 2026): SQL in Rust on Python's own connections
+
+The storage modules keep their `sqlite3.Connection` objects: connection caching, PRAGMAs and the callers' `with conn:` blocks are untouched. `rust_sql.execute`, `executemany` and `read_frame` run the statement in Rust (`sql.rs`) on the `sqlite3*` the Python connection holds. So a Rust statement joins the caller's open transaction, sees its uncommitted writes, and commits or rolls back with it.
+
+**The handle.** In CPython 3.12 a `pysqlite_Connection` is `PyObject_HEAD` followed by `sqlite3 *db`.
+- `rust_sql` reads the pointer at `object.__basicsize__`, and once per process checks the layout: a probe connection on a temporary file must report the same file through `sqlite3_db_filename` as through `PRAGMA database_list`.
+- The pointer is read fresh on every call, because a closed connection sets it to NULL.
+- Connections don't take weak references, so nothing is cached per connection.
+
+**What Python's `sqlite3` does around a statement** (CPython 3.12 `cursor.c` and `statement.c`), reproduced:
+- Python's own thread and closed-connection checks run first (via `conn.cursor()`, which raises exactly what `execute` raises).
+- Under legacy transaction control, DML in autocommit runs `"BEGIN " + isolation_level` first, before binding, so a binding error leaves the transaction open as it does in Python. DML means `lstrip_sql` (whitespace, `--` and `/* */` comments) followed by INSERT, UPDATE, DELETE or REPLACE.
+- Only one statement is allowed per call.
+- The binding count must match, with Python's message.
+- `rowcount` is the DML changes or -1. `lastrowid` is the connection's last insert rowid after `execute`, and None after `executemany`.
+- Each SQLite error is raised as the class `get_exception_class` picks, with SQLite's message and the extended `sqlite_errorcode` / `sqlite_errorname`.
+- Text that isn't UTF-8 raises Python's `Could not decode to UTF-8 column` error.
+- `read_frame` builds the frame with pandas' own `_wrap_result`. A failure rolls the connection back and raises pandas' `DatabaseError`, as `read_sql_query` does.
+
+**The connection itself is driven from Rust** (`pyconn.rs`, `PyConn`). It makes the checks above, binds positional and named parameters, runs the statement, and raises each error as Python would; `rust_sql.execute` / `executemany` are thin wrappers over it, and the storage ports use it directly.
+- Named binding follows CPython 3.12 `bind_parameters`: each placeholder's name, less its first character, is looked up in the dict (extra keys ignored). The errors are Python's: `Binding N has no name, but you supplied a dictionary (which has only names).` and `You did not supply a value for binding parameter :name.`
+- A named placeholder bound by position goes to Python, which emits its DeprecationWarning there.
+- `executemany` converts every item before running any, so an item Rust can't bind sends the whole call to Python while nothing has happened yet. A binding error at item *k* is raised after items 0..*k*−1 have run, as in Python. One gap remains: a generator that raises partway is materialised before the implicit BEGIN, where Python would raise after it.
+
+**Left to Python's own call, before anything runs:**
+- a parameter Python would adapt or refuse: an adapter registered on a base type, a date, a NumPy integer, an int beyond 64 bits, a surrogate string, a `bytearray`, a float subclass with `__conform__`;
+- named parameters;
+- a `row_factory` or a custom `text_factory`;
+- explicit `autocommit` control;
+- a NUL in the query or an empty statement.
+
+**Parity:** 32 random sequences of 120 operations (named and positional parameters, `executemany` runs that fail partway), on twin databases under every isolation level including autocommit, agree after every step. They compare each outcome (rows, description, rowcount, lastrowid, or the exception's class, message, code and name), `in_transaction`, `total_changes` and every table's contents. Across them, 1,710 statements ran in Rust, 185 raised SQLite errors and 235 programming errors (all matching Python's), and 899 were declined to Python by their parameters. Tests also cover a Rust write rolled back by the caller's `with conn:` block, the thread and closed checks, and the connections Rust must leave alone.
+
+## Phase 11a (25 Oct 2026): `db_utils`
+
+`db_utils.py` went from 2,234 lines to 517. Everything except `migrate_csv_to_db` (Phase 12, with the import code), the `NpEncoder` class and the module constants is now Rust (`db_portfolio.rs`, `db_screener.rs`):
+- the transaction writes and loader;
+- watchlists;
+- the screener cache and its AI and intrinsic-value updates;
+- the v1–v15 schema migrations;
+- `get_db_connection` with its per-thread cache and retries;
+- paths and the read-only connection.
+
+**How the port is written.** It is PyO3 code working on the same Python objects: routes pass dicts, the loader returns a DataFrame.
+- **Native Rust:** the SQL statements and the arithmetic.
+- **The same Python calls,** wherever the original relied on a Python operation's exact behaviour: `str.title`, `strptime`, `pd.isna`, `str()` of a dict in a log line, `json.dumps(cls=NpEncoder)`, `sum()` (compensated for floats since 3.12), `list.sort(key=...)`, `datetime.now()`, logging with the caught exception as `exc_info`, and pandas' column operations in the loader.
+- **Module lookups:** sibling functions and module state (`_DB_CONN_CACHE`, `_SCREENER_SCHEMA_INITED`, `FAVORITES_WATCHLIST_NAME`) are read from the `db_utils` module at call time, so a patched attribute is the one used, as a Python global lookup finds it.
+- **Evaluation order:** kept wherever it decides which handler catches a failure. Values built before a `try` raise past it; values built inside are caught.
+
+**Found while porting: pandas counts references.** `DataFrame.__setitem__` warns of chained assignment when `sys.getrefcount(self) <= 3`. A Python `df[col] = v` holds the frame on the interpreter's stack, one reference more than a call from Rust, so the first port warned seven times per load where the original warned never. `pyhelp::setitem` holds that reference too. The parity tests now compare warnings as well as logs.
+
+**Parity** (against `tests/reference/db_utils.py`, frozen before the port), comparing return values, every table's schema and rows, every log record (level, message, exception type) and every warning:
+- 900 random calls on twin portfolio databases (adds, updates, deletes, watchlists, loads);
+- migrations from 40 random older states (any recorded version, columns dropped, tables missing, a legacy `watchlist` table to move, no `schema_version` table);
+- connections on plain and cloud-drive paths, through the cache, a closed cached connection, `use_cache=False`, `check_same_thread=False`, an unwritable directory and the read-only fallback;
+- 360 random screener-cache operations.
+
+**Real data:**
+- The three books load identically, with their watchlists.
+- The screener readers return the same 3,007 rows.
+- The migration leaves copies of all five user databases identical.
+- All 1,376 tests pass.
+
+## Phase 11b (25–26 Oct 2026): `market_db`
+
+`market_db.py` went from 1,528 lines to 611. Every `MarketDatabase` method except `__init__` and `_get_connection` is now Rust (`mdb.rs`), and so are the module helpers `_iso_days`, `_rust_reader_bound` and `_read_daily_frames`. Each method takes the object as `slf`, so its connection, write lock, column cache and sibling methods are reached through it, as in the original.
+
+- **Native:**
+  - the ISO day strings (years 1–9999; NumPy's own formatting otherwise);
+  - the split factors, reproducing NumPy's stable argsort, reversed cumprod, right-sided searchsorted and `allclose(1.0)`;
+  - the dividend factors;
+  - the read-time multiplies;
+  - the value cleaning of the upserts (NaN as None, volumes truncated, an infinite or 64-bit-overflowing volume through Python's `int()` so it raises or grows as there).
+- **The same pandas calls:** `to_numeric`, `groupby`, `merge`, `to_datetime`, and every column assignment through `pyhelp::setitem`.
+- **`with a, b:`** enters `a` before it evaluates `b`, so the write lock is taken before the connection is fetched, as in the original.
+- **Python's own messages:** tuple unpacking (`for day, rate in rows`) raises Python's exact errors, and `symbols + [...]` uses Python's `+` inside the connection's `with`.
+- **Kept as NumPy fallbacks:** the NumPy originals of the two factor helpers stay in `market_db.py` (`_future_split_factors_numpy`, `_dividend_factors_numpy`), for inputs NumPy answers in its own way: a NaN day among the dates, an unsorted index (where its binary search is implementation-specific), closes that are not a float64 array.
+- **Ported as found:** `get_share_counts` and `check_integrity`'s fallback still use `date.today()`, against the market-time rule.
+
+**Parity** (against `tests/reference/market_db.py`):
+- **Method sequences:** 700 random calls on twin archives, including a legacy archive without the provenance columns, agree on every return value (frames bitwise with their index), table, log record and warning.
+- **Helpers:** 240 random indexes (ns/us/s, 1599–10000, NaT, tz-aware, unsorted) give the same `_iso_days`, split factors and dividend factors.
+- **Real data:** the live 3.2 GB archive reads identically for every symbol at the split basis; for 250 symbols with corporate actions under all three adjustments; for single-symbol reads; and for FX, latest closes (now and as of a date), share counts, bases, actions, data quality, fund NAVs, first and last dates and sync stamps. 95 integrity checks on real frames, half of them perturbed, match. The archive holds no raw-basis symbols yet, so the raw-to-split conversion is covered by the fuzz alone.
+- All 1,390 tests pass.
+
+## Phase 11c (26 Oct 2026): `buffett_store`
+
+Every `BuffettRankStore` method except `__init__` and `_connect`, and the helpers `_escape_like` and `_coerce`, are now Rust (`rank_store.rs`); `buffett_store.py` is 260 lines, down from 501.
+- **`sqlite3.Row`.** The store's connections set `row_factory = sqlite3.Row`, which would normally send a statement to Python. These rows never leave the store, though: they are read as `dict(row)`, `row["run_id"]` or `row[0]`. So `PyConn::new_internal` runs them in Rust, and `pyconn::row_dict` reproduces the Row lookups: each name resolves to the first column matching it case-insensitively, as `Row.__getitem__` does.
+- **Parity:**
+  - 480 random calls on twin stores (runs started, finished and pruned at every `keep` and staleness; score frames with NumPy scalars, NaN, text, missing columns and integer labels; paged readers with LIKE wildcards in the search) agree on return values, tables, logs and warnings.
+  - The live store (256 runs, 1,219 ranked rows in the latest) reads identically through every reader.
+
+## Phase 11d (26 Oct 2026): the EDGAR fact store and the company session
+
+`EdgarFactStore`'s readers, writes and ingest logs, `_effective_as_of`, `_session_for`, and `company_session` (now a Rust context-manager class) live in `ef_store.rs`. The session cache that `_read_tags` kept is folded into the two cached readers.
+- **Order of results.** The readers' row loops fill the nested dicts the concept resolution reads in row order, so last-write-wins and insertion order are the original's.
+- **What stays in Python.** `_CompanySession` stays a Python data holder, and the context variables stay where they were, so the session machinery is reached the same way.
+- **Parity:**
+  - 400 random calls on twin stores (restatements, same-day ties, NULLs, quarterly spans; random tag sets and as-of dates; inside, outside and nested in sessions; writes) agree on return values with their dict order, and on tables, logs and warnings.
+  - On the live store, every reader for all 5,561 filers at two dates is identical.
+  - The whole ranking metrics pass is identical whether it reads through the Rust store or the frozen original. It takes about 37 s either way: the cost is still SQLite and pandas.
+
+## Phase 12 (26 Oct 2026): import
+
+`data_loader.load_and_clean_transactions` and its helpers, `csv_utils.convert_csv_headers_to_cleaned_format`, the `io_handlers` writers and `db_utils.migrate_csv_to_db` are now Rust (`dl.rs`, `db_portfolio.rs`).
+- **What stays pandas.** The CSV parse stays `pd.read_csv`, because its float parsing and type inference are pandas' own; the cleaning is the same pandas operations in the original's order.
+- **Parity:**
+  - 120 random CSV ledgers load identically through both versions (all seven results, logs, warnings). They carry header aliases, unknown and missing columns, every date shape including ordinals and invalid ones, numeric text, cash spellings, spin-off spellings, reserved types, and bad currencies.
+  - So do database sources (populated, empty, unreachable), 20 header standardisations (compared on the file written), the export writers, and 10 CSV migrations.
+  - The three real books load identically.
+- All 1,415 tests pass.
+
+## Phase 13a (26 Oct 2026): `corporate_actions` and the analyzer's standalone helpers
+
+`corporate_actions` (the deferred-action arithmetic, IBKR spin-off parsing and leg building, split deduplication) and seven `portfolio_analyzer` helpers (`get_type_id`, the correlation matrix, scenario impact, rebalancing trades, HHI, the health score, projected cash interest) are now Rust (`ca.rs`, `pa_small.rs`).
+- The arithmetic is Python's own number operations, in the original's operand order (so `100 * x` dispatches from `int`, and a NumPy scalar's reflected methods win as they do in Python). `sum`, `round`, `max`, `min` and `format` are the builtins, so results keep their types.
+- The spin-off parser uses the module's compiled patterns, so the regex semantics stay Python's.
+- `generate_cash_interest_events` still anchors on `date.today()`; that is flagged, not changed.
+- **Parity:** 320 random rounds of the arithmetic, the parser, the leg builder and split deduplication, and 160 of the analyzer helpers, match the frozen originals type for type, with logs and warnings.
+
+## Phase 13b (26 Oct 2026): the report extractors
+
+`calculate_periodic_returns`, `extract_dividend_history` and `extract_realized_capital_gains_history` are now Rust (`pa_reports.rs`): the same pandas operations in the original's order, side effects included.
+
+**Found while porting:** two ways the port was not the original, both invisible to a read of the code.
+- **A name the linter thought unused.** `ruff --fix` removed `portfolio_analyzer`'s import of `USFederalHolidayCalendar` once no Python code used it, but the port reads it from the module at call time. The holiday filter then failed into its `except` branch and logged a warning, so a history starting on 1 January kept the holiday. `tests/test_rust_module_names.py` now scans the Rust sources for every module attribute they read and fails if one is missing.
+- **An object kept alive longer than in Python.** `df_gains, _ = calculate_fifo_lots_and_gains(...)` discards the tuple at once. The port held it in a local, which kept the unfiltered frame alive, and pandas' SettingWithCopy check (a weak reference from the slice to its parent) then warned where the original never did. The tuple is now dropped where Python drops it.
+
+**Parity:**
+- 125 random rounds of each extractor match the frozen originals: histories on DatetimeIndex and RangeIndex across weekends and holidays; ledgers with taxes, interest, text amounts and missing FX; account and date filters on a non-datetime `Date`. That covers results, logs, warnings, and the inputs left behind.
+- **Real data:** for all three books, the summaries in USD and THB (which run the dividend history), the realized gains under three account filters, and the 8,883-day periodic returns are identical.
+
+## Phase 13c (26 Oct 2026): the holdings pass and the FIFO shim
+
+`_process_transactions_to_holdings` and `calculate_fifo_lots_and_gains` are now Rust (`pa_holdings.rs`, `pa_fifo.rs`). With them, everything between the loaded ledger and the replay kernel or the FIFO book is Rust.
+- **The holdings pass** normalises the caller's frame in place, as the original did. It deduplicates splits and encodes the columns with the same pandas operations; the price, cash and split-ratio masks over the encoded columns are native. The kernel's state is unpacked into holdings whose values stay NumPy scalars.
+- **The FIFO shim** reads each row with the original's Python operations: `pd.isna`, `pd.to_numeric`, `str().upper().strip()`, and the parse `try`/`except`. Its arithmetic stays on the row's own objects, so a gains record's quantity keeps its NumPy type. The lot events go straight to `fifo::run`, with no round trip through Python lists.
+- The FX bridge and the conversion fallback are looked up on `portfolio_analyzer` at call time. The bridge's import is now marked as read by Rust, and the module-name guard also follows `let m = py.import(...)` bindings.
+- **Parity:**
+  - 240 random rounds of the holdings pass match the frozen original: all nine outputs, the frame it leaves behind, logs and warnings.
+  - So do 320 rounds of the FIFO shim on rougher ledgers: text and junk in numeric columns, NaT and string dates, None symbols, NaN ids, a missing required column, and the real USD-bridge lookup.
+  - `test_rust_fifo_parity.py` still matches the pure-Python FIFO bitwise on 1,500 ledgers.
+- **Real data:** for all three books, in USD and THB, the summaries, the FIFO output and the holdings pass are identical, and so is the frame the holdings pass leaves behind.
+- All 1,445 tests pass.
+
+## Phase 13d (26 Oct 2026): the summary rows and the totals
+
+`_build_summary_rows` (with `_HoldingRows`, now a memo inside the port) and `_calculate_aggregate_metrics` are now Rust (`pa_rows.rs`, `pa_aggregate.rs`). `portfolio_analyzer.py` is down to 529 lines of wrappers and constants.
+- **Every figure is Python's own arithmetic on the holding's objects**, in the original's operand order. A NumPy quantity therefore keeps the row's values NumPy scalars, `max(0, cost)` still returns the integer `0`, and `* 100` and `* 100.0` stay as the original wrote them. The intra-day flows were Python floats in the original, so they are native.
+- Every log message formats its values with Python's `format()`, so a float in a DEBUG line reads as Python prints it.
+- `safe_sum`, the FX, IRR and MWR helpers and the cash-flow ledger are looked up on `portfolio_analyzer` at call time, and their imports are marked as read by Rust.
+- **The frozen speedup reference now borrows the frozen module's helpers.** `tests/reference/summary_rows.py` copied its globals from the live `portfolio_analyzer`. Once the live module stopped importing `defaultdict`, the reference failed with a `NameError` and the old parity test reported a mismatch.
+- **Parity:**
+  - 300 random rounds of the rows match the frozen original, with logs down to DEBUG and the ledger left behind. The holdings are hand-built with NumPy, int and float values, NaN costs, shorts, and cash in four currencies. The market data has text, zero and NumPy-integer prices. The rounds also cover published NAVs, valid and invalid manual prices, missing FX, interest with thresholds, and account filters.
+  - So do 200 rounds of the totals: dropped and text columns, an empty frame, every account-filter shape, and ledgers with and without `To Account`.
+  - The pre-speedup parity test still passes.
+- **Real data:** for all three books, the summaries in USD and THB, with and without an account filter and with cash interest on, are identical with the rows and totals swapped.
+- **Speed:** `/summary` is unchanged: 274 vs 283 ms and 273 vs 276 ms on the two large books.
+  - A first cut of 13c was 15 ms slower in the FIFO shim. The cause was two things done per row: looking pandas functions up by a freshly built name, and calling `py.import` inside the holdings pass's per-row closure.
+  - Binding `pd.isna`, `pd.notna` and `pd.to_numeric` once per call, and interning the method names, brought each ported function within 1–2 ms of the original.
+- All 1,464 tests pass.
+
+## Phase 13e (26 Oct 2026): `portfolio_logic`'s summary
+
+`calculate_portfolio_summary` and its helpers are now Rust (`pl_summary.rs`, `pl_helpers.rs`). That covers the transactions fingerprint, the default metrics, the published NAVs, the sector and geography enrichment, and the historical FX table. With 13a–d, the whole `/summary` calculation is Rust from the loaded ledger onwards. `portfolio_logic.py` is down to 668 lines, most of them re-exports and the `__main__` block.
+- **It orchestrates Python objects:** the market provider, the NAV store, pandas frames, and the FIFO cache under its lock (`mdb::with1`). So every call is Python's, in the original's order, including the sets whose iteration order depends on how they were filled.
+- Module state and siblings are looked up on `portfolio_logic` at call time. That covers `_FIFO_CACHE`, `SHORTABLE_SYMBOLS`, the clock functions and the analyzer functions it imports, so the tests and benchmarks that patch them still reach the patched one.
+- **One unavoidable difference.** The two `logging.error(traceback.format_exc())` lines print the caught exception's traceback, which has no frame for the summary function now that it is not Python. The exception line itself is unchanged.
+- **Parity:**
+  - 160 random summaries match the frozen original, each run twice so the FIFO cache is read as well as filled. They cover the whole seven-part result, the caller's frame afterwards, and the logs, with the elapsed-time line and the traceback bodies masked.
+  - The runs use a deterministic fake provider: critical and partial fetch errors, both Yahoo FX conventions, a currency with no history that takes the current-quote fallback, and metadata from the batch, the per-symbol fetch, or a failing service. A fake NAV store stands in for the real one.
+  - The ledgers cover every account-filter shape, transfer-source backfill, splits, "All Accounts" rows, a missing `original_index`, and manual overrides with valid, text and zero prices.
+  - Empty, missing and account-less inputs, and the helpers, are compared separately.
+- **Real data:** for all three books, with the real market provider, in USD and THB, with and without an account filter, the whole summary is identical. The original, run again, is stable, so the quotes did not move under the comparison.
+- **Speed:** `/summary` end to end is level with the Phase-13 Python: 359 vs 375 ms (kitmatan) and 288 vs 285 ms (dheematan). atchamatan's small book is 5–8 ms slower (119 vs 111–114 ms).
+- All 1,474 tests pass.
+
+## Phase 14a (26 Oct 2026): `portfolio_cashflows`
+
+The daily net external cash flow, over a date range (the vectorized pass the history uses) and for one day, is now Rust (`pc_flows.rs`). `portfolio_cashflows.py` is down to 80 lines.
+- **It is pandas and per-row Python**, so every operation is Python's own, in the original's order.
+- **A frame the original rebinds (`df_cash = df_cash[mask]`) is reassigned here, not shadowed.** A Rust shadowing `let` would keep the parent frame alive until the end of the scope. Pandas' SettingWithCopy check, a weak reference from the slice to its parent, would then warn on the next column assignment where the original never did.
+- **The original's side effects are kept.** It rewrites the index of the FX and price series it is handed, and it appends to a scratch file (see "Found while porting").
+- **Parity:**
+  - 320 random rounds of the vectorized pass and 240 of the per-day pass match the frozen original. The comparison covers results, logs, warnings, the scratch-file lines (captured, not written), and the FX and price tables left behind.
+  - The ledgers cover cash and stock deposits, transfers across and within a selection, Note-named clean-ups, flows before the range, and currencies with and without FX history, over UTC and naive ranges.
+  - Unpriced transfers fall back to the price history (date or Timestamp index, sorted or not) and then to another trade.
+- **Real data:** every vectorized call that the history for the three books makes is identical: USD and THB, all accounts and IBKR alone.
+
+## Phase 14b (26 Oct 2026): the history's helpers
+
+Eight `portfolio_history` helpers are now Rust (`ph_small.rs`): price unadjustment, the per-date multiprocessing worker, the manual-price and published-NAV lookups, the price grid, the L1-cache pruning, the intraday symbol window, and the id mappings.
+- **Every operation is Python's own, in the original's order.** The in-place `factor.loc[mask] *= ratio` is `operator.imul` between the read and the write, as the interpreter does it.
+- **The worker still calls `logging.basicConfig(force=True)` on every call**, which replaces the root logger's handlers (a multiprocessing leftover, kept).
+- **Parity:**
+  - The fuzz covers unadjustment over every price-column layout, naive and UTC indexes, splits dated every way with good and bad ratios, and the warnings set.
+  - It also covers the worker in both comparison modes, with each stage failing in turn; its `basicConfig` calls are recorded and compared.
+  - Manual prices, the NAV series through a fake fund store, the grid, pruning over a real directory, the intraday window and the mappings are fuzzed too.
+- **Real data:** for the three books, every call the history makes is identical: daily runs in USD and THB, with and without a filter, and 5-minute and hourly runs. That covers the mappings, the NAV series, the grid, the manual prices and the intraday window. `_unadjust_prices` is reached only from `portfolio_logic`'s profiling `__main__`, so the fuzz is its check.
+
+## Phase 14c (26 Oct 2026): input preparation and daily valuation
+
+`_prepare_historical_inputs`, `_get_or_calculate_all_daily_holdings` and `_value_daily_holdings_vectorized` are now Rust (`ph_valuation.rs`). The replay and valuation kernels were already Rust; what moved is the glue around them: the account filter and transfer backfill, the cache keys and hashes, the L1 `.npy` cache, and the price and FX alignment. Every operation is Python's own, in the original's order.
+- **Parity:**
+  - The fuzz runs input preparation over every include/exclude shape, a CSV path that exists or does not, and with and without a cache directory.
+  - It runs the L1 cache as a miss that saves and then a hit that loads, in separate directories, plus a run with no directory.
+  - It runs the valuation over random grids, every price layout, published NAVs and manual prices, and FX tables under every pair spelling or missing.
+- **Real data:** every one of these calls in the three books' daily and intraday histories is identical: 24 input preparations, 18 holdings loads and 18 valuations.
+
+## Phase 14d (26 Oct 2026): the daily results and the accumulation
+
+`_load_or_calculate_daily_results` and `_calculate_accumulated_gains_and_resample` are now Rust (`ph_daily.rs`).
+- **What moved:**
+  - The feather cache's validation, load and save.
+  - The chronological pass: the intraday grid clipped to market hours and NYSE days, the L1 slice or the replay, and the split re-adjustment of prices.
+  - The single- and multi-process worker fallback.
+  - The TWR return, with its flow-driven spike cap and transfer healing.
+  - The resampling, and the t-1 normalisation of the requested range.
+
+  The kernels were already Rust, and every operation here is Python's own.
+- **A traceback difference that cannot be avoided:** the two `traceback.print_exc()` calls print the exception without this function's frame, as in Phase 13e.
+- **Parity:**
+  - The accumulation fuzz covers every interval, windows inside, across and outside the data, NaN, duplicate-date and all-zero benchmarks, and near-zero divisors.
+  - The daily results run the chronological pass with and without L1, daily and intraday, filtered; the worker pass; and a cache written and read back.
+  - The cache's validation is covered too: a stale key, a newer CSV, a missing CSV and corrupt metadata.
+- **Real data:** all 18 calls the three books' daily and intraday histories make are identical, compared with the feather cache off.
+
+## Phase 14e (26 Oct 2026): `calculate_historical_performance`
+
+The history request itself is now Rust (`ph_performance.rs`). With 14a–d, the whole `/history` calculation runs in Rust from the loaded ledger onwards. `portfolio_history.py` is down to about 650 lines of signatures, docstrings and constants.
+- **What moved:**
+  - The split deduplication, the mappings, the date-range and clamp logic, and the L1 holdings.
+  - The daily price fetch, with the intraday bars merged after the daily history, and the leading-edge fill of every table back to the start.
+  - The daily results, the benchmark alignment (a 120 h tolerance across holiday weekends), the accumulation, and the status line with its TWR factor.
+- **It orchestrates the market provider and pandas,** so every call is Python's own, in the original's order. `get_shared_mdp`, the clock functions and every sibling are looked up on `portfolio_history` at call time.
+- **Two of the original's unbound-variable paths are kept** (see "Found while porting"). A direct test pins both.
+- **Parity:**
+  - 48 random requests through a deterministic fake provider match the frozen original: every interval, invalid intervals and date orders, benchmark lists of every shape, account filters that keep, empty or void the ledger, fetch failures, and benchmark frames that are missing, empty or lack a usable column.
+- **Real data:** for all three books, with the real market provider, the whole result (daily frame and status) is identical in 15 requests: all history daily, a year weekly in THB, IBKR monthly, five days hourly and one day at 5 minutes. The original, run again, is stable, so no live bar moved under the comparison.
+- All 1,561 tests pass.
+
+## Phase 15a (26 Oct 2026): `valuation_history`
+
+A company's multiples against its own fifteen-year record now run in Rust (`vh.rs`). The band statistics were already Rust; what moved is the glue: the store and EDGAR reads, the point-in-time `as_of` context, and the per-year arithmetic, all with Python's own operations. The oracle is `tests/reference/valuation_history_p15.py`, frozen just before this port; the older reference predates `_describe_percentile`.
+- **Parity:** 80 random requests through fake EDGAR and price stores match: losses, missing cash flows or capex, short share series that take the fallbacks, non-date period keys, gappy and non-positive prices, failing stores, and a leap-day `today`. The helpers are checked separately.
+- **Real data:** 407 real companies from the CIK map, 92 of them with bands, are identical.
+
+## Phase 15b (26 Oct 2026): `track_record`
+
+The stock window's track record now runs in Rust (`tr.rs`): the pillars' metrics labelled and formatted, the downturn windows, restated numbers, the ranked row and the assembly. The window search was already Rust. Every figure is formatted with Python's `format()` and rounded with its `round`, so the text matches to the character. `buffett_rank` and `buffett_metrics` are read off `track_record` at call time.
+- **Parity:**
+  - The fuzz covers the formatter over every unit with NaN, inf, text and zero denominators, the labels over every model's real pillar spec, and 80 downturn and money rounds.
+  - It also covers `build` with each stage faked to succeed or fail.
+- **Real data:** 60 real companies' complete track records are identical.
+
+## Phase 15c (26 Oct 2026): `strategies`
+
+The market-trend indicator and the strategy allocation now run in Rust (`st.rs`): month-end closes and both moving-average readings, the signal prices, the ranked positions under the industry cap with live quotes, the allocation with its stale-snapshot and short-book warnings, and the payloads.
+- **What stays Python:** the strategy registry and its dataclasses. They are definitions, not calculation.
+- The SMA arithmetic was already Rust. The text is formatted with Python's `format()`, and `attach_ai_scores`, `blend_scores` and the clock are read off `strategies` at call time.
+- **Parity:**
+  - The fuzz runs the trend readings over random histories, naive and zoned, too short, mid-month and month-end.
+  - It runs every strategy's allocation through fake quote, ranking and SIC sources. Those cover NaN scores, missing and text prices and CIKs, failing quotes, stale, missing and unparsable runs, short books, and every AI-weight override.
+- **Real data:** all six strategies at three AI weights (18 allocations) and the SPY and QQQ trend signals are identical, with the real ranking store and live quotes.
+
+## Phase 15d (26 Oct 2026): the `buffett_metrics` and `buffett_value` glue
+
+What sat around the metric and percentile kernels now runs in Rust (`bm.rs`): the conversions into and out of the kernels, the ratio bridge, the per-company entry point under its EDGAR session, the market metrics, the value score's per-model grouping and the value frame.
+- **The per-value conversions are native** (`_raw_number`, `_finite`, `_safe_divide`). `_for_rust` meets about a thousand values per company across the universe, so a Python call per value would cost far more than the original. They are pure functions whose semantics are reproduced exactly, including the `OverflowError` that `float()` raises for an integer too large, which the original does not catch.
+- **The frozen oracles import each other.** `tests/reference/buffett_*_p15.py` point their sibling imports at one another, so the oracle is the original Python end to end even as the live modules move.
+- **Parity:**
+  - 150 random companies through fake EDGAR and ratio engines match the frozen originals under every model: ints, NaN, infinity, NumPy and text values, missing concepts, failing loads, share rebuilds and ratio runs. So do the helpers and 60 value universes.
+- **Real data:** 400 real filers' complete metric sets are identical, at the same speed (2.1 vs 2.3 s), and so is the value frame and score of those with a stored price.
+
+## Phase 15e (26 Oct 2026): the `buffett_rank` glue
+
+The gates, the confidence factor, the universe frame, the per-model quality scoring, the composite, and the re-blend and re-rank now run in Rust (`br.rs`). The percentile and pillar kernels were already Rust, and every operation here is Python's own.
+- **Parity:** 64 random universes of every model match: metrics random, missing, NaN or exactly at a gate threshold; carried gate failures; coverage from None to full. Each runs through the gates, the scoring, the composite with and without value scores, and the re-rank at four AI weights.
+- **Real data:** identical on all of these:
+  - the latest stored run's 1,219 scored rows, re-blended and re-ranked at nine quality/AI weightings;
+  - 400 real filers' gates, quality scores (63 eligible) and composite.
+
+## Phase 15f (26 Oct 2026): `buffett_pipeline`
+
+The ranking run itself now runs in Rust (`bp.rs`): the universe collapsed to one listing per filer, sector routing with inference from the facts, the metrics and gates under per-company sessions, the price-quality gate, the archived market data with batched share-count fetches, the value score, the composite, and the snapshot. `RunResult` stays Python. With 15d and 15e, the whole ranking pass is Rust apart from the EDGAR and market-data reads it orchestrates.
+- **Parity:** 36 rounds of the market-data fetch, the price-quality gate and the exclusion records match, through a fake archive and provider. They cover missing closes, stale counts, failing batches, zero and text share counts, a failing quality scan, and both severities.
+- **Real data:** a whole-universe run (market data and persistence off, so no network and no writes) is identical over all 5,561 filers: 1,219 ranked and 4,342 excluded, every row and every exclusion reason. It took 43.4 s against 47.1 s.
+
+## Phase 15g (26 Oct 2026): the `edgar_provider` glue
+
+Everything in `edgar_provider` around the fact store (already Rust since 11d) now runs in Rust (`ep.rs`), except the bulk download, which is network:
+- the `as_of` block (an `investa_core.AsOf` context manager) and the shared store;
+- both companyfacts parsers, and the bulk archive reader (`investa_core.BulkDocuments`, which opens the archive on the first `next()` as the generator did);
+- the bulk, per-company and quarterly ingest, with `sec_get_json` still the Python fetch;
+- the quarterly derivation: canonical period ends, per-filing split bases, the year-to-date ladder;
+- concept resolution, provenance, the split-consistent series, revisions and the split factors;
+- the annual and quarterly statement frames with their derived rows, and the sector concepts.
+
+How it is done:
+- **The per-element helpers are native, the dates are not.** `_span_days`, `_is_annual_duration`, `_median` and the ISO-day match in `_period_stamps` run in Rust, and are called directly rather than through the module. They are pure, and the parsers meet them once per fact. Dates are still parsed by `datetime.fromisoformat`, so an aware timestamp or an impossible day fails exactly as before. The ISO match is native only for ASCII strings: `\d` also matches other Unicode digits, so anything else goes to the original regex.
+- **The sorts are Python's.** `revisions` sorts with `list.sort(key=..., reverse=True)` and the ladder with `itemgetter(0)`. Ties and NaN changes therefore land where they did.
+
+Checks:
+- **Parity:**
+  - Eight rounds of four synthetic filers go into one real fact store. They have random fiscal calendars, quarters tagged directly or only year-to-date, 10-K comparatives, restatements, a split that later filings restate, mistyped period ends, 16-week fourth quarters, 8-Ks and amendments. Every reader answers alike at three `as_of` dates.
+  - Odd documents and odd helper inputs match too: unhashable forms, aware and impossible dates, None and zero values, Unicode digits, object and duplicate-column frames.
+  - The ingest paths run against separate stores, a fake fetch and a synthetic archive with a corrupt member. They leave identical stores, stats and logs.
+- **Real data:** 8,234 comparisons, all identical:
+  - 400 real filers, now and as of mid-2018: statements, concept values, provenance, revisions, split factors and series, and sector concepts;
+  - all 38 filers with quarterly facts;
+  - 60 companyfacts documents from the real bulk archive, through both parsers.
+  - The port took 15.7 s against 16.3 s.
+
+## Phase 15h (26 Oct 2026): the `financial_ratios` statement and ratio glue
+
+The first block of what `financial_ratios` still ran in Python now runs in Rust (`fr.rs`):
+- statement lookups with their aliases, and free cash flow from a statement;
+- trailing-twelve-month columns, with their consecutive-window check;
+- the point-in-time price;
+- the ratio history: the resolved-lookup path, and the original cell-by-cell code it falls back to for duplicate labels and text cells;
+- historical multiples, the current valuation ratios, the WACC's input reading, and the price-history loader.
+
+`_StatementLookup` is now a Rust class, `investa_core.StatementLookup`, that fills its rows natively. The arithmetic kernels from phases 3 and 7 are called as the original called them.
+
+How it is done:
+- **Chained comparisons return their own object.** `_is_consecutive_window` hands back NumPy's `np.True_` when the quarter count is a NumPy integer, as `a <= b <= c` does in Python. The first draft returned Rust's `bool`, and the fuzz caught it.
+
+Checks:
+- **Parity:** random statements match the frozen original through every function in the block. They carry aliases, filed zeros, duplicate labels, text cells and missing columns. The quarterly frames have gaps and mistyped ends. Prices come as frames, as series (whose index the original rewrites in place, and still does), as dicts, and with aware indexes and dates. Profiles carry NaN, text and list betas. The inputs left behind match too.
+- **Real data:** 29,593 comparisons, all identical:
+  - 400 cached companies (Yahoo frames merged with SEC history, priced from the month-end panel);
+  - trailing twelve months and the quarterly ratio history for all 38 filers with quarterly facts.
+  - The port took 17.2 s against 17.1 s.
+
+## Phase 15i (26 Oct 2026): the `financial_ratios` growth, normalization and Monte Carlo glue
+
+The second block of `financial_ratios` now runs in Rust (`fr_growth.rs`):
+- the measured growth rate, the log-regression trend, and the blended growth forecast;
+- the ticker-info enrichment from the statements;
+- the FCF margin, the through-cycle margin and the normalized base FCF;
+- the Monte Carlo statistics, and all twelve Monte Carlo model wrappers.
+
+How it is done:
+- **The draws are NumPy's global generator.** The wrappers call `np.random.normal` through the module's `np` with the original's arguments, in the original's order. A seeded run therefore produces the same samples, and leaves the generator at the same point, which the tests check by drawing once more afterwards.
+
+Checks:
+- **Parity:**
+  - Growth estimates take analyst rows that are missing, None, text, NaN or infinite, plus random statement histories.
+  - Enrichment, the margins and the normalized FCF take sparse profiles. A targeted case reaches the through-cycle branch, which random statements rarely do.
+  - Each Monte Carlo wrapper runs from the same seed with zero, negative, NaN, None and text inputs.
+- **Real data:** 9,600 comparisons over 400 cached companies, all identical: the growth estimates, enrichment, margins and normalized FCF, plus every Monte Carlo wrapper, seeded, on each company's own inputs. The port took 4.0 s against 3.9 s.
+
+## Phase 15j (26–27 Oct 2026): the twelve valuation models
+
+The twelve `financial_ratios` models now run in Rust (`fr_models.rs`): DCF, Graham, DDM, Lynch, earnings power, discounted CFO, discounted net income, mean P/E, PEG, mean P/B, mean P/S and PSG. That covers each model's input reading and eligibility checks, its projection call, and its result and diagnostics dicts.
+
+How it is done:
+- **The figures stay Python's.** `np.clip` and the finiteness tests are NumPy's own, called through the module's `np`. Constants such as `0.65 * 0.035` are folded in Rust to the same double Python folds them to. Every sibling is looked up on the module: the statement lookup, the WACC, the growth blend, the normalized FCF, the projection.
+- **Errors match.** Each model turns any exception into the original's `{"error": "<model> calculation failed: <message>"}`, so the text matches too.
+
+Checks:
+- **Parity:** 300 rounds of all twelve models match. Statements are random. Profiles have prices, shares, dividends, payout ratios, margins and sectors that are missing, zero, negative, NaN or text. Every optional argument is either left to the model or supplied with an odd value. Multiple histories are missing, empty, zero or complete. Every success and refusal branch is reached.
+- **Real data:** 9,600 comparisons over 400 cached companies, all identical. Each model ran on the raw and the enriched profile, and the mean-multiple models got the company's own traded history. The port took 4.6 s against 4.4 s.
+
+## Phase 15k (27 Oct 2026): the recommendation, the blend and the comprehensive valuation
+
+The last of `financial_ratios` now runs in Rust (`fr_blend.rs`):
+- the best-fit method recommendation;
+- the per-company Monte Carlo seed, and its context manager (`investa_core.DeterministicDraws`), which seeds NumPy's global generator and puts the caller's state back;
+- the blend's membership profile, reliability weights and dividend gate, and the blend itself;
+- `get_comprehensive_intrinsic_value`: all twelve models with their overrides, the seeded simulations, the ETF/fund NAV path, the eligibility gate, the sanity band, the range and the margin of safety;
+- `get_intrinsic_value_for_symbol`: the symbol mapping, the sparse-info refetch, the live-price patch, and the overrides. The fetches are still the provider's own methods.
+
+`financial_ratios.py` is now 1,296 lines of policy constants, alias tables, signatures and docstrings, down from 4,487. Phase 15 is done: every valuation and ranking calculation is Rust.
+
+Checks:
+- **Parity:**
+  - The recommendation and the blend take 720 random model maps under every sector and industry. Values are missing, None, zero, negative or NaN, and Monte Carlo bands are present, partial or text.
+  - The comprehensive valuation runs end to end on 150 random cases from the same NumPy state. They include random overrides, ETFs and funds with and without a NAV, penny stocks and micro caps. Every valuation status is reached, and the caller's random stream is left where the original leaves it.
+  - The per-symbol entry point runs against a fake provider and config manager. It sees sparse info, failing quotes and fetches, exclusions, and prefetched statements, and makes the same provider calls in the same order.
+- **Real data:** the comprehensive valuation of 400 cached companies is identical end to end, at 2,000 iterations with their price histories, and so are their recommendations and blends. The port took 3.5 s against 3.2 s.
+
+## Phase 16a (27 Oct 2026): `risk_metrics` and the first block of `finutils`
+
+The pandas side of `risk_metrics` now runs in Rust (`rm.rs`), and so does the first block of `finutils` (`fu.rs`).
+- **`risk_metrics`:** the value-array conversion, drawdowns, the annualized statistics' guards, beta's alignment, alpha, the returns series, all risk metrics, and the benchmark scoreboard. The reductions were already Rust. Beta's covariance stays pandas', as before, because its BLAS dot product cannot be reproduced bit for bit.
+- **`finutils`:**
+  - the periods-per-year inference, and the file hash with its SQLite sidecars;
+  - the currency symbol, the dividend details, and the robust yield;
+  - the cash and external-flow classifiers, row and vectorized;
+  - the NPV and IRR glue around the Rust solver: date ticks, flow kinds, and the failure and extreme-rate logs;
+  - the transaction-column readers.
+
+How it is done:
+- Strings are compared with Python's own `.lower()`, `.upper()` and `.strip()`, so non-ASCII symbols case-fold as before.
+- Files are read through Python's `open` and hashed by `hashlib`.
+- The dividend arithmetic, which the original does on Python floats after `float()`, is native.
+
+Checks:
+- **Parity:** random inputs match the frozen originals, logs included:
+  - value series with NaN, zeros, constants and spikes, on four kinds of index;
+  - plain, WAL-backed, missing, directory and unreadable files;
+  - profiles and symbols of every type;
+  - dates of six kinds, unsorted ones included, against int, float, NumPy, bool, text and NaN flows, plus a 150-flow solver failure.
+  - One test case was dropped: an int path makes `open` adopt and then close that file descriptor of the test process.
+- **Real data:** all identical.
+  - The spies saw 24,386 calls during real summaries and full histories of all three books: IRR, the cash classifiers, the column readers and the period inference.
+  - Direct comparisons: 12,398. They cover risk metrics and scoreboards on each book's real return series over three windows, the dividend helpers on 4,092 cached profiles, and the hashes of the real databases.
+
+## Phase 16b (27 Oct 2026): `CashFlowLedger` and the cash-flow builders
+
+`CashFlowLedger` is now a Rust class, `investa_core.CashFlowLedger`, and the per-holding and MWR cash-flow builders run in Rust too (`fu_flows.rs`). The per-row flow rules were already Rust (`cashflows.rs`).
+
+The ledger keeps the original's lazy caches:
+- the symbol groups;
+- each account's mask, built with the original's own pandas expressions (the Note still read as a regex);
+- the parsed rows;
+- the transfer test. When the transfer test fails, the same exception is raised again for every account, as before.
+
+Daily flows are summed with Python's own arithmetic, so a NumPy market value still makes the total a NumPy scalar.
+
+**One visible difference: pandas' warnings point at a different line.** pandas attributes its warnings to the nearest Python frame, and Rust has none. The regex-group warning for `IBKR (1)` (see "Found while porting") is therefore blamed on the caller's line, where it used to be blamed on one line inside `finutils`. Every warning still fires, and the parity tests compare them with the `always` filter. Python deduplicates warnings once per location, though, and there are now more locations, so the full suite records 2,411 warnings where it used to record 2,011.
+
+Checks:
+- **Parity:** random ledgers match through a shared ledger, through the one-shot builder, and through the ledger's internals.
+  - They come from the phase 13 generator: regex account names, Note-named transfers, every row type, odd amounts, same-day rows, integer and text columns, missing columns.
+  - Also covered: no `original_index`, a non-text `Type` column, NaT dates, mixed id types, NumPy market values and datetime report dates.
+  - MWR runs under both bases, with every kind of scope and FX source.
+- **Real data:** all identical, through spies in real summaries of all three books: 606 ledger answers and 42 MWR builds. Separately, the one-shot builder is identical on all 806 symbol/account pairs. Summary time is unchanged: 0.229, 0.220 and 0.116 s with the Rust ledger, against 0.224, 0.233 and 0.114 s with the Python one.
+
+## Phase 16c (27 Oct 2026): FX and historical prices
+
+These lookups now run in Rust (`fu_fx.rs`):
+- the current conversion rate: cross rates via USD, Yahoo pair keys, and the static fallback;
+- the per-frame price-table cache and its builder;
+- the historical price: the Rust table's binary search where it applies, pandas' `asof` otherwise, and the backfill rule;
+- the historical USD bridge.
+
+How it is done:
+- **The cache stays the module's `_PRICE_TABLES` dict.** It is keyed by `id(frame)`, with a weakref that evicts the entry when the frame dies. The eviction callback holds the dict itself, as the original's lambda holds the module's globals. The first draft re-imported `finutils` inside the callback, and that fails when the callback fires at interpreter shutdown. The parity test's exit printed `sys.meta_path is None`, which is how it was caught.
+- **Day ticks are Python integers.** A far date's nanoseconds overflow 64 bits.
+- **The conversion's debug log stays inside the division's `try`**, so a formatting error is swallowed as before.
+
+Checks:
+- **Parity:**
+  - Current rates take codes of every case and type, and rate tables with NaN, zero and text values, with and without the static fallback.
+  - Historical prices take naive, UTC and New York indexes; unsorted, duplicated, date-object and text indexes; every price column; NaN rows; and boolean and object columns. The target days are dates, datetimes and aware Timestamps, from year 1 to 9999.
+  - The cache is exercised by repeating lookups and by growing a frame between them.
+  - Built tables are compared by their answers on 52 ticks each.
+- **Real data:** all identical, through spies in real summaries and USD and THB full histories of all three books: 5,536 historical prices, 3,592 bridged rates and 1,054 current rates.
+
+## Phase 16d (27 Oct 2026): symbol mapping and formatting
+
+The rest of `finutils` now runs in Rust (`fu_fmt.rs`): the Yahoo symbol mapper, `safe_sum`, and the five display formatters.
+- **Symbols are matched with Python's own tools.** That means its string methods, `len` and `re`. A ticker can carry non-ASCII text, `len` counts code points, and the pattern's `$` behaves as Python's does.
+- **Numbers are rendered by Python's `format`** with the original's nested specs. A `decimals` that cannot build a spec (2.5, "2", −1) still gives "N/A". An infinite integer rounding still raises the `OverflowError` the original never catches.
+
+Checks:
+- **Parity:** 35 symbols cover every mapping rule, under two user maps and two exclusion sets. Sums take numeric, text, boolean, infinite and list columns. The formatters take 21 odd values at six `decimals`.
+- **Real data:** all identical:
+  - 24,652 mappings: every symbol in the three books and all 4,095 cached tickers, with and without each book's own map and exclusions;
+  - 594 `safe_sum` calls, spied in real summaries;
+  - 112,896 formatter calls on every number in the real summary rows.
+
+`finutils.py` is now 611 lines, down from 1,655, and `risk_metrics.py` is 220, down from 327. Phase 16, and with it the second port (Phases 10–16), is done. Python now keeps only the FastAPI routes, the network fetchers, PDF parsing, the market calendar, Gemini, pandas frame construction, and the dataclasses and registries.
+
+## Phase 17a (27 Oct 2026): the database layer on `rusqlite`
+
+The crate's SQLite code now uses `rusqlite` instead of hand-resolved C entry points. `rusqlite` is linked against the system's shared SQLite, not a bundled copy.
+
+**Why it is safe.** A process must hold only one SQLite library, because two copies can corrupt a database through POSIX locks (phase 8). Python's `_sqlite3` links the system library: `/usr/lib/libsqlite3.dylib` on macOS, and the distro's `libsqlite3.so.0` on Debian and Ubuntu. The crate now links that same library, so the dynamic loader maps a single image for both.
+- `sqlite_read::bind` proves this at start-up. It resolves `sqlite3_libversion` through Python's already-loaded extension and compares the address with the crate's own. If they differ, every Rust SQL path declines and Python keeps its own, as before. A mismatched build costs speed, never data.
+- On this Mac, `otool` shows the extension linking `/usr/lib/libsqlite3.dylib`, and `vmmap` shows one SQLite image in the process.
+- Homebrew's keg-only SQLite (3.53.2) is installed but never linked.
+
+**What changed:**
+- `sql.rs` drives statements on a connection borrowed from Python with `Connection::from_handle`, which neither reconfigures nor closes it.
+- `sqlite_read.rs` reads the price archive on its own `rusqlite` connection.
+- The 33 C entry points looked up by name are gone. `unsafe` in the two files fell from 87 to 9 occurrences, and their lines from 1,006 to 745.
+- What remains unsafe: the one-library check, borrowing the handle, the statement's self-reference to its connection, and a tail probe (below).
+
+**CPython's rules are still the ones applied, not `rusqlite`'s:**
+- **The one-statement rule.** `rusqlite` would re-parse the leftover text (so `SELECT 1; garbage` fails as a syntax error) and accept `SELECT 1;;`. CPython refuses any leftover text that isn't whitespace or comments. So the end of the first statement is found by a direct prepare, needed only when the text contains a `;`, since SQLite cannot end a statement anywhere else. The first statement alone is then prepared through `rusqlite`.
+- **Extended error codes.** Python's connections leave extended result codes off, so `rusqlite` would report `SQLITE_CONSTRAINT` (19). CPython reports `sqlite3_extended_errcode`, for example 2067 `SQLITE_CONSTRAINT_UNIQUE`. The code and message are therefore read from the handle, as before.
+- **Step failures.** A failure raised while stepping is read after `rusqlite` resets the statement. SQLite carries the same code and message across the reset, and the tests pin it.
+
+**Builds:**
+- The Docker builder installs `libsqlite3-dev`; the runtime image already has the library.
+- Both CI jobs install it too.
+- The Linux builds have not been run yet: there is no container runtime on this machine. `tests/test_rust_sqlite_link.py::test_one_sqlite_image` will fail in CI if the runner's Python uses a different SQLite.
+
+Checks:
+- **Parity:** the full suite passes, 1,735 tests, including phase 10's random statement sequences and the storage parity tests of phases 11–12. A new test covers:
+  - 27 tail cases that are accepted, refused, or have `;` inside strings and comments, under three isolation levels;
+  - failures raised mid-step, mid-`executemany`, and by constraints;
+  - the one-image check.
+  - The Rust path now answers every case itself, except empty and comment-only statements, which still go to Python as before.
+- **Real data:** the Rust price reader and the pandas path agree on the full daily history of all 5,670 archive symbols, in 114 batches. The Rust reader took 134 s against 163.7 s for pandas.
+
+## Phase 17b (27 Oct 2026): the routes', services' and AI workers' SQL
+
+The last SQL written in Python now lives in Rust. It covers 25 functions across 12 callers:
+- the account lifecycle and user lookups;
+- holding tags, and the IBKR pending queue (staging, list, approve, reject);
+- idempotency receipts and daily snapshots;
+- the settings currency map;
+- the archive's data-quality probe and sync stamps;
+- the heatmap's EDGAR facts;
+- narrative search and the AI-review reads.
+
+It was done in three verifiable steps:
+1. **Pin the behaviour** (`tests/test_route_sql_behaviour.py`, commit `0f5cc912`). Most of these routes had no test. The flows now run end to end on temporary databases, with Gemini mocked so no request leaves the machine.
+2. **Extract** (commit `9630b20c`). Each statement or fixed group moved unchanged into `src/sql_store.py`. Connections, `commit`/`rollback`/`with conn:`, retries and HTTP errors stayed with the callers, and the behaviour tests and the full suite passed unchanged. The one reordering: the snapshot rows are now built just before the delete-and-insert, inside the same transaction, so only their `created_at` stamps move, by microseconds.
+3. **Port** (`ss.rs`, oracle `tests/reference/sql_store_p17.py`). Every statement runs through `PyConn`, so it behaves exactly as the connection's own `execute`: the same errors, the implicit `BEGIN`, and Python's path for connections Rust must not touch. The frames come from `read_frame`.
+   - Each function opens its `PyConn` where the original first touched the connection, so a closed or foreign-thread connection fails at the same point.
+   - The fuzz caught one difference. When the screener SELECT fails, the original has already left `sqlite3.Row` on the connection, so the port sets it whatever the outcome.
+
+Checks:
+- **Parity:** twin databases take 160 random store calls under each of four isolation levels, with four seeds, one of them without the receipts table. After every call they agree on the result or exception (class, message, SQLite code and name), the transaction state, `total_changes`, `row_factory` and every table. Every function reaches its success path, and the failing ones their failures: UNIQUE violations, a second `BEGIN IMMEDIATE`, a missing table, short snapshot rows, bad SQL, a `None` type.
+- **Real data:** all identical:
+  - 449 read calls on the live databases: users, all books, the archive, EDGAR, the screener;
+  - 803 write calls on twin copies of a real book, re-staging 400 of its real transactions, then approving, rejecting and snapshotting, with the same final state.
+
+With 17b, Python no longer issues SQL of its own anywhere in the app.
+
+## Benchmark after Phase 17 (27 Oct 2026): the port against the Python app
+
+The whole port at Phase 17b (`fb055082`) against the Python app it replaced: `main` at the branch's merge base (`bd2f0509`), 57 commits earlier.
+
+Method:
+- Each side ran from its own checkout on its own APFS copy-on-write clone of `data/`, so neither saw the other's cache writes.
+- Market data was recorded once to a shared tape and replayed to both, so the network is not timed and both compute on the same inputs.
+- Each workload ran once to warm up, then three times, and the median is taken. Two rounds were interleaved (Python, Rust, Python, Rust); the table shows each side's better round.
+- The machine was otherwise idle. Even so, the one-minute load average at the start of the four runs was 5–7, and 24 for one. A first run, made while the machine was busy, is not used.
+
+Workloads are the app's own entry points on the three real books: `calculate_portfolio_summary` (THB, closed positions shown), `calculate_historical_performance` with the daily cache off, and `calculate_all_risk_metrics`. The valuation set is 150 companies from the fundamentals cache and 200 EDGAR filers (38 with quarterly facts). The price read covers 1,000 archived symbols over their full history. The Buffett ranking covers the whole US universe, without persisting or fetching market data.
+
+| Workload | Python | Rust | Speed-up |
+|---|---|---|---|
+| Summary: kitmatan | 1.945 s | 0.243 s | 8.0× |
+| Summary: dheematan | 1.889 s | 0.251 s | 7.5× |
+| Summary: atchamatan | 0.732 s | 0.124 s | 5.9× |
+| History, all time, daily, USD: kitmatan | 1.353 s | 0.571 s | 2.4× |
+| History, all time, daily, USD: dheematan | 1.434 s | 0.540 s | 2.7× |
+| History, all time, daily, USD: atchamatan | 0.812 s | 0.322 s | 2.5× |
+| History, one year, weekly, THB: kitmatan | 1.247 s | 0.471 s | 2.6× |
+| History, one year, weekly, THB: dheematan | 1.351 s | 0.450 s | 3.0× |
+| History, one year, weekly, THB: atchamatan | 0.868 s | 0.275 s | 3.2× |
+| Risk metrics (kitmatan, dheematan, atchamatan) | 1.70, 1.74, 1.98 ms | 1.15, 1.12, 1.14 ms | 1.5–1.7× |
+| Ratio history, 150 companies | 0.704 s | 0.340 s | 2.1× |
+| Intrinsic value (12 models + Monte Carlo), 150 companies | 1.617 s | 1.115 s | 1.4× |
+| EDGAR statements, 200 filers | 2.156 s | 0.964 s | 2.2× |
+| EDGAR quarterly statements, 38 filers | 1.632 s | 0.721 s | 2.3× |
+| Price archive read, 1,000 symbols | 6.939 s | 1.358 s | 5.1× |
+| Buffett ranking, whole universe (one run per round) | 71.7 s | 30.8 s | 2.3× |
+
+Start-up, in a fresh process, from the first import to the first answered summary and daily history for kitmatan:
+
+| Start | Python | Rust |
+|---|---|---|
+| Restart, Numba cache warm | 5.24 s, 5.08 s | 1.90 s, 1.90 s |
+| Fresh deploy, Numba cache empty | 8.64 s, 8.46 s | 1.92 s, 2.60 s |
+
+- The Python side's start-up is import 1.1 s, first summary 2.5 s and first history 1.4 s with a warm cache. With an empty Numba cache (the `*.nbi`/`*.nbc` files deleted, as on a fresh deploy or after an edit), summary and history each take 3.7 s, most of it JIT compilation.
+- The Rust side has no JIT. Either way it takes import 0.7–0.8 s, summary 0.6–0.9 s and history 0.6–0.9 s.
+- A first pair of start-up runs, made while the disk cache was still cold (11.0 s against 6.5 s), is left out.
+
+What it means:
+- The summary gains most because its per-row Python loops and frame work (FIFO, holdings, the per-account rows) are now Rust.
+- The histories still spent about half their time in pandas. Phase 18 went after that: by its end, kitmatan's daily history ran in about 0.39 s and its summary in about 0.19 s (see 18c; a different harness, so not directly comparable).
+- The valuation models gain least. Their Monte Carlo draws stay NumPy calls, by design, so that every draw matches.
+- Unchanged by the port: the network, Gemini and PDF parsing, none of which these timings include.
+
+The harness (`bench_harness.py` for the workloads, `bench_cold.py` for start-up, `bench_run.sh` for the interleaving) was a one-off and is not committed. `scripts/benchmark_rust_core.py` times the same entry points on the live data.
+
+## Phase 18a (27 Oct 2026): pandas calls whose answer is known without pandas
+
+After Phase 17, pandas took 47–58% of every request and Investa's own Python under 1%. Much of that pandas time was not work. These calls pay pandas' overhead for answers already in hand:
+
+- **`pd.to_datetime(x, utc=True)` on values that are already dates.**
+  - History made 41 such calls per request on price indexes that were already UTC. Each cost 2.3 ms and returned an identical index.
+  - The cost is `should_cache`, which boxes up to 500 Timestamps into a Python set to look for repeats. The conversion itself takes 0.01 ms.
+  - `pyhelp::to_datetime` now runs that probe on the int64 values, which compare exactly as the Timestamps do (NaT included). It then does what pandas would: `tz_convert(None).tz_localize("utc")`, or `tz_localize("utc")` for naive values.
+  - It applies only to a `DatetimeIndex` or a datetime `Series` with `utc=True` and at most `errors="raise"`/`"coerce"`. Anything else, or an input pandas would cache, goes to pandas. All 27 call sites with these keywords use it.
+- **`pd.to_numeric(v, errors="coerce")` on a Python int, float or bool,** about 20,000 times per summary in FIFO, `safe_sum` and the dividend and tax history. pandas returns such a value unchanged (`is_number`), so `pyhelp::numeric_passthrough` skips the call.
+- **The legacy-transfer Note search.** The account mask ran `df["Note"].str.contains(account, case=False, na=False)` over every note, then kept only the transfer rows (21 of kitmatan's 5,024). The ledger now searches the transfer rows alone. It does so only where the full call could neither raise nor warn first:
+  - the account is text that compiles, with and without IGNORECASE, to a pattern with no groups;
+  - Note is an object column of strings and missing values, so the subset passes the `.str` check exactly when the column does;
+  - the transfer mask is plain bool.
+  Otherwise the full call runs as before.
+
+Checks:
+- **Helper parity** (`tests/test_rust_to_datetime_parity.py`): the helper against `pd.to_datetime` under 10 keyword sets, covering type, values, dtype, zone, freq, name, index and exceptions. Inputs:
+  - indexes and series, naive and in three zones, at s/us/ns, with NaT;
+  - lengths either side of 50 and 5,000, and repeats either side of the 70% cache threshold;
+  - plus strings, objects, arrays, scalars, lists and Arrow timestamps, which all fall back.
+- **Ledger parity:** the phase 16b test gains:
+  - non-text, all-missing and string-typed notes, and a string-typed Type;
+  - accounts that are a case-insensitive hit, grouped (`IBKR (1)`), invalid (`[SET`) or not text.
+- **Full suite:** passes, with the same 2,411 warnings as before.
+- **Real data:** the HEAD build was compared with this one on frozen data clones replaying one market-data tape.
+  - All six histories and three summaries are identical, the summaries checked field by field.
+  - Run in a fresh process after its histories, dheematan's summary varies from run to run under either build, HEAD against HEAD included. Something it reads lies outside the tape; the change is not the cause.
+
+Interleaved medians of 7, best of two rounds, same Python and only the extension swapped:
+
+| Book | Summary | Daily history (all time, USD) | Weekly history (1 year, THB) |
+|---|---|---|---|
+| kitmatan | 243 → 201 ms (−18%) | 591 → 446 ms (−25%) | 463 → 345 ms (−26%) |
+| dheematan | 238 → 206 ms (−13%) | 564 → 519 ms (−8%) | 448 → 420 ms (−6%) |
+| atchamatan | 124 → 115 ms (−7%) | 321 → 314 ms (−2%) | 279 → 248 ms (−11%) |
+
+## Phase 18b (27 Oct 2026): row views in place of `iterrows`
+
+After 18a, the one `iterrows` that still cost real time was dividend history: 21 ms per summary for kitmatan's 569 dividend rows and 44 ms for dheematan's. History's `iterrows` costs 1–4 ms. FIFO never used `iterrows`: Phase 6 already reads its columns whole, and what it still pays is per-value `pd.isna` and string calls.
+
+`iterrows` yields `(label, Series(df.values[i], index=df.columns))`, and the ported loops read a row only with `row[col]` and `row.get(col, default)`. On that Series, both return the `df.values` cell at the column's position. `pyhelp::iterrows` therefore yields a `RowView` over the same `df.values` cells and skips building a Series. It does so only where the lookups cannot differ:
+- the frame is an exact `DataFrame`;
+- its columns are a plain, unique `Index`;
+- its values are an object array.
+
+Any other frame gets the real `iterrows`. A key that is not text goes to the Series `iterrows` would have built, so pandas' positional fallback and its warning still apply.
+
+It is used by the dividend and tax loops of `extract_dividend_history`, the day's transactions in the summary rows, and the split loop in the daily results.
+
+Checks:
+- **Row parity** (`tests/test_rust_iterrows_parity.py`): 49 frames, each row's answer to `[key]` and `.get(key[, default])` compared with `iterrows`. That covers every column, a missing one and integer keys: value type, repr and NaN-ness, defaults, exceptions and warnings, and the labels.
+  - The frames carry every ledger dtype: float, int, nullable Int64 with NA, naive and zone-aware datetimes, bool, text with None and NaN, category and string.
+  - They use date, text, offset and reversed indexes.
+  - Frames that must fall back: homogeneous numeric or datetime values, duplicate or MultiIndex columns, a subclass, an empty frame and non-text labels.
+- **Existing parity and full suite:** both pass, with the same 2,411 warnings.
+- **Real data:** the 18a build against this one on fresh data clones with one replayed tape. All histories and summaries are identical except dheematan's summary, which also varies between fresh processes under one build (see 18a).
+
+On kitmatan's 569 dividend rows, reading the rows takes 0.6 ms instead of 9.7 ms, and `extract_dividend_history` 10.2 ms instead of 21.8 ms. End to end (best of four interleaved rounds, under a load average of 10–25), the summary is 6% faster for kitmatan (200 → 188 ms), 15% for dheematan (201 → 171 ms) and 14% for atchamatan (113 → 98 ms). The histories are unchanged within 1%.
+
+## Phase 18c (27 Oct 2026): the history's table fill and grid alignment
+
+Two steps of every history built pandas frames only to copy values that were already known.
+
+**The stabilization fill** runs once for each price or FX table that starts after the history does: 46 tables for kitmatan, 68 for dheematan. It was:
+
+```python
+new_index = pd.Index([full_start_ts]).union(v.index)
+v = v.reindex(new_index).sort_index()
+v = v.interpolate(method="time").bfill().ffill()
+```
+
+`ph_performance::stabilized` does the same work directly:
+- It prepends the start stamp to the index.
+- It casts each column to float64, as the reindex's missing start row does: the tables carry an int64 Volume.
+- It fills each column's missing cells with `np.interp` over the int64 stamps. That is `interpolate(method="time")` exactly. The leading cells that `interpolate` returns to NaN are then backfilled with the first valid value, which is where `np.interp` already holds them, and it holds the trailing ones at the last valid value, as the ffill would.
+- The union takes pandas' generic path, so the new index's freq is inferred. That inference was 75% of the remaining cost. `surely_no_freq` decides natively when pandas must answer `None`, and asks pandas otherwise. It answers `None` only when all of these hold:
+  - the steps vary;
+  - for whole-day steps: the month-to-month steps vary, the steps are not exactly {1, 3} days, and the stamps fall on more than one weekday;
+  - for shorter steps: they are not the business-hour patterns.
+
+It applies to an exact `DataFrame` of float64 or int64 columns, without attrs, over a unique, increasing, NaT-free UTC nanosecond index that starts after the start stamp. Anything else takes the pandas lines.
+
+**The grid alignment** (`align_prices_to_grid`) built one frame from every symbol's series, joined it to the grid, filled forward and back, and kept the grid rows. With float64 series and a grid all on unique, increasing UTC nanosecond stamps, `ph_small::aligned_natively` gives each grid point the symbol's last valid price at or before it, or its first valid price when there is none earlier. It does this in one sweep per symbol, copying values and computing none.
+
+Checks:
+- **Fill parity** (`tests/test_rust_stabilize_parity.py`): bit for bit on every cell, and exact on index values, dtype, zone, freq and name, columns and dtypes.
+  - Inputs: 1,200 random tables (daily with gaps, business days, weekly, month ends, irregular intraday, a regular daily index); missing cells anywhere; infinities; int64 columns up to 2^62, beyond exact float range; second- and nanosecond-resolution starts.
+  - Ten index patterns where pandas does infer a freq after the start is prepended (`D`, `B`, `W-FRI`, `WOM-3FRI`, `MS`, `QE-DEC`, `YS-JAN`, `bh`, `h`), each with starts that keep or break the rhythm.
+  - 320 tables that must fall back.
+- **Alignment parity** (`tests/test_rust_align_grid_parity.py`): bit for bit, on 480 random grids and symbol sets. They include intraday bars between grid points, prices that start before, inside or after the grid, missing prices, infinities and named series, plus 240 inputs that must fall back.
+- **Full suite:** passes, with the same 2,411 warnings.
+- **Real data:** the 18b build against this one, on fresh data clones replaying one tape. All six histories and three summaries are identical.
+
+On the captured real inputs, the fill takes 7.3 ms instead of 42.7 ms for kitmatan's 46 tables, and the alignment 1.3 ms instead of 18.5 ms (48 symbols × 8,886 days). Both times were measured before int64 columns were accepted, on tables already cast to float64.
+
+End to end (best of two interleaved rounds of medians of 7, load average 3–5), the summary is unchanged:
+
+| Book | Daily history (all time, USD) | Weekly history (1 year, THB) |
+|---|---|---|
+| kitmatan | 446 → 387 ms (−13%) | 336 → 281 ms (−16%) |
+| dheematan | 512 → 423 ms (−17%) | 406 → 314 ms (−23%) |
+| atchamatan | 309 → 259 ms (−16%) | 250 → 206 ms (−18%) |
+
+Seen while profiling, not changed: each benchmarked history also spends about 75 ms in `mdb_upsert_ohlcv` and 25 ms in `mdb_upsert_fx`, storing fetched prices back into the archive. Under the benchmark's replayed tape every fetch "returns" data, so this may overstate what a live request pays when its data is fresh.
+
+## Found while porting
+
+- **IBKR staging's amount fallback read the unstripped type** (fixed 27 Oct 2026, at the user's request). When a synced row has no total, `stage_pending_transaction` computes `qty x price ± commission` and adds the commission only if the type is `BUY`. It tested the raw type, though, while the stored type is stripped and title-cased. So a type with stray spaces (`" buy "`) was stored as `Buy`, but its commission was subtracted: 2 x 10 − 1 = 19 instead of 21.
+  - The fix compares `Type.upper().strip()`, in `ss.rs` and in the frozen oracle `tests/reference/sql_store_p17.py` together. Upper-casing first keeps the error for a `None` type unchanged.
+  - `test_route_sql_behaviour.py` now expects 21.
+- **The IBKR pending list failed when any pending row lacked a number** (fixed 27 Oct 2026). `GET /sync/ibkr/pending` builds a frame, so a NULL quantity, price, commission, split ratio or total became NaN. The JSON response refused NaN and the request failed with a 500. Fee and cash rows have no quantity, so the list broke as soon as one of them was staged.
+  - The route now passes the records through `clean_nans`, so those cells go out as `null`.
+  - The web banner already renders `null` as `-`, and the SwiftUI `Transaction` decoder already reads it as 0, so no client changed.
+- **A failed IBKR sync left its write transaction open** (fixed 27 Oct 2026). When staging raised, for example on a row with no `Local Currency`, the sync route neither rolled back nor closed its connection. The failed `INSERT`'s transaction then held the write lock until the connection was garbage-collected, and other writers waited. Anything that kept the traceback alive, such as a log handler, kept the lock too.
+  - The staging loop now commits, or rolls back and re-raises, and always closes the connection.
+  - A sync is all or nothing, as before: the rows staged ahead of the failing one were never committed.
+  - The behaviour test now stages a good row before the bad one. It checks that neither remains and that a writer with `timeout=0` gets the lock at once; the old code fails that check with `database is locked`.
+
+- **Fetched share counts are stamped with the server's date** (not changed). `buffett_pipeline.fetch_market_data` passes `date.today()` to `upsert_share_counts`, the same server-clock reading `market_db.get_share_counts` ages them by. Both are a day ahead of the US market on the Bangkok host.
+- **The ranking's age is counted on the server's clock** (not changed). `strategies.ranking_age_days` defaults `today` to `date.today()`, while the same allocation's `as_of` uses the market clock. On the Bangkok host a run finished late on a US day can read a day older than it is.
+- **Valuation bands use the server's clock and vanish on a leap day** (not changed). `valuation_history.bands` defaults `today` to `date.today()`, against the market-local-time rule. On 29 February, `today.replace(year=today.year - 15)` raises, the error is caught, and every company shows no bands that day.
+- **Two unbound variables in `calculate_historical_performance`** (not changed).
+  - An account filter that leaves no transactions makes the date-range `try` fail before `full_end_date_tx` is set. A few lines later `max(..., full_end_date_tx + 1 day)` reads it, and the request raises `UnboundLocalError` instead of returning an empty history.
+  - A benchmark frame with no `price`/`Adj Close`/`Close` column reuses the previous benchmark's `bm_series`, so it draws the wrong benchmark. If it is the first benchmark, the request raises.
+  - The port keeps both, and `test_unbound_variable_quirks_match` pins them.
+- **The worker-failure log never shows the worker's error** (not changed). `_load_or_calculate_daily_results` logs `r.get('error_message', 'Unknown Error')`, but the worker stores the message under `worker_error_msg`, so the sample always reads "Unknown Error".
+- **The vectorized cash-flow pass writes to another tool's scratch file** (not changed). A transfer that neither the price history nor another trade can price appends `Missing price for transfer: <symbol>` to `/Users/kmatan/.gemini/antigravity/brain/19ed956f-…/scratch/missing_transfer_prices.txt`, a path left behind by a debugging session. The directory exists on this machine, so the server really does write there. The port keeps it, and the parity test captures the writes instead of making them. Removing it is a one-line change once you want it gone.
+- **A short holding's "Avg Cost (Local)" is the previous long holding's cost basis divided by the short quantity** (not changed). `_build_summary_rows` assigns `cost_basis_display_local` only in the long branch but reads it for every holding with a non-zero quantity. A short row therefore divides whatever the last long holding left behind, and a book whose first non-zero holding is short raises `UnboundLocalError` out of the summary. No real book holds a short, so no one has seen it. The port keeps both behaviours, and `test_short_holding_reads_the_previous_cost_basis` pins them.
+- **A holding's IRR matches its account name against transfer Notes as a regular expression, case-insensitively** (not changed). That is `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
+  - atchamatan's `E*Trade` account reads as `E*Trade`, i.e. any number of E's followed by "trade". So a transfer of the same symbol whose Note contains "trade" anywhere, such as "TD Ameritrade", is pulled into the E*Trade holding's flows.
+  - An account name with parentheses, like `IBKR (1)`, is a regex group: pandas warns about it, and `(1)` matches a bare `1`.
+  - The ledger keeps the original's expression, so the behaviour is unchanged. Fixing it needs `regex=False`, a deliberate change with its own before-and-after check.
+- **Fixed 25 Oct 2026: the summary's account rows came out in a different order in every server process.** Account ids were assigned in the iteration order of a set of account names, and Python seeds string hashing per process, so two runs of the same book disagreed on row order and on the holdings dict's order; the values were the same. `_process_transactions_to_holdings` now sorts the accounts by name, the order the account picker already uses. All three books' summaries are identical under different seeds and, once aligned, identical to before. `tests/test_account_order.py` runs four seeds in separate interpreters and fails without the fix.
+- **`portfolio_analyzer.generate_cash_interest_events` anchors its projection on `date.today()`** (not changed), so on the Bangkok host it can start a month ahead of the US market's.
+- **`market_db` reads dates off the server's clock in two places** (not changed). `get_share_counts` ages entries with `date.today()`, and `check_integrity` falls back to it if `utils_time` fails. Both predate the market-time rule. The share-count cutoff can therefore be a day ahead of the US market on the Bangkok host.
+- **Known type corner, not reached by real data:** in an MWR transfer into the scope, `-(abs(qty) * price)` stays a NumPy *integer* when both cells were text holding integers, such as "3" and "5". The port makes it a NumPy float with the same value. The loader never produces text-typed numeric columns.
+- **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.
+
+- **Fixed 24 Oct 2026: tax rows were booked twice whenever the Auto-cash block skipped them.** That covered every Manual-mode tax row and every tax row on `$CASH`.
+  - **Cause:** the original tax branch (Apr 2026) was stranded when taxes moved into the Fees/Tax branch (May 2026). Once the Auto-cash block was inserted above it, it became an `elif` of that block.
+  - **Effect:** such a row added its amount to taxes a second time (falling back to Commission when Price/Share was zero), took it off dividends, and raised the historical-FX cost basis. Total gain therefore lost the tax twice.
+  - **The fix:** delete the stranded block in Rust and in the reference, so every tax row books the way an Auto-mode stock tax row always did.
+  - **Measured on real data:**
+    - atchamatan: taxes 42,946 → 25,943 USD and total gain +17,003, so total return goes from 39.58% to 39.97%. All of it is the `$CASH` @ E*Trade position, whose dividends had shown −16,747 instead of +256.
+    - dheematan: taxes −2 USD.
+    - kitmatan: unchanged.
+  - **Test:** `test_a_tax_row_is_booked_once` fails on three of its four cases without the fix.
+- **The single-date holdings kernel is off the request path.** It sits behind `HISTORICAL_CALC_METHOD = "numba"`, while the default is `numba_chrono`.
+- **The kernel functions keep their `_numba` names** because callers import them by those names. Renaming is a later cleanup.

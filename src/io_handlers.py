@@ -8,6 +8,7 @@ we can unit test export behavior and reuse it across views.
 from __future__ import annotations
 
 from typing import Optional
+import investa_core
 import csv as _csv
 import pandas as pd
 
@@ -27,7 +28,8 @@ def write_dataframe_to_csv(
         encoding: File encoding; default utf-8.
         quoting: CSV quoting mode; default QUOTE_MINIMAL.
     """
-    df.to_csv(file_path, index=False, encoding=encoding, quoting=quoting)
+    # Ported to Rust: rust/investa_core/src/dl.rs
+    investa_core.dl_write_csv(df, file_path, encoding, quoting)
 
 
 def write_dataframe_to_excel(
@@ -43,4 +45,5 @@ def write_dataframe_to_excel(
         file_path: Destination path ending in .xlsx.
         engine: Excel writer engine; default 'openpyxl'.
     """
-    df.to_excel(file_path, index=False, engine=engine)
+    # Ported to Rust: rust/investa_core/src/dl.rs
+    investa_core.dl_write_excel(df, file_path, engine)

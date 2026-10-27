@@ -33,11 +33,10 @@ down.
 
 from __future__ import annotations
 
-import logging
-from datetime import date, timedelta
+from datetime import date, timedelta  # noqa: F401 -- read by the Rust port at call time
 from typing import Any, Dict, List, Optional
 
-import numpy as np
+import investa_core
 
 # Years of history a band spans. The filed record reaches ~19, but the earliest
 # years are thin enough across the universe that the extra observations mostly
@@ -59,9 +58,8 @@ _METRICS = (
 
 def _percentile_of(value: float, population: List[float]) -> float:
     """Share of the history at or below `value`, in percent."""
-    if not population:
-        return float("nan")
-    return 100.0 * sum(1 for v in population if v <= value) / len(population)
+    # Ported to Rust: rust/investa_core/src/vh.rs
+    return investa_core.vh_percentile_of(value, population)
 
 
 def _describe(current: float, history: List[float]) -> str:
@@ -71,27 +69,18 @@ def _describe(current: float, history: List[float]) -> str:
     Phrased as a comparison and never as advice: this is what the company's own
     record says about the price, not a claim that the price is wrong.
     """
-    pct = _percentile_of(current, history)
-    if pct >= 90:
-        return "dearer than almost all of its own history"
-    if pct >= 65:
-        return "dearer than usual for this company"
-    if pct <= 10:
-        return "cheaper than almost all of its own history"
-    if pct <= 35:
-        return "cheaper than usual for this company"
-    return "around its own long-run average"
+    return _describe_percentile(_percentile_of(current, history))
+
+
+def _describe_percentile(pct: float) -> str:
+    """`_describe` from an already computed percentile."""
+    # Ported to Rust: rust/investa_core/src/vh.rs
+    return investa_core.vh_describe_percentile(pct)
 
 
 def _price_on_or_before(prices, when: date) -> Optional[float]:
-    try:
-        window = prices.loc[: str(when)]
-        if window.empty:
-            return None
-        value = float(window.iloc[-1])
-        return value if value > 0 else None
-    except Exception:
-        return None
+    # Ported to Rust: rust/investa_core/src/vh.rs
+    return investa_core.vh_price_on_or_before(prices, when)
 
 
 def _load_prices(symbol: str, start: date, end: date):
@@ -102,61 +91,16 @@ def _load_prices(symbol: str, start: date, end: date):
     quietly depress every historical price and make the past look cheaper than
     it was.
     """
-    try:
-        from market_db import MarketDatabase
-
-        frame = MarketDatabase().get_ohlcv(symbol.upper(), start, end)
-        if frame is None or frame.empty or "Close" not in frame.columns:
-            return None
-        series = frame["Close"].dropna()
-        return series if not series.empty else None
-    except Exception as exc:
-        logging.debug(f"Valuation bands: no price history for {symbol}: {exc}")
-        return None
+    # Ported to Rust: rust/investa_core/src/vh.rs
+    return investa_core.vh_load_prices(symbol, start, end)
 
 
 def _observations(
     cik: str, prices, shares: Dict[str, float], today: date
 ) -> Dict[str, List[float]]:
     """One multiple per fiscal year, each priced as it could have been seen."""
-    import edgar_provider
-
-    earliest = today.replace(year=today.year - BAND_YEARS)
-    history: Dict[str, List[float]] = {"earnings": [], "free_cash_flow": []}
-
-    for period_end in sorted(shares):
-        try:
-            ended = date.fromisoformat(str(period_end)[:10])
-        except ValueError:
-            continue
-        if ended < earliest:
-            continue
-        known_on = ended + timedelta(days=FILING_LAG_DAYS)
-        if known_on >= today:
-            continue
-
-        price = _price_on_or_before(prices, known_on)
-        share_count = shares.get(period_end)
-        if not price or not share_count:
-            continue
-        market_cap = price * share_count
-
-        with edgar_provider.as_of(known_on.isoformat()):
-            values = edgar_provider.get_concept_values(
-                cik, ["net_income", "operating_cash_flow", "capex"]
-            )
-        net_income = (values.get("net_income") or {}).get(period_end)
-        operating = (values.get("operating_cash_flow") or {}).get(period_end)
-        capex = (values.get("capex") or {}).get(period_end)
-
-        if net_income and net_income > 0:
-            history["earnings"].append(market_cap / net_income)
-        if operating is not None:
-            free_cash_flow = operating - (capex or 0.0)
-            if free_cash_flow > 0:
-                history["free_cash_flow"].append(market_cap / free_cash_flow)
-
-    return history
+    # Ported to Rust: rust/investa_core/src/vh.rs
+    return investa_core.vh_observations(cik, prices, shares, today)
 
 
 def bands(symbol: str, cik: str, today: Optional[date] = None) -> List[Dict[str, Any]]:
@@ -167,74 +111,5 @@ def bands(symbol: str, cik: str, today: Optional[date] = None) -> List[Dict[str,
     a company with no price history in the store, a loss-maker with no positive
     denominator to divide by.
     """
-    today = today or date.today()
-    try:
-        import edgar_provider
-
-        shares = edgar_provider.split_consistent_series(cik, "shares_diluted")
-        if len(shares) < MIN_OBSERVATIONS:
-            for fallback_concept in ("shares_outstanding", "shares_basic"):
-                fallback_shares = edgar_provider.split_consistent_series(
-                    cik, fallback_concept
-                )
-                if len(fallback_shares) > len(shares):
-                    shares = fallback_shares
-        if not shares:
-            return []
-
-        prices = _load_prices(
-            symbol, today.replace(year=today.year - BAND_YEARS - 1), today
-        )
-        if prices is None:
-            return []
-
-        history = _observations(cik, prices, shares, today)
-
-        latest_price = float(prices.iloc[-1])
-        latest_period = max(shares)
-        latest_shares = shares[latest_period]
-        current_cap = latest_price * latest_shares
-
-        values = edgar_provider.get_concept_values(
-            cik, ["net_income", "operating_cash_flow", "capex"]
-        )
-        latest_income = (values.get("net_income") or {}).get(latest_period)
-        latest_ocf = (values.get("operating_cash_flow") or {}).get(latest_period)
-        latest_capex = (values.get("capex") or {}).get(latest_period)
-        latest_fcf = None if latest_ocf is None else latest_ocf - (latest_capex or 0.0)
-        current = {
-            "earnings": (current_cap / latest_income)
-            if latest_income and latest_income > 0
-            else None,
-            "free_cash_flow": (current_cap / latest_fcf)
-            if latest_fcf and latest_fcf > 0
-            else None,
-        }
-    except Exception as exc:
-        logging.debug(f"Valuation bands unavailable for {symbol}: {exc}")
-        return []
-
-    results: List[Dict[str, Any]] = []
-    for key, label, _concept in _METRICS:
-        population = [v for v in history.get(key, []) if np.isfinite(v) and v > 0]
-        now = current.get(key)
-        if len(population) < MIN_OBSERVATIONS or not now or not np.isfinite(now):
-            continue
-        results.append(
-            {
-                "metric": key,
-                "label": label,
-                "current": float(now),
-                "median": float(np.median(population)),
-                "p25": float(np.percentile(population, 25)),
-                "p75": float(np.percentile(population, 75)),
-                "low": float(np.min(population)),
-                "high": float(np.max(population)),
-                "percentile": float(_percentile_of(now, population)),
-                "observations": len(population),
-                "display": f"{now:.1f}x",
-                "median_display": f"{float(np.median(population)):.1f}x",
-                "summary": _describe(now, population),
-            }
-        )
-    return results
+    # Ported to Rust: rust/investa_core/src/vh.rs
+    return investa_core.vh_bands(symbol, cik, today)

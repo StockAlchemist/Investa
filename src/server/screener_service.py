@@ -4,7 +4,6 @@ import os
 import io
 import json
 import time
-import sqlite3
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import requests
@@ -22,6 +21,7 @@ from db_utils import (
     get_all_distinct_screener_results,
 )
 import config
+import sql_store
 
 # Cache for S&P 500 tickers
 SP500_CACHE_FILE = "sp500_tickers_cache.json"
@@ -1214,14 +1214,8 @@ def run_narrative_search(prompt: str) -> List[Dict[str, Any]]:
             logging.error("Screener: DB Conn failed.")
             return []
 
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-
         results = []
-        for row in rows:
-            item = dict(row)
+        for item in sql_store.screener_rows(conn, sql):
             # Re-calculate AI Score for frontend consistency
             vals = [
                 v

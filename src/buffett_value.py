@@ -43,14 +43,13 @@ comparing the two directly would just re-rank the market by industry.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, Optional, Sequence
 
-import numpy as np
+import investa_core
 import pandas as pd
 
-import edgar_provider
-from buffett_metrics import CompanyMetrics, _finite, _safe_divide
+import edgar_provider  # noqa: F401 -- read by the Rust port at call time
+from buffett_metrics import CompanyMetrics, _finite, _safe_divide  # noqa: F401 -- re-exported
 
 # What the value score is made of, and in which direction. This mapping is the
 # single definition of "scored": `score_value` reads it directly, so a metric
@@ -108,69 +107,13 @@ def compute_market_metrics(
     while the fundamentals change quarterly — and because a ranking that mixed
     the two would have to recompute the fundamentals on every price tick.
     """
-    result: Dict[str, Optional[float]] = {
-        "price": price,
-        "market_cap": None,
-        "earnings_yield": None,
-        "fcf_yield": None,
-        "ev_to_ebit": None,
-        "price_to_book": None,
-        "price_to_sales": None,
-    }
-
-    price = _finite(price)
-    shares = _finite(shares_outstanding)
-    if price is None or price <= 0 or shares is None or shares <= 0:
-        return result
-
-    market_cap = price * shares
-    result["market_cap"] = market_cap
-
-    # --- classic multiples --------------------------------------------------
-    concepts = edgar_provider.get_concept_values(
-        company.cik,
-        [
-            "revenue",
-            "equity",
-            "pretax_income",
-            "interest_expense",
-            "net_income",
-            "cash",
-        ],
-    )
-    latest = company.latest_period
-    if not latest:
-        return result
-
-    owner_earnings = company.get("owner_earnings_latest") or company.get("ffo_latest")
-    net_income = _finite(concepts.get("net_income", {}).get(latest))
-    equity = _finite(concepts.get("equity", {}).get(latest))
-    revenue = _finite(concepts.get("revenue", {}).get(latest))
-    cash = _finite(concepts.get("cash", {}).get(latest)) or 0.0
-    total_debt = company.get("total_debt")
-    if total_debt is None and company.get("debt_free"):
-        total_debt = 0.0
-
-    result["earnings_yield"] = _pct_yield(net_income, market_cap)
-    result["fcf_yield"] = _pct_yield(owner_earnings, market_cap)
-    result["price_to_book"] = _safe_divide(market_cap, equity)
-    result["price_to_sales"] = _safe_divide(market_cap, revenue)
-
-    if total_debt is not None:
-        enterprise_value = market_cap + total_debt - cash
-        pretax = _finite(concepts.get("pretax_income", {}).get(latest))
-        interest = _finite(concepts.get("interest_expense", {}).get(latest)) or 0.0
-        if pretax is not None:
-            ebit = pretax + interest
-            if ebit > 0:
-                result["ev_to_ebit"] = _safe_divide(enterprise_value, ebit)
-
-    return result
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bv_compute_market_metrics(company, price, shares_outstanding)
 
 
 def _pct_yield(numerator: Optional[float], market_cap: float) -> Optional[float]:
-    value = _safe_divide(numerator, market_cap)
-    return value * 100.0 if value is not None else None
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bv_pct_yield(numerator, market_cap)
 
 
 def score_value(frame: pd.DataFrame) -> pd.Series:
@@ -179,44 +122,11 @@ def score_value(frame: pd.DataFrame) -> pd.Series:
 
     Uses the same winsorised-percentile machinery as the quality pillars so the
     two halves of the composite are on genuinely the same scale — otherwise the
-    quality/value weighting would not mean what it says.
+    quality/value weighting would not mean what it says. The percentiles and
+    the weight-renormalised blend run in Rust.
     """
-    from buffett_rank import _winsorised_percentile
-
-    if frame.empty:
-        return pd.Series(dtype=float)
-
-    scores = pd.Series(np.nan, index=frame.index, dtype=float)
-
-    for model, group in frame.groupby("model"):
-        if len(group) < 5:
-            logging.warning(
-                f"Value: only {len(group)} '{model}' companies — "
-                "percentile scores for this group are unreliable"
-            )
-        total = pd.Series(0.0, index=group.index)
-        weight_sum = pd.Series(0.0, index=group.index)
-
-        # Iterating the weights, not every computed metric, is what keeps the
-        # unscored diagnostics out of the score.
-        for metric in VALUE_WEIGHTS:
-            higher_is_better = HIGHER_IS_BETTER[metric]
-            if metric not in group.columns:
-                continue
-            values = pd.to_numeric(group[metric], errors="coerce")
-            # A negative multiple is meaningless, not cheap: a loss-making
-            # company has no P/E and a negative book value has no P/B.
-            if not higher_is_better:
-                values = values.where(values > 0)
-            percentile = _winsorised_percentile(values, higher_is_better)
-            weight = VALUE_WEIGHTS.get(metric, 0.0)
-            present = percentile.notna()
-            total = total.add(percentile.fillna(0.0) * weight * present, fill_value=0.0)
-            weight_sum = weight_sum.add(weight * present, fill_value=0.0)
-
-        scores.loc[group.index] = total / weight_sum.replace(0.0, np.nan)
-
-    return scores
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bv_score_value(frame)
 
 
 def build_value_frame(
@@ -230,25 +140,5 @@ def build_value_frame(
     in rather than fetched here so this stays testable without a network and so
     the caller controls the (slow) market-data batching.
     """
-    rows = []
-
-    for company in companies:
-        quote = market_data.get(company.symbol) or {}
-        try:
-            metrics = compute_market_metrics(
-                company,
-                quote.get("price"),
-                quote.get("shares"),
-            )
-        except Exception as exc:  # pragma: no cover - defensive
-            logging.warning(f"Value: failed for {company.symbol}: {exc}")
-            metrics = {}
-
-        row = {"symbol": company.symbol, "model": company.model}
-        row.update(metrics)
-        rows.append(row)
-
-    frame = pd.DataFrame(rows)
-    if not frame.empty:
-        frame = frame.set_index("symbol", drop=False)
-    return frame
+    # Ported to Rust: rust/investa_core/src/bm.rs
+    return investa_core.bv_build_value_frame(companies, market_data)

@@ -18,17 +18,15 @@ alone.
 
 from __future__ import annotations
 
-import json
-import logging
 import os
 import sqlite3
 import threading
-from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 import config
+import investa_core
 from db_utils import get_db_connection
 
 _DB_FILENAME = "buffett_ranks.db"
@@ -109,87 +107,16 @@ class BuffettRankStore:
         return conn
 
     def _init_db(self) -> None:
-        with self._write_lock, self._connect() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS rank_runs (
-                    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    started_at TEXT NOT NULL,
-                    finished_at TEXT,
-                    universe_size INTEGER,
-                    ranked_count INTEGER,
-                    excluded_count INTEGER,
-                    parameters TEXT
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS rank_scores (
-                    run_id INTEGER NOT NULL,
-                    symbol TEXT NOT NULL,
-                    cik TEXT,
-                    name TEXT,
-                    model TEXT,
-                    rank INTEGER,
-                    composite_score REAL,
-                    quality_score REAL,
-                    value_score REAL,
-                    confidence REAL,
-                    coverage REAL,
-                    returns_on_capital REAL,
-                    financial_strength REAL,
-                    predictability REAL,
-                    growth REAL,
-                    capital_allocation REAL,
-                    price REAL,
-                    market_cap REAL,
-                    earnings_yield REAL,
-                    fcf_yield REAL,
-                    period_count INTEGER,
-                    latest_period TEXT,
-                    PRIMARY KEY (run_id, symbol)
-                )
-            """)
-            # The unranked bucket is a first-class output, not a discard pile:
-            # a ranking that silently drops a fifth of the market is not honest
-            # about what it covers.
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS rank_exclusions (
-                    run_id INTEGER NOT NULL,
-                    symbol TEXT NOT NULL,
-                    cik TEXT,
-                    name TEXT,
-                    model TEXT,
-                    reasons TEXT,
-                    period_count INTEGER,
-                    coverage REAL,
-                    PRIMARY KEY (run_id, symbol)
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_scores_run_rank ON rank_scores (run_id, rank)"
-            )
-            conn.commit()
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        investa_core.rs_init_db(self)
 
     def start_run(self, universe_size: int, parameters: Dict[str, Any]) -> int:
-        with self._write_lock, self._connect() as conn:
-            cursor = conn.execute(
-                "INSERT INTO rank_runs (started_at, universe_size, parameters) VALUES (?, ?, ?)",
-                (datetime.now().isoformat(), universe_size, json.dumps(parameters)),
-            )
-            conn.commit()
-            return int(cursor.lastrowid)
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_start_run(self, universe_size, parameters)
 
     def finish_run(self, run_id: int, ranked: int, excluded: int) -> None:
-        with self._write_lock, self._connect() as conn:
-            conn.execute(
-                """UPDATE rank_runs SET finished_at = ?, ranked_count = ?, excluded_count = ?
-                   WHERE run_id = ?""",
-                (datetime.now().isoformat(), ranked, excluded, run_id),
-            )
-            conn.commit()
-        # Pruned here rather than at start_run so a run is only ever counted
-        # against the retention budget once it is complete — an interrupted run
-        # cannot evict a good one.
-        self.prune_runs()
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        investa_core.rs_finish_run(self, run_id, ranked, excluded)
 
     def prune_runs(
         self, keep: int = _KEEP_RUNS, stale_hours: float = _STALE_RUN_HOURS
@@ -206,99 +133,23 @@ class BuffettRankStore:
         that died — and is dropped. Without that it would hold whatever it had
         already written for good, since the budget only ever evicts finished runs.
         """
-        cutoff = (datetime.now() - timedelta(hours=stale_hours)).isoformat()
-        with self._write_lock, self._connect() as conn:
-            doomed = [
-                row[0]
-                for row in conn.execute(
-                    """SELECT run_id FROM rank_runs
-                       WHERE (
-                           finished_at IS NOT NULL AND run_id NOT IN (
-                               SELECT run_id FROM rank_runs WHERE finished_at IS NOT NULL
-                               ORDER BY run_id DESC LIMIT ?
-                           )
-                       ) OR (
-                           finished_at IS NULL AND started_at < ?
-                       )""",
-                    (keep, cutoff),
-                )
-            ]
-            if not doomed:
-                return 0
-            marks = ",".join("?" * len(doomed))
-            for table in ("rank_scores", "rank_exclusions", "rank_runs"):
-                conn.execute(f"DELETE FROM {table} WHERE run_id IN ({marks})", doomed)
-            conn.commit()
-
-        # VACUUM reclaims the freed pages to the filesystem; without it the file
-        # never shrinks, which is the whole point here. It cannot run inside a
-        # transaction, hence its own connection outside the block above.
-        try:
-            with self._connect() as conn:
-                conn.isolation_level = None
-                conn.execute("VACUUM")
-        except sqlite3.Error as exc:  # pragma: no cover - never worth failing a run
-            logging.warning(f"Rank store: VACUUM after pruning failed: {exc}")
-
-        logging.info(f"Rank store: pruned {len(doomed)} run(s), keeping {keep}")
-        return len(doomed)
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_prune_runs(self, keep, stale_hours)
 
     def save_scores(self, run_id: int, frame: pd.DataFrame) -> int:
         """Persist the ranked rows of one run."""
-        if frame.empty:
-            return 0
-
-        columns = [c for c in _SCORE_COLUMNS if c in frame.columns]
-        rows = []
-        for symbol, record in frame.iterrows():
-            values = [_coerce(record.get(column)) for column in columns]
-            rows.append((run_id, str(symbol), *values))
-
-        placeholders = ", ".join("?" * (len(columns) + 2))
-        statement = (
-            f"INSERT OR REPLACE INTO rank_scores (run_id, symbol, {', '.join(columns)}) "
-            f"VALUES ({placeholders})"
-        )
-        with self._write_lock, self._connect() as conn:
-            conn.executemany(statement, rows)
-            conn.commit()
-        return len(rows)
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_save_scores(self, run_id, frame)
 
     def save_exclusions(self, run_id: int, records: List[Dict[str, Any]]) -> int:
-        if not records:
-            return 0
-        rows = [
-            (
-                run_id,
-                record.get("symbol"),
-                record.get("cik"),
-                record.get("name"),
-                record.get("model"),
-                record.get("reasons"),
-                record.get("period_count"),
-                record.get("coverage"),
-            )
-            for record in records
-        ]
-        with self._write_lock, self._connect() as conn:
-            conn.executemany(
-                """INSERT OR REPLACE INTO rank_exclusions
-                   (run_id, symbol, cik, name, model, reasons, period_count, coverage)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                rows,
-            )
-            conn.commit()
-        return len(rows)
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_save_exclusions(self, run_id, records)
 
     # --- reading ----------------------------------------------------------
 
     def latest_run_id(self) -> Optional[int]:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT run_id FROM rank_runs WHERE finished_at IS NOT NULL "
-                "ORDER BY run_id DESC LIMIT 1"
-            ).fetchone()
-        return int(row["run_id"]) if row else None
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_latest_run_id(self)
 
     def get_ranked(
         self,
@@ -317,24 +168,8 @@ class BuffettRankStore:
         Rows keep their true rank, so a searched company shows where it actually
         placed rather than its position within the filtered results.
         """
-        run_id = run_id or self.latest_run_id()
-        if run_id is None:
-            return []
-
-        query = "SELECT * FROM rank_scores WHERE run_id = ?"
-        params: List[Any] = [run_id]
-        if model:
-            query += " AND model = ?"
-            params.append(model)
-        if search and search.strip():
-            query += " AND (symbol LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')"
-            pattern = f"%{_escape_like(search.strip())}%"
-            params.extend([pattern, pattern])
-        query += " ORDER BY rank ASC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-
-        with self._connect() as conn:
-            return [dict(row) for row in conn.execute(query, params)]
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_get_ranked(self, run_id, limit, offset, model, search)
 
     def count_ranked(
         self,
@@ -348,22 +183,8 @@ class BuffettRankStore:
         Needed so a client can tell "no more pages" from "no matches", which it
         cannot infer from a short page alone.
         """
-        run_id = run_id or self.latest_run_id()
-        if run_id is None:
-            return 0
-
-        query = "SELECT COUNT(*) FROM rank_scores WHERE run_id = ?"
-        params: List[Any] = [run_id]
-        if model:
-            query += " AND model = ?"
-            params.append(model)
-        if search and search.strip():
-            query += " AND (symbol LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')"
-            pattern = f"%{_escape_like(search.strip())}%"
-            params.extend([pattern, pattern])
-
-        with self._connect() as conn:
-            return int(conn.execute(query, params).fetchone()[0])
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_count_ranked(self, run_id, model, search)
 
     def get_exclusions(
         self,
@@ -379,48 +200,18 @@ class BuffettRankStore:
         absent from the ranking, "why" is the immediate next question, and
         paging through 4,000 rows alphabetically to find it is not an answer.
         """
-        run_id = run_id or self.latest_run_id()
-        if run_id is None:
-            return []
-
-        query = "SELECT * FROM rank_exclusions WHERE run_id = ?"
-        params: List[Any] = [run_id]
-        if search and search.strip():
-            query += " AND (symbol LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')"
-            pattern = f"%{_escape_like(search.strip())}%"
-            params.extend([pattern, pattern])
-        query += " ORDER BY symbol LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-
-        with self._connect() as conn:
-            return [dict(row) for row in conn.execute(query, params)]
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_get_exclusions(self, run_id, limit, offset, search)
 
     def count_exclusions(
         self, run_id: Optional[int] = None, search: Optional[str] = None
     ) -> int:
-        run_id = run_id or self.latest_run_id()
-        if run_id is None:
-            return 0
-
-        query = "SELECT COUNT(*) FROM rank_exclusions WHERE run_id = ?"
-        params: List[Any] = [run_id]
-        if search and search.strip():
-            query += " AND (symbol LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')"
-            pattern = f"%{_escape_like(search.strip())}%"
-            params.extend([pattern, pattern])
-
-        with self._connect() as conn:
-            return int(conn.execute(query, params).fetchone()[0])
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_count_exclusions(self, run_id, search)
 
     def get_run(self, run_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        run_id = run_id or self.latest_run_id()
-        if run_id is None:
-            return None
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM rank_runs WHERE run_id = ?", (run_id,)
-            ).fetchone()
-        return dict(row) if row else None
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_get_run(self, run_id)
 
     def get_scores_frame(self, run_id: Optional[int] = None) -> pd.DataFrame:
         """
@@ -431,31 +222,13 @@ class BuffettRankStore:
         rather than the stored 60% can promote a company from rank 400, so
         anything less than the full set would silently truncate the answer.
         """
-        run_id = run_id or self.latest_run_id()
-        if run_id is None:
-            return pd.DataFrame()
-        with self._connect() as conn:
-            rows = [
-                dict(row)
-                for row in conn.execute(
-                    "SELECT * FROM rank_scores WHERE run_id = ? ORDER BY rank ASC",
-                    (run_id,),
-                )
-            ]
-        return pd.DataFrame(rows)
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_get_scores_frame(self, run_id)
 
     def get_symbol_history(self, symbol: str, limit: int = 24) -> List[Dict[str, Any]]:
         """One company's rank across runs — the point of keeping snapshots."""
-        with self._connect() as conn:
-            return [
-                dict(row)
-                for row in conn.execute(
-                    """SELECT s.*, r.started_at FROM rank_scores s
-                       JOIN rank_runs r ON r.run_id = s.run_id
-                       WHERE s.symbol = ? ORDER BY s.run_id DESC LIMIT ?""",
-                    (symbol.upper(), limit),
-                )
-            ]
+        # Ported to Rust: rust/investa_core/src/rank_store.rs
+        return investa_core.rs_get_symbol_history(self, symbol, limit)
 
 
 def _escape_like(term: str) -> str:
@@ -467,28 +240,14 @@ def _escape_like(term: str) -> str:
     results. The backslash must be escaped first or it would corrupt the escape
     sequences added after it.
     """
-    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    # Ported to Rust: rust/investa_core/src/rank_store.rs
+    return investa_core.rs_escape_like(term)
 
 
 def _coerce(value: Any) -> Any:
     """Normalise numpy/pandas scalars and NaN into SQLite-friendly values."""
-    if value is None:
-        return None
-    if isinstance(value, float) and pd.isna(value):
-        return None
-    try:
-        if pd.isna(value):
-            return None
-    except (TypeError, ValueError):
-        pass
-    if hasattr(value, "item"):
-        try:
-            return value.item()
-        except (AttributeError, ValueError):
-            pass
-    if isinstance(value, (int, float, str)):
-        return value
-    return str(value)
+    # Ported to Rust: rust/investa_core/src/rank_store.rs
+    return investa_core.rs_coerce(value)
 
 
 _shared_store: Optional[BuffettRankStore] = None

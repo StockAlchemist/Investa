@@ -6,4 +6,5 @@ httpx==0.28.1
 ruff==0.12.2
 mypy==2.1.0
 line_profiler==4.2.0
-
+# Builds the Rust calculation core (rust/investa_core): pip install ./rust/investa_core
+maturin==1.15.0

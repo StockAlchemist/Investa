@@ -24,6 +24,7 @@ from starlette.concurrency import run_in_threadpool
 import config
 from config import BENCHMARK_MAPPING, YFINANCE_INDEX_TICKER_MAP
 from db_utils import get_db_connection
+import sql_store
 from portfolio_logic import (
     CURRENT_HIST_VERSION,
     calculate_historical_performance,
@@ -267,18 +268,9 @@ def trigger_background_precalculation(current_user: User):
             try:
                 # Use connection as context manager so any failure rolls back atomically.
                 with conn:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "DELETE FROM portfolio_snapshots WHERE snapshot_date=?",
-                        (today.isoformat(),),
-                    )
-
+                    rows = []
                     if overall_metrics:
-                        cursor.execute(
-                            """
-                            INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+                        rows.append(
                             (
                                 today.isoformat(),
                                 "ALL",
@@ -289,16 +281,11 @@ def trigger_background_precalculation(current_user: User):
                                 sf(overall_twr),
                                 sf(overall_metrics.get("portfolio_mwr")),
                                 datetime.now().isoformat(),
-                            ),
+                            )
                         )
-
                     if account_metrics:
                         for acc, acc_data in account_metrics.items():
-                            cursor.execute(
-                                """
-                                INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
+                            rows.append(
                                 (
                                     today.isoformat(),
                                     acc,
@@ -309,8 +296,9 @@ def trigger_background_precalculation(current_user: User):
                                     sf(acc_data.get("twr", 0.0)),
                                     sf(acc_data.get("mwr")),
                                     datetime.now().isoformat(),
-                                ),
+                                )
                             )
+                    sql_store.replace_portfolio_snapshots(conn, today.isoformat(), rows)
             finally:
                 conn.close()
             logging.info(
@@ -369,10 +357,7 @@ async def warm_summary_caches(max_users: int = 2) -> None:
             if not conn:
                 return
             try:
-                row = conn.execute(
-                    "SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?",
-                    (username,),
-                ).fetchone()
+                row = sql_store.user_record(conn, username)
             finally:
                 conn.close()
             if not row or not row[2]:
@@ -551,11 +536,9 @@ async def _get_historical_performance_cached(
 def _previous_trading_day(d: date) -> date:
     """The last NYSE session strictly before ``d`` (falls back to the prior day)."""
     try:
-        from utils_time import get_nyse_calendar
+        from utils_time import nyse_schedule
 
-        schedule = get_nyse_calendar().schedule(
-            start_date=d - timedelta(days=10), end_date=d - timedelta(days=1)
-        )
+        schedule = nyse_schedule(d - timedelta(days=10), d - timedelta(days=1))
         if not schedule.empty:
             return schedule.index[-1].date()
     except Exception as e_cal:
@@ -726,7 +709,9 @@ async def _compute_raw_summary(
 
     try:
         return await _RAW_CALC_CACHE.get_or_compute(
-            raw_key, cache_ttl_seconds, compute,
+            raw_key,
+            cache_ttl_seconds,
+            compute,
             wait_timeout=None if wait_for_completion else _RAW_SUMMARY_WAIT_SECONDS,
         )
     except ComputationPending:
@@ -1081,7 +1066,7 @@ async def _calculate_historical_performance_internal(
     # 2. For other views (1m, 1y, etc): Use get_est_today().
     #    This ensures "Today" is included as the last data point, capturing international markets (SET)
     #    that may have already closed/traded, matching the Summary Card total.
-    from utils_time import is_tradable_day, get_nyse_calendar
+    from utils_time import is_tradable_day, nyse_schedule
 
     # UNIFIED: Use get_est_today() + 1 day as the exclusive end_date for all relative periods.
     # This ensures yfinance includes today's data (if available) and the graph isn't truncated.
@@ -1454,10 +1439,7 @@ async def _calculate_historical_performance_internal(
     # Pre-calculate tradable days for the range to optimize the loop
     # (Avoids calling cal.schedule thousands of times for intraday data)
     try:
-        cal = get_nyse_calendar()
-        tradable_days = set(
-            cal.schedule(start_date=start_date, end_date=end_date).index.date
-        )
+        tradable_days = set(nyse_schedule(start_date, end_date).index.date)
     except Exception as e_cal:
         logging.warning(f"API: Failed to pre-calculate tradable days: {e_cal}")
         tradable_days = None

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 import config
 from config_manager import ConfigManager
 from db_utils import get_db_connection
+import sql_store
 from server.auth import User
 from server.dependencies import (
     clear_settings_cache,
@@ -113,12 +114,8 @@ def _get_symbol_currency_map_sql(db_path: str) -> Dict[str, str]:
         conn = get_db_connection(db_path, check_same_thread=False, use_cache=False)
         if not conn:
             return {}
-        cursor = conn.cursor()
         # Query unique Symbol/Currency pairs
-        cursor.execute(
-            "SELECT DISTINCT Symbol, \"Local Currency\" FROM transactions WHERE Symbol IS NOT NULL AND Symbol != ''"
-        )
-        rows = cursor.fetchall()
+        rows = sql_store.symbol_currency_pairs(conn)
         conn.close()
         return {row[0]: row[1] for row in rows}
     except Exception as e:

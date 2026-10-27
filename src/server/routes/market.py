@@ -17,6 +17,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 import config
+import sql_store
 from config_manager import ConfigManager
 from db_utils import get_cached_screener_results, update_intrinsic_value_in_cache
 from finutils import is_cash_symbol
@@ -1187,11 +1188,7 @@ async def get_data_quality(symbols: Optional[str] = None):
 def _data_quality_table_exists() -> bool:
     try:
         with get_mdp().db._get_connection() as conn:
-            return bool(
-                conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='data_quality'"
-                ).fetchone()
-            )
+            return sql_store.data_quality_table_present(conn)
     except Exception:
         return False
 
@@ -1546,12 +1543,7 @@ def _edgar_annual_facts(constituents: list) -> dict:
 
         store = get_store()
         with store._connect() as conn:
-            rows = conn.execute(
-                f"SELECT cik, tag, period_end, val FROM facts "
-                f"WHERE tag IN ({','.join('?' * len(tags))}) "
-                f"AND cik IN ({','.join('?' * len(by_cik))})",
-                [*tags, *by_cik],
-            ).fetchall()
+            rows = sql_store.facts_for(conn, tags, list(by_cik))
     except Exception as e:
         logging.warning(
             f"Heatmap: EDGAR facts unavailable ({e}); filed-history metrics will be n/a"

@@ -34,9 +34,9 @@ correlation, and the two can disagree.
 
 from __future__ import annotations
 
-import logging
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import investa_core
 import numpy as np
 import pandas as pd
 
@@ -210,92 +210,29 @@ def evaluate_gates(company: CompanyMetrics, min_periods: int = 8) -> List[str]:
     discipline: a company is excluded for something its filings *show*, never
     for something they omit.
     """
-    failures: List[str] = []
-    metrics = company.metrics
-
-    # A company with no filings at all is already fully explained by the
-    # failure `compute_metrics` recorded; adding "insufficient_history(0y)" on
-    # top just makes the exclusion list harder to read.
-    if any(
-        f in ("no_fundamentals", "fundamentals_unavailable")
-        for f in company.gate_failures
-    ):
-        return failures
-
-    if company.period_count < min_periods:
-        failures.append(f"insufficient_history({company.period_count}y)")
-
-    def below(key: str, threshold: float) -> bool:
-        value = metrics.get(key)
-        return value is not None and value < threshold
-
-    def above(key: str, threshold: float) -> bool:
-        value = metrics.get(key)
-        return value is not None and value > threshold
-
-    if company.model in ("bank", "insurer"):
-        # A bank funded with under 4% equity has no margin for credit error.
-        if below("equity_to_assets_latest", 4.0):
-            failures.append("undercapitalised")
-        if above("loss_years", 2):
-            failures.append("persistent_losses")
-        if below("roe_median", 0.0):
-            failures.append("unprofitable")
-
-    elif company.model == "reit":
-        if above("debt_to_ffo", 15.0):
-            failures.append("excessive_leverage")
-        if above("negative_ffo_years", 2):
-            failures.append("persistent_negative_ffo")
-
-    else:
-        # Interest coverage is only a fair test when the company actually
-        # carries debt and reports the expense; `debt_free` companies skip it.
-        if not metrics.get("debt_free") and below("interest_coverage", 2.0):
-            failures.append("interest_not_covered")
-
-        # Solvency is tested against cash flow, not against book equity.
-        #
-        # Debt-to-equity was the obvious gate and it was wrong: sustained
-        # buybacks shrink book equity, so the ratio explodes for precisely the
-        # highest-quality compounders. At a 2.0 threshold it excluded 253
-        # companies on that basis alone — Apple (D/E 3.9, yet $99bn of owner
-        # earnings against $55bn of net debt), ADP, Amgen, American Express.
-        # Equity is an accounting residual; the question that actually matters
-        # is whether the business generates enough cash to retire what it owes.
-        # D/E remains a *scoring* input in the financial-strength pillar, where
-        # a bad reading costs percentile points rather than removing a company.
-        if above("net_debt_to_owner_earnings", 6.0):
-            failures.append("debt_not_serviceable")
-        if above("negative_owner_earnings_years", 2):
-            failures.append("persistent_cash_burn")
-        if below("roe_median", 0.0):
-            failures.append("unprofitable")
-
-    return failures
+    # Ported to Rust: rust/investa_core/src/br.rs
+    return investa_core.br_evaluate_gates(company, min_periods)
 
 
 # --- percentile scoring -----------------------------------------------------
-
-
 def _winsorised_percentile(series: pd.Series, higher_is_better: bool) -> pd.Series:
     """
     Convert a raw metric to a 0–100 percentile, clipped at the 1st/99th centile.
 
     Winsorising first stops a single absurd outlier — a 10,000% ROE from a
     near-zero equity base — from compressing every other company into a narrow
-    band at the bottom of the scale.
+    band at the bottom of the scale. The quantiles, clip and average-tie rank
+    run in Rust (investa_core.winsorised_percentile), as pandas computes them.
     """
     numeric = pd.to_numeric(series, errors="coerce")
     if numeric.notna().sum() < 2:
         return pd.Series(np.nan, index=series.index)
-
-    lower, upper = numeric.quantile(0.01), numeric.quantile(0.99)
-    clipped = numeric.clip(lower=lower, upper=upper)
-    ranked = clipped.rank(pct=True, na_option="keep")
-    if not higher_is_better:
-        ranked = 1.0 - ranked
-    return ranked * 100.0
+    values = np.ascontiguousarray(numeric.to_numpy(dtype=np.float64, na_value=np.nan))
+    return pd.Series(
+        investa_core.winsorised_percentile(values, bool(higher_is_better)),
+        index=series.index,
+        name=numeric.name,
+    )
 
 
 def _pillar_scores(frame: pd.DataFrame, spec: PillarSpec) -> pd.DataFrame:
@@ -304,10 +241,10 @@ def _pillar_scores(frame: pd.DataFrame, spec: PillarSpec) -> pd.DataFrame:
 
     Averaging only the metrics that resolved — rather than treating a missing
     one as zero — keeps a data gap from masquerading as a bad result. The gap is
-    accounted for once, in the confidence factor, instead of twice.
+    accounted for once, in the confidence factor, instead of twice. The row
+    means run in Rust (investa_core.row_mean).
     """
     scores = pd.DataFrame(index=frame.index)
-
     for pillar, metrics in spec.items():
         columns = []
         for metric, higher_is_better in metrics:
@@ -315,12 +252,15 @@ def _pillar_scores(frame: pd.DataFrame, spec: PillarSpec) -> pd.DataFrame:
                 continue
             percentile = _winsorised_percentile(frame[metric], higher_is_better)
             if percentile.notna().any():
-                columns.append(percentile.rename(metric))
+                columns.append(
+                    np.ascontiguousarray(percentile.to_numpy(dtype=np.float64))
+                )
         if columns:
-            scores[pillar] = pd.concat(columns, axis=1).mean(axis=1, skipna=True)
+            scores[pillar] = pd.Series(
+                investa_core.row_mean(columns), index=frame.index
+            )
         else:
             scores[pillar] = np.nan
-
     return scores
 
 
@@ -330,22 +270,24 @@ def _quality_score(pillar_scores: pd.DataFrame) -> pd.Series:
 
     Renormalising matters: a REIT has no gross margin and therefore a thinner
     returns pillar, and it should not be scored as though the missing weight
-    were zeros.
+    were zeros. Computed in Rust (investa_core.weighted_renormalised).
     """
-    total = pd.Series(0.0, index=pillar_scores.index)
-    weight_sum = pd.Series(0.0, index=pillar_scores.index)
-
+    columns, weights = [], []
     for pillar, weight in PILLAR_WEIGHTS.items():
         if pillar not in pillar_scores.columns:
             continue
-        # An all-missing pillar arrives as object dtype; coercing keeps the
-        # arithmetic below numeric instead of silently downcasting.
         values = pd.to_numeric(pillar_scores[pillar], errors="coerce")
-        present = values.notna()
-        total = total.add(values.fillna(0.0) * weight * present, fill_value=0.0)
-        weight_sum = weight_sum.add(weight * present, fill_value=0.0)
-
-    return (total / weight_sum.replace(0.0, np.nan)).astype(float)
+        columns.append(
+            np.ascontiguousarray(values.to_numpy(dtype=np.float64, na_value=np.nan))
+        )
+        weights.append(float(weight))
+    if not columns:
+        return pd.Series(np.nan, index=pillar_scores.index, dtype=float)
+    return pd.Series(
+        investa_core.weighted_renormalised(columns, weights),
+        index=pillar_scores.index,
+        dtype=float,
+    )
 
 
 def confidence_factor(coverage: float, floor: float = 0.5) -> float:
@@ -357,36 +299,15 @@ def confidence_factor(coverage: float, floor: float = 0.5) -> float:
     reported company from collapsing to zero and disappearing silently instead
     of ranking low and visibly.
     """
-    if coverage is None:
-        return floor
-    return float(max(floor, min(1.0, floor + (1.0 - floor) * coverage)))
+    # Ported to Rust: rust/investa_core/src/br.rs
+    return investa_core.br_confidence_factor(coverage, floor)
 
 
 # --- assembly ---------------------------------------------------------------
-
-
 def metrics_to_frame(companies: Sequence[CompanyMetrics]) -> pd.DataFrame:
     """Flatten a list of CompanyMetrics into one row per company."""
-    rows = []
-    for company in companies:
-        row = {
-            "symbol": company.symbol,
-            "cik": company.cik,
-            "name": company.name,
-            "model": company.model,
-            "period_count": company.period_count,
-            "latest_period": company.latest_period,
-            "coverage": company.coverage,
-            "gate_failures": ",".join(company.gate_failures),
-            "eligible": not company.gate_failures,
-        }
-        row.update(company.metrics)
-        rows.append(row)
-
-    frame = pd.DataFrame(rows)
-    if not frame.empty:
-        frame = frame.set_index("symbol", drop=False)
-    return frame
+    # Ported to Rust: rust/investa_core/src/br.rs
+    return investa_core.br_metrics_to_frame(companies)
 
 
 def score_quality(companies: Sequence[CompanyMetrics]) -> pd.DataFrame:
@@ -397,32 +318,8 @@ def score_quality(companies: Sequence[CompanyMetrics]) -> pd.DataFrame:
     so a company's quality score says "how good is this bank among banks",
     which is the only comparison that means anything.
     """
-    frame = metrics_to_frame(companies)
-    if frame.empty:
-        return frame
-
-    eligible = frame[frame["eligible"]].copy()
-    if eligible.empty:
-        logging.warning("Rank: no companies passed the quality gates")
-        frame["quality_score"] = np.nan
-        return frame
-
-    scored_parts = []
-    for model, group in eligible.groupby("model"):
-        spec = PILLARS_BY_MODEL.get(model, GENERIC_PILLARS)
-        if len(group) < 5:
-            # Percentiles within a handful of companies are noise, not signal.
-            logging.warning(
-                f"Rank: only {len(group)} eligible '{model}' companies — "
-                "percentile scores for this group are unreliable"
-            )
-        pillars = _pillar_scores(group, spec)
-        pillars["quality_score"] = _quality_score(pillars)
-        scored_parts.append(pillars)
-
-    pillar_frame = pd.concat(scored_parts) if scored_parts else pd.DataFrame()
-    result = frame.join(pillar_frame, how="left")
-    return result
+    # Ported to Rust: rust/investa_core/src/br.rs
+    return investa_core.br_score_quality(companies)
 
 
 def combine(
@@ -440,30 +337,8 @@ def combine(
     ranking degrades gracefully if market data is unavailable rather than
     failing outright.
     """
-    result = frame.copy()
-
-    if value_scores is not None:
-        result["value_score"] = value_scores.reindex(result.index)
-    elif "value_score" not in result.columns:
-        result["value_score"] = np.nan
-
-    quality = pd.to_numeric(result.get("quality_score"), errors="coerce")
-    value = pd.to_numeric(result.get("value_score"), errors="coerce")
-
-    has_value = value.notna()
-    blended = quality.copy()
-    blended[has_value] = (
-        quality[has_value] * quality_weight + value[has_value] * value_weight
-    )
-
-    result["confidence"] = result["coverage"].apply(confidence_factor)
-    result["composite_score"] = blended * result["confidence"]
-
-    result = result.sort_values("composite_score", ascending=False, na_position="last")
-    result["rank"] = np.where(
-        result["composite_score"].notna(), range(1, len(result) + 1), np.nan
-    )
-    return result
+    # Ported to Rust: rust/investa_core/src/br.rs
+    return investa_core.br_combine(frame, value_scores, quality_weight, value_weight)
 
 
 def blend_scores(
@@ -482,24 +357,8 @@ def blend_scores(
     its base score. Confidence multiplies the whole, so thin filings still
     demote a company however highly the review rates it.
     """
-    quality = pd.to_numeric(frame["quality_score"], errors="coerce")
-    value = pd.to_numeric(frame.get("value_score"), errors="coerce")
-    if not isinstance(value, pd.Series):
-        value = pd.Series(np.nan, index=frame.index)
-    confidence = pd.to_numeric(frame.get("confidence"), errors="coerce")
-    if not isinstance(confidence, pd.Series):
-        confidence = pd.Series(1.0, index=frame.index)
-
-    base = quality.where(
-        value.isna(), quality * quality_weight + value * (1.0 - quality_weight)
-    )
-
-    ai_weight = float(min(max(ai_weight, 0.0), 1.0))
-    if ai_weight > 0.0 and "ai_score" in frame.columns:
-        ai = pd.to_numeric(frame["ai_score"], errors="coerce")
-        base = base.where(ai.isna(), base * (1.0 - ai_weight) + ai * ai_weight)
-
-    return base * confidence.fillna(1.0)
+    # Ported to Rust: rust/investa_core/src/br.rs
+    return investa_core.br_blend_scores(frame, quality_weight, ai_weight)
 
 
 def rerank(
@@ -514,16 +373,5 @@ def rerank(
     AI review moved a company; `rank` and `composite_score` become the blended
     ones. Expects the AI columns already attached when `ai_weight` is non-zero.
     """
-    result = frame.copy()
-    if result.empty:
-        result["base_rank"] = pd.Series(dtype=float)
-        return result
-    result["base_rank"] = result.get("rank")
-    result["composite_score"] = blend_scores(result, quality_weight, ai_weight)
-    result = result.sort_values(
-        ["composite_score", "base_rank"], ascending=[False, True], na_position="last"
-    )
-    result["rank"] = np.where(
-        result["composite_score"].notna(), np.arange(1, len(result) + 1), np.nan
-    )
-    return result
+    # Ported to Rust: rust/investa_core/src/br.rs
+    return investa_core.br_rerank(frame, quality_weight, ai_weight)

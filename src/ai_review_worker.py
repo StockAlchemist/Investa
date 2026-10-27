@@ -37,6 +37,7 @@ try:
         get_comprehensive_intrinsic_value,
         load_price_history_for_multiples,
     )
+    import sql_store
     from db_utils import (
         get_db_connection,
         get_global_screener_db_path,
@@ -96,12 +97,7 @@ def check_if_review_exists(
     try:
         # Direct SQL query to check specific universe cache
         # We need to handle the composite PK (symbol, universe) effectively
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT ai_summary, last_fiscal_year_end, most_recent_quarter FROM screener_cache WHERE symbol=? AND universe=?",
-            (symbol, universe),
-        )
-        row = cursor.fetchone()
+        row = sql_store.cached_ai_review(conn, symbol, universe)
         conn.close()
 
         if row:

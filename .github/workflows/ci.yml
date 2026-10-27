@@ -30,6 +30,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+          # The Rust calculation core; the runner's preinstalled toolchain builds it.
+          # It links the system libsqlite3, the one Python's sqlite3 module uses.
+          sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+          pip install ./rust/investa_core
 
       - name: Run pytest
         # pyproject.toml enables --cov=src --cov-report=term-missing
@@ -39,6 +43,33 @@ jobs:
         # Checks only the allowlist in pyproject.toml [tool.mypy] files —
         # those modules must stay clean; expand the list as modules get typed.
         run: python -m mypy
+
+  rust-core:
+    name: Rust core (fmt, clippy, cargo test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust/investa_core
+    steps:
+      - uses: actions/checkout@v6
+
+      # cargo test links PyO3 against libpython.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: System SQLite
+        # rusqlite links the system libsqlite3 (no bundled copy).
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Unit tests
+        run: cargo test
 
   backend-lint:
     name: Backend lint (ruff, changed files)
@@ -147,6 +178,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+          # The Rust calculation core; the runner's preinstalled toolchain builds it.
+          # It links the system libsqlite3, the one Python's sqlite3 module uses.
+          sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+          pip install ./rust/investa_core
 
       - uses: actions/setup-node@v6
         with:

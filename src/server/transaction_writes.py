@@ -7,6 +7,8 @@ from typing import Callable
 
 from fastapi import HTTPException
 
+import sql_store
+
 RECEIPTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS transaction_receipts (
     user_id INTEGER NOT NULL,
@@ -37,14 +39,10 @@ def atomic_submission(
         ).encode()
     ).hexdigest()
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        sql_store.begin_immediate(conn)
         if request_key:
             try:
-                previous = conn.execute(
-                    "SELECT fingerprint, response FROM transaction_receipts "
-                    "WHERE user_id=? AND endpoint=? AND request_key=?",
-                    (user_id, endpoint, request_key),
-                ).fetchone()
+                previous = sql_store.find_receipt(conn, user_id, endpoint, request_key)
             except sqlite3.OperationalError as exc:
                 if "no such table" in str(exc):
                     raise HTTPException(
@@ -62,9 +60,8 @@ def atomic_submission(
                 return json.loads(previous[1]), False
         response = write()
         if request_key:
-            conn.execute(
-                "INSERT INTO transaction_receipts (user_id, endpoint, request_key, fingerprint, response) VALUES (?, ?, ?, ?, ?)",
-                (user_id, endpoint, request_key, fingerprint, json.dumps(response)),
+            sql_store.insert_receipt(
+                conn, user_id, endpoint, request_key, fingerprint, json.dumps(response)
             )
         conn.commit()
         return response, True

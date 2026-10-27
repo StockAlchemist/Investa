@@ -12,6 +12,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 
 import config
+import sql_store
 from server.auth import (
     Token,
     User,
@@ -96,22 +97,15 @@ def register(
     user_data_dir = _safe_user_data_dir(user.username)
 
     try:
-        cursor = conn.cursor()
-
         # Check if username exists
-        cursor.execute("SELECT id FROM users WHERE username = ?", (user.username,))
-        if cursor.fetchone():
+        if sql_store.find_user_id(conn, user.username):
             raise HTTPException(status_code=400, detail="Username already registered")
 
         # Hash password
         hashed_pw = get_password_hash(user.password)
         created_at = datetime.now().isoformat()
 
-        cursor.execute(
-            "INSERT INTO users (username, hashed_password, created_at) VALUES (?, ?, ?)",
-            (user.username, hashed_pw, created_at),
-        )
-        new_user_id = cursor.lastrowid
+        new_user_id = sql_store.insert_user(conn, user.username, hashed_pw, created_at)
         if new_user_id is None:
             conn.rollback()
             raise HTTPException(status_code=500, detail="Failed to create user record")
@@ -195,12 +189,7 @@ def login(
     enforce_limit(login_ip_limiter, client_ip, "login attempts")
     login_ip_limiter.record(client_ip)
 
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, username, hashed_password FROM users WHERE username = ?",
-        (form_data.username,),
-    )
-    row = cursor.fetchone()
+    row = sql_store.user_credentials(conn, form_data.username)
 
     if not row or not verify_password(form_data.password, row[2]):
         failed_auth_limiter.record(user_key)
@@ -250,17 +239,12 @@ def update_user_profile(
     conn: sqlite3.Connection = Depends(get_global_db_connection),
 ):
     try:
-        cursor = conn.cursor()
-
         # Only update alias for now
         if profile_data.alias is not None:
             logging.info(
                 f"Updating alias for {current_user.username} to: '{profile_data.alias}'"
             )
-            cursor.execute(
-                "UPDATE users SET alias = ? WHERE id = ?",
-                (profile_data.alias, current_user.id),
-            )
+            sql_store.set_user_alias(conn, current_user.id, profile_data.alias)
             conn.commit()
             current_user.alias = profile_data.alias
 
@@ -277,9 +261,7 @@ def delete_user_me(
 ):
     try:
         # 1. Delete user from GLOBAL DB
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM users WHERE id = ?", (current_user.id,))
-        if cursor.rowcount == 0:
+        if sql_store.delete_user(conn, current_user.id) == 0:
             raise HTTPException(status_code=404, detail="User not found")
         conn.commit()
 
@@ -325,11 +307,7 @@ def change_password(
     pw_key = f"change-password:{current_user.username.lower()}"
     enforce_limit(failed_auth_limiter, pw_key, "incorrect password attempts")
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT hashed_password FROM users WHERE id = ?", (current_user.id,)
-        )
-        row = cursor.fetchone()
+        row = sql_store.user_password_hash(conn, current_user.id)
 
         if not row:
             raise HTTPException(status_code=404, detail="User not found")
@@ -343,10 +321,7 @@ def change_password(
 
         hashed_new_pw = get_password_hash(password_data.new_password)
 
-        cursor.execute(
-            "UPDATE users SET hashed_password = ? WHERE id = ?",
-            (hashed_new_pw, current_user.id),
-        )
+        sql_store.set_user_password(conn, current_user.id, hashed_new_pw)
         conn.commit()
 
         return {"status": "success", "message": "Password updated successfully"}

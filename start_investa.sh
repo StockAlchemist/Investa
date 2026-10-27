@@ -118,6 +118,13 @@ start_backend() {
     # Ensure we are in the script's directory or set PYTHONPATH correctly
     export PYTHONPATH=$PYTHONPATH:$(pwd)/src
 
+    # The calculation core is Rust (rust/investa_core); rebuild it when its
+    # sources have changed since the installed build.
+    if ! python3 scripts/ensure_rust_core.py; then
+        echo "ERROR: could not build the Rust calculation core; backend not started."
+        return 1
+    fi
+
     echo "Starting Investa Server..."
     python3 src/server/main.py
 }

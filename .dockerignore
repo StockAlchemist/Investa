@@ -16,3 +16,6 @@ profiles
 build_resources
 InvestaWiki
 .env
+
+# Rust build output; the image builds the crate itself
+rust/investa_core/target

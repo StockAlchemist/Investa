@@ -12,7 +12,7 @@ from utils_time import (
     get_est_today,
     get_latest_trading_date,
     is_market_open,
-    get_nyse_calendar,
+    nyse_schedule,
 )  # Added for holiday/timezone awareness
 from typing import List, Dict, Optional, Tuple, Set, Any
 import time
@@ -37,6 +37,7 @@ except ImportError:
 
 # --- END ADDED ---
 import config
+import sql_store
 
 # --- Finance API Import ---
 # Lazy load yfinance to improve startup time
@@ -3806,7 +3807,6 @@ class MarketDataProvider:
         # ranges that become Saturday-Sunday after clamping.
         try:
             # Use the holiday-aware calendar for counting business days
-            cal = get_nyse_calendar()
             # --- FIX: Ensure end_date for schedule is at least start_date ---
             schedule_end = yf_end_date - timedelta(days=1)
             if schedule_end < yf_start_date:
@@ -3814,7 +3814,7 @@ class MarketDataProvider:
                 # then we technically have 0 business days in the requested (exclusive) range.
                 bus_days = 0
             else:
-                schedule = cal.schedule(start_date=yf_start_date, end_date=schedule_end)
+                schedule = nyse_schedule(yf_start_date, schedule_end)
                 bus_days = len(schedule)
 
             if bus_days == 0:
@@ -3936,12 +3936,10 @@ class MarketDataProvider:
                         # yfinance returns empty for non-trading days without raising.
                         # If we have 0 bus days (double check here), don't retry.
                         try:
-                            cal = get_nyse_calendar()
                             # Check if at least one day in the range was a trading day
                             # yf_end_date is exclusive, so we check up to yf_end_date - 1d
-                            sch_check = cal.schedule(
-                                start_date=yf_start_date,
-                                end_date=yf_end_date - timedelta(days=1),
+                            sch_check = nyse_schedule(
+                                yf_start_date, yf_end_date - timedelta(days=1)
                             )
                             is_trading_range = not sch_check.empty
                         except Exception:
@@ -4924,15 +4922,7 @@ class MarketDataProvider:
         # reset a converted symbol's price_basis back to the legacy basis on the
         # next sync. Touch only last_synced.
         with self.db._get_connection() as conn:
-            for sym in symbols:
-                conn.execute(
-                    """
-                    INSERT INTO sync_metadata (symbol, last_synced)
-                    VALUES (?, ?)
-                    ON CONFLICT(symbol) DO UPDATE SET last_synced = excluded.last_synced
-                """,
-                    (sym, now.isoformat()),
-                )
+            sql_store.touch_sync_metadata(conn, symbols, now.isoformat())
             conn.commit()
 
     def get_historical_data(
@@ -5023,11 +5013,12 @@ class MarketDataProvider:
                         df_clean["Volume"] = df_db["Volume"]
                     # Normalize index to UTC once at the source so downstream
                     # code (valuation, standardization) doesn't repeat this.
-                    if (
-                        not isinstance(df_clean.index, pd.DatetimeIndex)
-                        or df_clean.index.tz is None
-                    ):
+                    if not isinstance(df_clean.index, pd.DatetimeIndex):
                         df_clean.index = pd.to_datetime(df_clean.index, utc=True)
+                    elif df_clean.index.tz is None:
+                        # The same index to_datetime(..., utc=True) builds for a
+                        # naive DatetimeIndex, without its ~3 ms per call.
+                        df_clean.index = df_clean.index.tz_localize("UTC")
                     historical_prices_yf_adjusted[sym] = df_clean
 
         # Merge static data back in

@@ -5,7 +5,7 @@ import os
 import re
 import sqlite3
 import tempfile
-from datetime import datetime, date
+
 from typing import Annotated, Any, Dict, List, Optional
 
 import fastapi
@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from starlette.concurrency import run_in_threadpool
 
 import config
+import sql_store
 from db_utils import (
     add_transaction_to_db,
     delete_transaction_from_db,
@@ -484,7 +485,6 @@ def update_holding_tags(
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
 
-        cursor = conn.cursor()
         # Clean tags
         tags_value = update_data.tags.strip()
 
@@ -492,10 +492,10 @@ def update_holding_tags(
         # Note: We probably want to update ALL types (Buy, Sell, Div, etc) so they stay grouped?
         # Or just open positions?
         # ShareSight groups by holding. So updating all history is consistent.
-        sql = "UPDATE transactions SET Tags = ? WHERE Symbol = ? AND Account = ?"
-        cursor.execute(sql, (tags_value, update_data.symbol, update_data.account))
+        rows_affected = sql_store.set_holding_tags(
+            conn, tags_value, update_data.symbol, update_data.account
+        )
         conn.commit()
-        rows_affected = cursor.rowcount
         conn.close()
 
         reload_data_and_clear_cache(current_user)
@@ -591,83 +591,24 @@ async def sync_ibkr(
         staged_count = 0
         duplicate_count = 0
 
-        # Helper logic for staging (since we had issues adding it to db_utils)
-        def _stage_tx(conn, tx_data, u_id):
-            ext_id = tx_data.get("ExternalID")
-            cursor = conn.cursor()
-            if ext_id:
-                # Check main table
-                cursor.execute(
-                    "SELECT id FROM transactions WHERE ExternalID = ?", (ext_id,)
+        # All or nothing: a row that fails to stage rolls the whole sync back
+        # and closes the connection here, rather than leaving the write lock
+        # held until the connection happens to be garbage-collected.
+        try:
+            for tx_data in new_transactions:
+                success, result = sql_store.stage_pending_transaction(
+                    conn, tx_data, current_user.id
                 )
-                if cursor.fetchone():
-                    return False, "duplicate_main"
-                # Check pending table
-                cursor.execute(
-                    "SELECT id FROM pending_transactions WHERE ExternalID = ?",
-                    (ext_id,),
-                )
-                if cursor.fetchone():
-                    return False, "duplicate_pending"
-
-            db_cols = [
-                "Date",
-                "Type",
-                "Symbol",
-                "Quantity",
-                "Price/Share",
-                "Total Amount",
-                "Commission",
-                "Account",
-                "Split Ratio",
-                "Note",
-                "Local Currency",
-                "To Account",
-                "Tags",
-                "ExternalID",
-                "user_id",
-            ]
-            placeholders = ", ".join(
-                [f":{c.replace('/', '_').replace(' ', '_')}" for c in db_cols]
-            )
-            cols_str = ", ".join([f'"{c}"' for c in db_cols])
-
-            sql = f"INSERT INTO pending_transactions ({cols_str}) VALUES ({placeholders});"
-            sql_data = {}
-            for col in db_cols:
-                val = tx_data.get(col) if col != "user_id" else u_id
-
-                # Fallback for Total Amount if missing (or provided as 'Amount')
-                if col == "Total Amount" and val is None:
-                    val = tx_data.get("Amount")  # Try alternate key
-                    if val is None:  # Calculate
-                        q = tx_data.get("Quantity", 0)
-                        p = tx_data.get("Price/Share", 0)
-                        c = tx_data.get("Commission", 0)
-                        t = tx_data.get("Type", "").upper()
-                        if q and p:
-                            val = (q * p) + (c if t == "BUY" else -c)
-
-                if col == "Type" and isinstance(val, str):
-                    val = val.strip().title()
-                if col == "Date" and isinstance(val, (datetime, date)):
-                    val = val.strftime("%Y-%m-%d")
-                sql_data[col.replace("/", "_").replace(" ", "_")] = (
-                    None if pd.isna(val) else val
-                )
-
-            cursor.execute(sql, sql_data)
-            return True, cursor.lastrowid
-
-        for tx_data in new_transactions:
-            success, result = _stage_tx(conn, tx_data, current_user.id)
-            if success:
-                staged_count += 1
-            elif result in ["duplicate_main", "duplicate_pending"]:
-                duplicate_count += 1
-
-        conn.commit()
-        conn.close()
+                if success:
+                    staged_count += 1
+                elif result in ["duplicate_main", "duplicate_pending"]:
+                    duplicate_count += 1
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
         return {
             "status": "success",
@@ -692,9 +633,9 @@ def get_pending_ibkr(
 ):
     """Fetch pending transactions for review."""
     try:
-        query = "SELECT * FROM pending_transactions ORDER BY Date DESC"
-        df = pd.read_sql_query(query, conn)
-        return df.to_dict(orient="records")
+        # A fee or cash row has no quantity; its NULLs come back as NaN,
+        # which JSON cannot carry, so they go out as null.
+        return clean_nans(sql_store.pending_transaction_records(conn))
     except Exception as e:
         logging.error(f"Error fetching pending IBKR transactions: {e}", exc_info=True)
         raise HTTPException(
@@ -730,60 +671,7 @@ def approve_ibkr(
             detail="Account selections must belong to approved transactions",
         )
     try:
-        cursor = conn.cursor()
-        approved_count = 0
-
-        # Columns in pending (exclude ID)
-        cols = [
-            "Date",
-            "Type",
-            "Symbol",
-            "Quantity",
-            "Price/Share",
-            "Total Amount",
-            "Commission",
-            "Account",
-            "Split Ratio",
-            "Note",
-            "Local Currency",
-            "To Account",
-            "Tags",
-            "ExternalID",
-            "user_id",
-        ]
-        cols_str = ", ".join([f'"{c}"' for c in cols])
-
-        ext_id_idx = cols.index("ExternalID")
-        for p_id in ids:
-            # Fetch from pending
-            cursor.execute(
-                f"SELECT {cols_str} FROM pending_transactions WHERE id = ?", (p_id,)
-            )
-            row = cursor.fetchone()
-            if row:
-                row = list(row)
-                if p_id in accounts:
-                    row[cols.index("Account")] = accounts[p_id]
-                ext_id = row[ext_id_idx]
-                if ext_id:
-                    cursor.execute(
-                        "SELECT 1 FROM transactions WHERE ExternalID = ? LIMIT 1",
-                        (ext_id,),
-                    )
-                    if cursor.fetchone():
-                        cursor.execute(
-                            "DELETE FROM pending_transactions WHERE id = ?", (p_id,)
-                        )
-                        continue
-                # Insert into main table
-                placeholders = ", ".join(["?"] * len(cols))
-                cursor.execute(
-                    f"INSERT INTO transactions ({cols_str}) VALUES ({placeholders})",
-                    row,
-                )
-                # Delete from pending
-                cursor.execute("DELETE FROM pending_transactions WHERE id = ?", (p_id,))
-                approved_count += 1
+        approved_count = sql_store.approve_pending_transactions(conn, ids, accounts)
 
         conn.commit()
         if approved_count > 0:
@@ -810,12 +698,7 @@ def reject_ibkr(
 ):
     """Discard pending transactions."""
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            f"DELETE FROM pending_transactions WHERE id IN ({','.join(['?'] * len(ids))})",
-            (*ids,),
-        )
-        deleted_count = cursor.rowcount
+        deleted_count = sql_store.reject_pending_transactions(conn, ids)
         conn.commit()
         if deleted_count > 0:
             reload_data_and_clear_cache(current_user)

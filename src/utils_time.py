@@ -29,9 +29,56 @@ def _cached_schedule(cal, start_date, end_date):
         cached_df, ts = cached
         if now - ts < _SCHEDULE_CACHE_TTL:
             return cached_df
-    result = cal.schedule(start_date=start_date, end_date=end_date)
+    result = nyse_schedule(start_date, end_date)
     _SCHEDULE_CACHE[key] = (result, now)
     return result
+
+
+# One NYSE schedule over a wide window, built once per process. Every
+# cal.schedule() call rebuilds the holiday table (~30 ms warm, ~130 ms cold),
+# and a summary or history request made a dozen of them; a slice of this frame
+# is the same rows for 0.1 ms. The calendar's rules are fixed at import, so the
+# frame never goes stale; only the window's end moves with the clock.
+_FULL_SCHEDULE_START = date(1970, 1, 1)
+_FULL_SCHEDULE_YEARS_AHEAD = 5
+_FULL_SCHEDULE = None  # (frame, first day, last day, empty frame)
+
+
+def _full_schedule():
+    global _FULL_SCHEDULE
+    today = get_est_today()
+    if _FULL_SCHEDULE is None or _FULL_SCHEDULE[2] < today + timedelta(days=366):
+        end = date(today.year + _FULL_SCHEDULE_YEARS_AHEAD, 12, 31)
+        cal = get_nyse_calendar()
+        frame = cal.schedule(start_date=_FULL_SCHEDULE_START, end_date=end)
+        # A range with no session comes back with object columns, not the
+        # UTC stamps a slice would carry; keep the calendar's own empty frame.
+        empty = cal.schedule(start_date=date(2025, 12, 25), end_date=date(2025, 12, 25))
+        # A one-session range comes back with the freq its version gives a
+        # single day (CustomBusinessDay in pandas-market-calendars 4.4, none in
+        # 4.6); a longer one never has one, as a slice of the window has not.
+        one_day_freq = cal.schedule(start_date=date(2025, 1, 2), end_date=date(2025, 1, 2)).index.freq
+        _FULL_SCHEDULE = (frame, _FULL_SCHEDULE_START, end, empty, one_day_freq)
+    return _FULL_SCHEDULE
+
+
+def nyse_schedule(start_date, end_date) -> pd.DataFrame:
+    """
+    Exactly ``get_nyse_calendar().schedule(start_date=..., end_date=...)``.
+
+    Answered from the cached window for plain dates inside it; anything else
+    (a reversed range, which raises, a Timestamp or string, a day outside the
+    window) goes to the calendar itself.
+    """
+    if type(start_date) is date and type(end_date) is date and start_date <= end_date:
+        frame, first, last, empty, one_day_freq = _full_schedule()
+        if first <= start_date and end_date <= last:
+            rows = frame.loc[pd.Timestamp(start_date) : pd.Timestamp(end_date)]
+            rows = (rows if len(rows) else empty).copy()
+            if len(rows) == 1 and one_day_freq is not None:
+                rows.index = pd.DatetimeIndex(rows.index, freq=one_day_freq)
+            return rows
+    return get_nyse_calendar().schedule(start_date=start_date, end_date=end_date)
 
 
 def get_est_now() -> pd.Timestamp:
