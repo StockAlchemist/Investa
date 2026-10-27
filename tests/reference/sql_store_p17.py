@@ -152,7 +152,8 @@ def stage_pending_transaction(
                 q = tx_data.get("Quantity", 0)
                 p = tx_data.get("Price/Share", 0)
                 c = tx_data.get("Commission", 0)
-                t = tx_data.get("Type", "").upper()
+                # Stripped, as the stored type is: " buy " adds its commission.
+                t = tx_data.get("Type", "").upper().strip()
                 if q and p:
                     val = (q * p) + (c if t == "BUY" else -c)
 

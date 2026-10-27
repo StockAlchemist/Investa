@@ -591,17 +591,24 @@ async def sync_ibkr(
         staged_count = 0
         duplicate_count = 0
 
-        for tx_data in new_transactions:
-            success, result = sql_store.stage_pending_transaction(
-                conn, tx_data, current_user.id
-            )
-            if success:
-                staged_count += 1
-            elif result in ["duplicate_main", "duplicate_pending"]:
-                duplicate_count += 1
-
-        conn.commit()
-        conn.close()
+        # All or nothing: a row that fails to stage rolls the whole sync back
+        # and closes the connection here, rather than leaving the write lock
+        # held until the connection happens to be garbage-collected.
+        try:
+            for tx_data in new_transactions:
+                success, result = sql_store.stage_pending_transaction(
+                    conn, tx_data, current_user.id
+                )
+                if success:
+                    staged_count += 1
+                elif result in ["duplicate_main", "duplicate_pending"]:
+                    duplicate_count += 1
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
         return {
             "status": "success",
@@ -626,7 +633,9 @@ def get_pending_ibkr(
 ):
     """Fetch pending transactions for review."""
     try:
-        return sql_store.pending_transaction_records(conn)
+        # A fee or cash row has no quantity; its NULLs come back as NaN,
+        # which JSON cannot carry, so they go out as null.
+        return clean_nans(sql_store.pending_transaction_records(conn))
     except Exception as e:
         logging.error(f"Error fetching pending IBKR transactions: {e}", exc_info=True)
         raise HTTPException(

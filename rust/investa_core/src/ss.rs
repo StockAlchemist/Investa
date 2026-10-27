@@ -277,7 +277,10 @@ pub fn ss_stage_pending_transaction<'py>(
                 let q = get_or("Quantity", zero.clone())?;
                 let p = get_or("Price/Share", zero.clone())?;
                 let c = get_or("Commission", zero.clone())?;
-                let t = get_or("Type", s(py, ""))?.call_method0("upper")?;
+                // Stripped, as the stored type is: " buy " adds its commission.
+                let t = get_or("Type", s(py, ""))?
+                    .call_method0("upper")?
+                    .call_method0("strip")?;
                 if q.is_truthy()? && p.is_truthy()? {
                     // `(q * p) + (c if t == "BUY" else -c)`, left to right.
                     let gross = q.mul(&p)?;

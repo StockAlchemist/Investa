@@ -185,9 +185,9 @@ def test_ibkr_staging_pending_approve_reject(tx_client, monkeypatch):
     ).fetchall()
     assert staged == [
         ("2026-02-01", "Buy", "MSFT", 400.0, "p-1", 1),
-        # 2 x 10 - 1: the fallback tests the unstripped " BUY ", so the commission is
-        # subtracted (a known quirk, see docs/rust_core_port.md "Found while porting").
-        ("2026-03-02", "Buy", "NVDA", 19.0, "n-1", 1),
+        # 2 x 10 + 1: " buy " is a buy once stripped, as it is stored, so the
+        # commission is added.
+        ("2026-03-02", "Buy", "NVDA", 21.0, "n-1", 1),
         ("2026-03-03", "Sell", "NVDA", 11.5, "n-2", 1),
         ("2026-03-04", "Dividend", "AAPL", None, None, 1),
         ("2026-03-05", "Fees", "$CASH", 3.0, None, 1),
@@ -195,10 +195,14 @@ def test_ibkr_staging_pending_approve_reject(tx_client, monkeypatch):
     FakeConnector.rows = []
     assert client.post("/sync/ibkr").json()["added_count"] == 0
 
-    # A NULL number in any pending row becomes NaN in the frame, which the JSON
-    # response refuses: the list fails (a known quirk, see "Found while porting").
-    with pytest.raises(ValueError, match="not JSON compliant"):
-        client.get("/sync/ibkr/pending")
+    # A NULL number in a pending row (the fee and the dividend have no quantity)
+    # goes out as null, not as the NaN JSON cannot carry.
+    pending = client.get("/sync/ibkr/pending")
+    assert pending.status_code == 200, pending.text
+    fee = next(p for p in pending.json() if p["Symbol"] == "$CASH")
+    assert (fee["Quantity"], fee["Price/Share"], fee["Split Ratio"], fee["Total Amount"]) == (None, None, None, 3.0)
+    dividend = next(p for p in pending.json() if p["Symbol"] == "AAPL")
+    assert (dividend["Quantity"], dividend["Total Amount"]) == (0.0, None)
     for col in ("Quantity", "Price/Share", "Total Amount", "Commission", "Split Ratio"):
         conn.execute(f'UPDATE pending_transactions SET "{col}" = 0 WHERE "{col}" IS NULL')
     conn.commit()
@@ -206,7 +210,7 @@ def test_ibkr_staging_pending_approve_reject(tx_client, monkeypatch):
     assert pending.status_code == 200
     got = [(p["Symbol"], p["Date"], p["ExternalID"], p["Total Amount"]) for p in pending.json()]
     assert got == [("$CASH", "2026-03-05", None, 3.0), ("AAPL", "2026-03-04", None, 0.0), ("NVDA", "2026-03-03", "n-2", 11.5),
-                   ("NVDA", "2026-03-02", "n-1", 19.0), ("MSFT", "2026-02-01", "p-1", 400.0)]  # fmt: skip
+                   ("NVDA", "2026-03-02", "n-1", 21.0), ("MSFT", "2026-02-01", "p-1", 400.0)]  # fmt: skip
 
     ids = [row[0] for row in conn.execute("SELECT id FROM pending_transactions ORDER BY id")]
     r = client.post("/sync/ibkr/approve", json={"ids": ids[:3], "accounts": {str(ids[1]): "Taxable"}})
@@ -218,12 +222,20 @@ def test_ibkr_staging_pending_approve_reject(tx_client, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM pending_transactions").fetchone() == (0,)
     assert client.get("/sync/ibkr/pending").json() == []
     assert client.post("/sync/ibkr/reject", json=[]).json()["count"] == 0
-    # Last, because the failed sync leaves its write transaction open (a known
-    # quirk): a staged row the schema refuses (no currency) fails the sync.
-    FakeConnector.rows = [{"ExternalID": "z-1", "Date": "2026-03-09", "Type": "buy", "Symbol": "Z", "Account": "IBKR"}]
+    # A staged row the schema refuses (no currency) fails the sync. The rows
+    # staged before it are rolled back with it, and the write lock is free at
+    # once: another writer that will not wait at all gets it.
+    FakeConnector.rows = [
+        {"ExternalID": "y-1", "Date": "2026-03-08", "Type": "buy", "Symbol": "Y", "Account": "IBKR", "Local Currency": "USD"},
+        {"ExternalID": "z-1", "Date": "2026-03-09", "Type": "buy", "Symbol": "Z", "Account": "IBKR"},
+    ]  # fmt: skip
     r = client.post("/sync/ibkr")
     assert (r.status_code, r.json()) == (500, {"status": "error", "message": "IBKR sync failed"})
-    assert conn.execute("SELECT COUNT(*) FROM pending_transactions WHERE ExternalID = 'z-1'").fetchone() == (0,)
+    assert conn.execute("SELECT COUNT(*) FROM pending_transactions WHERE ExternalID IN ('y-1', 'z-1')").fetchone() == (0,)
+    other = sqlite3.connect(client.app.dependency_overrides[routes.get_transaction_data]()[6], timeout=0)
+    other.execute("BEGIN IMMEDIATE")
+    other.rollback()
+    other.close()
 
 
 def test_settings_currency_map(tmp_path):
