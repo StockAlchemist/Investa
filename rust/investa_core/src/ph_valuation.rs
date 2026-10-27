@@ -670,9 +670,9 @@ fn rate_per_usd<'py>(
     let mut s = df.get_item(col)?.call_method0("copy")?;
     s.setattr(
         "index",
-        pd.call_method(
-            "to_datetime",
-            (s.getattr("index")?,),
+        crate::pyhelp::to_datetime(
+            pd,
+            &s.getattr("index")?,
             Some(&kwargs(py, &[("utc", &tru(py))])?),
         )?,
     )?;
@@ -764,7 +764,7 @@ pub fn ph_value_daily_holdings<'py>(
                         ps = ps.call_method0("copy")?;
                         ps.setattr(
                             "index",
-                            pd.call_method("to_datetime", (ps.getattr("index")?,), Some(&utc))?,
+                            crate::pyhelp::to_datetime(&pd, &ps.getattr("index")?, Some(&utc))?,
                         )?;
                     }
                     by_id.set_item(sym_id, ps)?;
@@ -1157,9 +1157,9 @@ pub fn ph_all_daily_holdings<'py>(
         )
     };
     let date_ordinals = as_i64(grid.clone())?;
-    let tx_dates = as_i64(pd.call_method(
-        "to_datetime",
-        (sorted_tx.get_item("Date")?,),
+    let tx_dates = as_i64(crate::pyhelp::to_datetime(
+        &pd,
+        &sorted_tx.get_item("Date")?,
         Some(&kwargs(py, &[("utc", &tru(py))])?),
     )?)?;
     let ids = |s: Bound<'py, PyAny>, mapping: &Bound<'py, PyAny>| -> PyResult<Bound<'py, PyAny>> {

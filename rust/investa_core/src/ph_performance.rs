@@ -274,9 +274,9 @@ pub fn ph_historical_performance<'py>(
             setitem(
                 &txs,
                 "Date",
-                pd.call_method(
-                    "to_datetime",
-                    (txs.get_item("Date")?,),
+                crate::pyhelp::to_datetime(
+                    &pd,
+                    &txs.get_item("Date")?,
                     Some(&kwargs(
                         py,
                         &[("errors", &pystr(py, "coerce")), ("utc", &tru(py))],
@@ -589,9 +589,9 @@ pub fn ph_historical_performance<'py>(
                     if not_utc(&intra_df.getattr("index")?)? {
                         intra_df.setattr(
                             "index",
-                            pd.call_method(
-                                "to_datetime",
-                                (intra_df.getattr("index")?,),
+                            crate::pyhelp::to_datetime(
+                                &pd,
+                                &intra_df.getattr("index")?,
                                 Some(&utc),
                             )?,
                         )?;
@@ -601,9 +601,9 @@ pub fn ph_historical_performance<'py>(
                         if not_utc(&daily.getattr("index")?)? {
                             daily.setattr(
                                 "index",
-                                pd.call_method(
-                                    "to_datetime",
-                                    (daily.getattr("index")?,),
+                                crate::pyhelp::to_datetime(
+                                    &pd,
+                                    &daily.getattr("index")?,
                                     Some(&utc),
                                 )?,
                             )?;
@@ -699,12 +699,12 @@ pub fn ph_historical_performance<'py>(
                 let d_df = fx.get_item(pair)?;
                 d_df.setattr(
                     "index",
-                    pd.call_method("to_datetime", (d_df.getattr("index")?,), Some(&utc))?,
+                    crate::pyhelp::to_datetime(&pd, &d_df.getattr("index")?, Some(&utc))?,
                 )?;
                 let h = h_df.call_method0("copy")?;
                 h.setattr(
                     "index",
-                    pd.call_method("to_datetime", (h.getattr("index")?,), Some(&utc))?,
+                    crate::pyhelp::to_datetime(&pd, &h.getattr("index")?, Some(&utc))?,
                 )?;
                 if !h.getattr("empty")?.is_truthy()? {
                     let h_start = h.getattr("index")?.call_method0("min")?;
@@ -765,7 +765,7 @@ pub fn ph_historical_performance<'py>(
             if not_utc(&v.getattr("index")?)? {
                 v.setattr(
                     "index",
-                    pd.call_method("to_datetime", (v.getattr("index")?,), Some(&utc))?,
+                    crate::pyhelp::to_datetime(&pd, &v.getattr("index")?, Some(&utc))?,
                 )?;
             }
             if !v.is_none() && !v.getattr("empty")?.is_truthy()? {
@@ -887,7 +887,7 @@ pub fn ph_historical_performance<'py>(
         if !daily_df.getattr("index")?.is_instance(&dti)? {
             daily_df.setattr(
                 "index",
-                pd.call_method("to_datetime", (daily_df.getattr("index")?,), Some(&utc))?,
+                crate::pyhelp::to_datetime(&pd, &daily_df.getattr("index")?, Some(&utc))?,
             )?;
         }
         if daily_df.getattr("index")?.getattr("tz")?.is_none() {
@@ -1002,7 +1002,7 @@ pub fn ph_historical_performance<'py>(
                 if not_utc(&series.getattr("index")?)? {
                     series.setattr(
                         "index",
-                        pd.call_method("to_datetime", (series.getattr("index")?,), Some(&utc))?,
+                        crate::pyhelp::to_datetime(&pd, &series.getattr("index")?, Some(&utc))?,
                     )?;
                 }
                 if series

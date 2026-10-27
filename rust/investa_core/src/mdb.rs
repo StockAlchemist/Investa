@@ -1729,9 +1729,9 @@ pub fn mdb_get_intraday<'py>(
     let df = with_conn(py, slf, |conn| read_frame(conn, query, params))?.expect("no CM swallows");
     if !df.getattr("empty")?.is_truthy()? {
         let pd = py.import("pandas")?;
-        let stamps = pd.call_method(
-            "to_datetime",
-            (df.get_item("timestamp")?,),
+        let stamps = crate::pyhelp::to_datetime(
+            &pd,
+            &df.get_item("timestamp")?,
             Some(&kw(
                 py,
                 &[

@@ -694,10 +694,15 @@ pub fn fu_numeric_column<'py>(
             let mut vals = Vec::with_capacity(n);
             let mut typed = Vec::with_capacity(n);
             for v in col.call_method0("tolist")?.try_iter()? {
-                let v = to_numeric.call(
-                    (v?,),
-                    Some(&kwargs(py, &[("errors", &pystr(py, "coerce"))])?),
-                )?;
+                let v = v?;
+                let v = if crate::pyhelp::numeric_passthrough(&v) {
+                    v
+                } else {
+                    to_numeric.call(
+                        (v,),
+                        Some(&kwargs(py, &[("errors", &pystr(py, "coerce"))])?),
+                    )?
+                };
                 vals.push(if v.is_none() || isna.call1((&v,))?.is_truthy()? {
                     f64::NAN
                 } else {

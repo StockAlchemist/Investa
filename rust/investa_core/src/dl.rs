@@ -108,9 +108,9 @@ pub fn dl_parse_date_robustly<'py>(
     date_series: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let pd = py.import("pandas")?;
-    let parsed = pd.call_method(
-        "to_datetime",
-        (date_series,),
+    let parsed = crate::pyhelp::to_datetime(
+        &pd,
+        date_series,
         Some(&kw(py, &[("errors", pystr(py, "coerce"))])?),
     )?;
     let failed = parsed

@@ -142,3 +142,114 @@ pub fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py
     }
     Ok(out)
 }
+
+/// `pd.to_datetime(arg, **kwargs)`, without pandas' cache probe when `arg`
+/// already holds datetimes and the call asks only for UTC.
+///
+/// For a `DatetimeIndex` or a datetime `Series`, pandas parses nothing: unless
+/// `should_cache` finds repeats among the first elements, the answer is
+/// `values.tz_convert(None).tz_localize("utc")` (or `tz_localize("utc")` when
+/// naive), and `errors` never comes into it. The probe is the whole cost: it
+/// boxes up to 500 Timestamps into a Python set, about 2.5 ms on a daily price
+/// index against 0.01 ms for the conversion. Here it runs on the int64 values,
+/// which compare exactly as the Timestamps do (NaT too: one sentinel value, one
+/// singleton). Any other argument or keyword, or an input pandas would cache,
+/// goes to pandas itself.
+pub fn to_datetime<'py>(
+    pd: &Bound<'py, PyAny>,
+    arg: &Bound<'py, PyAny>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Bound<'py, PyAny>> {
+    match utc_fast_path(pd, arg, kwargs)? {
+        Some(result) => Ok(result),
+        None => pd.call_method("to_datetime", (arg,), kwargs),
+    }
+}
+
+fn utc_fast_path<'py>(
+    pd: &Bound<'py, PyAny>,
+    arg: &Bound<'py, PyAny>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let py = arg.py();
+    let Some(kwargs) = kwargs else {
+        return Ok(None);
+    };
+    for (key, value) in kwargs.iter() {
+        let ok = match key.extract::<&str>()? {
+            "utc" => value.is(pyo3::types::PyBool::new(py, true)),
+            "errors" => matches!(value.extract::<&str>().ok(), Some("raise" | "coerce")),
+            _ => false,
+        };
+        if !ok {
+            return Ok(None);
+        }
+    }
+    if !kwargs.contains("utc")? {
+        return Ok(None);
+    }
+    let is_series = arg.is_instance(&pd.getattr("Series")?)?;
+    let values = if arg.is_instance(&pd.getattr("DatetimeIndex")?)? {
+        arg.clone()
+    } else if is_series {
+        let values = arg.getattr("_values")?;
+        if !values.is_instance(&pd.getattr("arrays")?.getattr("DatetimeArray")?)? {
+            return Ok(None);
+        }
+        values
+    } else {
+        return Ok(None);
+    };
+    if would_cache(&values)? {
+        return Ok(None);
+    }
+    let utc = if values.getattr("tz")?.is_none() {
+        values.call_method1("tz_localize", ("utc",))?
+    } else {
+        values
+            .call_method1("tz_convert", (py.None(),))?
+            .call_method1("tz_localize", ("utc",))?
+    };
+    if !is_series {
+        return Ok(Some(utc));
+    }
+    let kw = PyDict::new(py);
+    kw.set_item("index", arg.getattr("index")?)?;
+    kw.set_item("name", arg.getattr("name")?)?;
+    Ok(Some(arg.getattr("_constructor")?.call((utc,), Some(&kw))?))
+}
+
+/// `pandas.core.tools.datetimes.should_cache(values)` with its defaults:
+/// no cache at 50 elements or fewer, otherwise cache unless more than 70% of
+/// the first tenth (at most 500) are distinct.
+fn would_cache(values: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let n = values.len()?;
+    if n <= 50 {
+        return Ok(false);
+    }
+    let check = if n <= 5000 { n / 10 } else { 500 };
+    let ints: numpy::PyReadonlyArray1<i64> = values.getattr("asi8")?.extract()?;
+    let ints = ints.as_array();
+    let distinct: std::collections::HashSet<i64> = ints.iter().take(check).copied().collect();
+    Ok(distinct.len() as f64 <= check as f64 * 0.7)
+}
+
+/// `investa_core.to_datetime(arg, **kwargs)`: [`to_datetime`] for Python, so
+/// the tests can hold it against `pd.to_datetime` directly.
+#[pyfunction(name = "to_datetime")]
+#[pyo3(signature = (arg, **kwargs))]
+pub fn to_datetime_py<'py>(
+    py: Python<'py>,
+    arg: &Bound<'py, PyAny>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Bound<'py, PyAny>> {
+    to_datetime(py.import("pandas")?.as_any(), arg, kwargs)
+}
+
+/// Whether `pd.to_numeric(v, errors="coerce")` (or `"raise"`) hands `v` back
+/// unchanged: a Python int, float or bool, numpy's float64 included, passes
+/// `is_number` before pandas converts anything. Per-value callers skip the
+/// call for these, which are nearly all the cells a transaction row holds.
+pub fn numeric_passthrough(v: &Bound<'_, PyAny>) -> bool {
+    v.is_instance_of::<pyo3::types::PyFloat>() || v.is_instance_of::<pyo3::types::PyInt>()
+}

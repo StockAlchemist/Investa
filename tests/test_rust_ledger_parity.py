@@ -7,7 +7,10 @@ in the Note, every row type, NaN/zero/negative amounts, same-day rows,
 integer and text columns, missing columns), plus frames the original handles
 specially: no `original_index`, a `Type` column the `.str` accessor rejects
 (the error raised again for every account), NaT dates and mixed id types (the
-pandas sort), NumPy market values and datetime report dates. Holdings go
+pandas sort), Notes that are not all text, all missing or string-typed, a
+string-typed Type, and account names that are invalid, grouped or non-text
+regexes (the Note search runs on the transfer rows alone only where it cannot
+differ), NumPy market values and datetime report dates. Holdings go
 through a shared ledger and the one-shot builder, the ledger's internals are
 compared directly, and MWR runs under both bases. Results, logs and warnings
 agree.
@@ -43,6 +46,16 @@ def _odd(rng, df):
         df = df.copy()
         df["original_index"] = df["original_index"].astype(object)
         df.loc[df.index[0], "original_index"] = 1.5
+    elif len(df) and "Note" in df.columns and r < 0.40:
+        df = df.copy()
+        df["Note"] = df["Note"].astype(object)
+        df.loc[df.index[0], "Note"] = 7  # a non-text note: .str still accepts the column
+    elif len(df) and "Note" in df.columns and r < 0.46:
+        df = df.assign(Note=df["Note"].astype("string"))
+    elif len(df) and r < 0.52:
+        df = df.assign(Type=df["Type"].astype("string"))  # a nullable-boolean transfer mask
+    elif len(df) and "Note" in df.columns and r < 0.58:
+        df = df.assign(Note=[np.nan] * len(df))
     return df
 
 
@@ -64,7 +77,9 @@ def test_ledger_matches(caplog, seed):
                     for mod in (ref, new)]  # fmt: skip
             assert outs[0] == outs[1], (seed, trial, "one-shot")
         for name, args in (("_rows", ()), ("_symbol_positions", ("AAPL",)), ("_symbol_positions", (3,)),
-                           ("_account_mask", ("IBKR",)), ("_account_mask", ("E*Trade",)), ("_transfer_rows", ()),
+                           ("_account_mask", ("IBKR",)), ("_account_mask", ("E*Trade",)), ("_account_mask", ("kim eng",)),
+                           ("_account_mask", ("IBKR (1)",)), ("_account_mask", ("[SET",)), ("_account_mask", (5,)),
+                           ("_transfer_rows", ()),
                            ("_sorted", (list(range(min(len(df), 5))),))):  # fmt: skip
             outs = [call(lambda lg=lg: getattr(lg, name)(*args), caplog) for lg in ledgers]
             assert outs[0] == outs[1], (seed, trial, name)

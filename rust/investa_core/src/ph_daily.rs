@@ -828,7 +828,7 @@ impl<'py> Daily<'_, 'py> {
                 setitem(
                     &df,
                     "Date",
-                    pd.call_method("to_datetime", (df.get_item("Date")?,), Some(&utc))?,
+                    crate::pyhelp::to_datetime(pd, &df.get_item("Date")?, Some(&utc))?,
                 )?;
                 df.call_method("set_index", ("Date",), Some(&inplace))?;
             } else if columns.contains("index")? {
@@ -836,7 +836,7 @@ impl<'py> Daily<'_, 'py> {
                 setitem(
                     &df,
                     "Date",
-                    pd.call_method("to_datetime", (df.get_item("Date")?,), Some(&utc))?,
+                    crate::pyhelp::to_datetime(pd, &df.get_item("Date")?, Some(&utc))?,
                 )?;
                 df.call_method("set_index", ("Date",), Some(&inplace))?;
             } else if !df
@@ -858,9 +858,9 @@ impl<'py> Daily<'_, 'py> {
                 }
                 df.setattr(
                     "index",
-                    pd.call_method(
-                        "to_datetime",
-                        (df.getattr("index")?,),
+                    crate::pyhelp::to_datetime(
+                        pd,
+                        &df.getattr("index")?,
                         Some(&self.kw(&[("errors", &pystr(py, "coerce")), ("utc", &tru(py))])?),
                     )?,
                 )?;
@@ -1075,9 +1075,9 @@ impl<'py> Daily<'_, 'py> {
             )
         };
         let date_ordinals = ordinals(grid.clone())?;
-        let tx_dates = ordinals(pd.call_method(
-            "to_datetime",
-            (sorted.get_item("Date")?,),
+        let tx_dates = ordinals(crate::pyhelp::to_datetime(
+            pd,
+            &sorted.get_item("Date")?,
             Some(&self.kw(&[("utc", &tru(py))])?),
         )?)?;
         let tx_symbols = sorted
@@ -1327,7 +1327,7 @@ impl<'py> Daily<'_, 'py> {
             )?;
             for row in newest_first.call_method0("iterrows")?.try_iter()? {
                 let row = unpack(&row?, 2)?.remove(1);
-                let s_date = pd.call_method("to_datetime", (row.get_item("Date")?,), Some(&utc))?;
+                let s_date = crate::pyhelp::to_datetime(pd, &row.get_item("Date")?, Some(&utc))?;
                 let mut ratio = pd.call_method(
                     "to_numeric",
                     (row.call_method1("get", ("Split Ratio",))?,),
@@ -1347,7 +1347,7 @@ impl<'py> Daily<'_, 'py> {
                 if ratio.is_truthy()? && ratio.gt(1e-9)? {
                     factors.setattr(
                         "index",
-                        pd.call_method("to_datetime", (factors.getattr("index")?,), Some(&utc))?,
+                        crate::pyhelp::to_datetime(pd, &factors.getattr("index")?, Some(&utc))?,
                     )?;
                     let mask = factors
                         .getattr("index")?
@@ -1568,9 +1568,9 @@ impl<'py> Daily<'_, 'py> {
                     || index.is_instance(&pd.getattr("Index")?)?)
             {
                 let r = (|| -> PyResult<()> {
-                    let dt = pd.call_method(
-                        "to_datetime",
-                        (&index,),
+                    let dt = crate::pyhelp::to_datetime(
+                        pd,
+                        &index,
                         Some(&self.kw(&[("errors", &pystr(py, "coerce")), ("utc", &tru(py))])?),
                     )?;
                     let valid = dt.call_method0("dropna")?;
@@ -1944,9 +1944,9 @@ impl<'py> Daily<'_, 'py> {
             setitem(
                 &df,
                 "Date",
-                pd.call_method(
-                    "to_datetime",
-                    (df.get_item("Date")?,),
+                crate::pyhelp::to_datetime(
+                    pd,
+                    &df.get_item("Date")?,
                     Some(&self.kw(&[("utc", &tru(py))])?),
                 )?,
             )?;

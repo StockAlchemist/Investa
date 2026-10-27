@@ -58,6 +58,7 @@ The crate builds in four places:
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
 | 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; (d) symbol mapping and formatting **done** | Done |
 | 17 | SQL in Rust: (a) the database layer on `rusqlite`, linked to the system SQLite Python uses **done**; (b) the routes', services' and AI workers' SQL **done** | Done |
+| 18 | Pandas overhead inside the port: (a) calls whose answer is known without pandas **done**; (b) column reads in place of `iterrows`; (c) one date grid for every symbol | (a) done |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -1015,6 +1016,43 @@ Checks:
   - 803 write calls on twin copies of a real book, re-staging 400 of its real transactions, then approving, rejecting and snapshotting, with the same final state.
 
 With 17b, Python no longer issues SQL of its own anywhere in the app.
+
+## Phase 18a (27 Oct 2026): pandas calls whose answer is known without pandas
+
+After Phase 17, pandas took 47–58% of every request and Investa's own Python under 1%. Much of that pandas time was not work. These calls pay pandas' overhead for answers already in hand:
+
+- **`pd.to_datetime(x, utc=True)` on values that are already dates.**
+  - History made 41 such calls per request on price indexes that were already UTC. Each cost 2.3 ms and returned an identical index.
+  - The cost is `should_cache`, which boxes up to 500 Timestamps into a Python set to look for repeats. The conversion itself takes 0.01 ms.
+  - `pyhelp::to_datetime` now runs that probe on the int64 values, which compare exactly as the Timestamps do (NaT included). It then does what pandas would: `tz_convert(None).tz_localize("utc")`, or `tz_localize("utc")` for naive values.
+  - It applies only to a `DatetimeIndex` or a datetime `Series` with `utc=True` and at most `errors="raise"`/`"coerce"`. Anything else, or an input pandas would cache, goes to pandas. All 27 call sites with these keywords use it.
+- **`pd.to_numeric(v, errors="coerce")` on a Python int, float or bool,** about 20,000 times per summary in FIFO, `safe_sum` and the dividend and tax history. pandas returns such a value unchanged (`is_number`), so `pyhelp::numeric_passthrough` skips the call.
+- **The legacy-transfer Note search.** The account mask ran `df["Note"].str.contains(account, case=False, na=False)` over every note, then kept only the transfer rows (21 of kitmatan's 5,024). The ledger now searches the transfer rows alone. It does so only where the full call could neither raise nor warn first:
+  - the account is text that compiles, with and without IGNORECASE, to a pattern with no groups;
+  - Note is an object column of strings and missing values, so the subset passes the `.str` check exactly when the column does;
+  - the transfer mask is plain bool.
+  Otherwise the full call runs as before.
+
+Checks:
+- **Helper parity** (`tests/test_rust_to_datetime_parity.py`): the helper against `pd.to_datetime` under 10 keyword sets, covering type, values, dtype, zone, freq, name, index and exceptions. Inputs:
+  - indexes and series, naive and in three zones, at s/us/ns, with NaT;
+  - lengths either side of 50 and 5,000, and repeats either side of the 70% cache threshold;
+  - plus strings, objects, arrays, scalars, lists and Arrow timestamps, which all fall back.
+- **Ledger parity:** the phase 16b test gains:
+  - non-text, all-missing and string-typed notes, and a string-typed Type;
+  - accounts that are a case-insensitive hit, grouped (`IBKR (1)`), invalid (`[SET`) or not text.
+- **Full suite:** passes, with the same 2,411 warnings as before.
+- **Real data:** the HEAD build was compared with this one on frozen data clones replaying one market-data tape.
+  - All six histories and three summaries are identical, the summaries checked field by field.
+  - Run in a fresh process after its histories, dheematan's summary varies from run to run under either build, HEAD against HEAD included. Something it reads lies outside the tape; the change is not the cause.
+
+Interleaved medians of 7, best of two rounds, same Python and only the extension swapped:
+
+| Book | Summary | Daily history (all time, USD) | Weekly history (1 year, THB) |
+|---|---|---|---|
+| kitmatan | 243 → 201 ms (−18%) | 591 → 446 ms (−25%) | 463 → 345 ms (−26%) |
+| dheematan | 238 → 206 ms (−13%) | 564 → 519 ms (−8%) | 448 → 420 ms (−6%) |
+| atchamatan | 124 → 115 ms (−7%) | 321 → 314 ms (−2%) | 279 → 248 ms (−11%) |
 
 ## Found while porting
 

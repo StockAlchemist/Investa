@@ -245,9 +245,9 @@ pub fn pa_transactions_to_holdings<'py>(
             setitem(
                 &splits,
                 "Date",
-                pd.call_method(
-                    "to_datetime",
-                    (splits.get_item("Date")?,),
+                crate::pyhelp::to_datetime(
+                    &pd,
+                    &splits.get_item("Date")?,
                     Some(&kw(py, &[("errors", pystr(py, "coerce"))])?),
                 )?,
             )?;

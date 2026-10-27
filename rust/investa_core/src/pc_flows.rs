@@ -87,7 +87,7 @@ fn usd_rate_series<'py>(
             kw.set_item("utc", true)?;
             s.setattr(
                 "index",
-                pd.call_method("to_datetime", (s.getattr("index")?,), Some(&kw))?,
+                crate::pyhelp::to_datetime(pd, &s.getattr("index")?, Some(&kw))?,
             )?;
             return s
                 .call_method1("reindex", (date_range,))?
@@ -131,11 +131,7 @@ pub fn pc_daily_net_cash_flow_vectorized<'py>(
             &pyo3::types::PyBool::new(py, true).to_owned().into_any(),
         )],
     )?;
-    let tx_dates = pd.call_method(
-        "to_datetime",
-        (transactions_df.get_item("Date")?,),
-        Some(&utc),
-    )?;
+    let tx_dates = crate::pyhelp::to_datetime(&pd, &transactions_df.get_item("Date")?, Some(&utc))?;
     let mask_date = tx_dates.rich_compare(date_range.get_item(-1)?, CompareOp::Le)?;
     let df_period = transactions_df.get_item(mask_date)?.call_method0("copy")?;
     if df_period.getattr("empty")?.is_truthy()? {
@@ -144,8 +140,7 @@ pub fn pc_daily_net_cash_flow_vectorized<'py>(
 
     // Dates normalised to naive, then to the range's zone.
     let target_tz = date_range.getattr("tz")?;
-    let naive = pd
-        .call_method("to_datetime", (df_period.get_item("Date")?,), Some(&utc))?
+    let naive = crate::pyhelp::to_datetime(&pd, &df_period.get_item("Date")?, Some(&utc))?
         .getattr("dt")?
         .call_method1("tz_localize", (py.None(),))?;
     setitem(&df_period, "Date", naive)?;

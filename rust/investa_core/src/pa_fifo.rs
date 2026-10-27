@@ -106,6 +106,9 @@ impl<'py> Env<'py> {
     }
     /// `pd.to_numeric(v, errors="coerce")`
     fn numeric(&self, v: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        if crate::pyhelp::numeric_passthrough(v) {
+            return Ok(v.clone());
+        }
         self.to_numeric.call((v,), Some(&self.coerce))
     }
     /// `float(v)`

@@ -428,6 +428,9 @@ pub fn pa_dividend_history<'py>(
         .call1((py.get_type::<pyo3::types::PyFloat>(),))?;
     let coerce = kw(py, &[("errors", pystr(py, "coerce"))])?;
     let to_numeric = |x: Bound<'py, PyAny>| -> PyResult<Bound<'py, PyAny>> {
+        if crate::pyhelp::numeric_passthrough(&x) {
+            return Ok(x);
+        }
         pd.call_method("to_numeric", (x,), Some(&coerce))
     };
     let abs = py.import("builtins")?.getattr("abs")?;

@@ -116,7 +116,7 @@ pub fn ph_unadjust_prices<'py>(
         )?;
         unadj.setattr(
             "index",
-            pd.call_method("to_datetime", (unadj.getattr("index")?,), Some(&utc))?,
+            crate::pyhelp::to_datetime(&pd, &unadj.getattr("index")?, Some(&utc))?,
         )?;
         if unadj.getattr("empty")?.is_truthy()? {
             out.set_item(yf_symbol, &unadj)?;
@@ -694,7 +694,7 @@ pub fn ph_fund_nav_series<'py>(
             )?;
             series.setattr(
                 "index",
-                pd.call_method("to_datetime", (series.getattr("index")?,), Some(&utc))?,
+                crate::pyhelp::to_datetime(&pd, &series.getattr("index")?, Some(&utc))?,
             )?;
         }
         out.set_item(sym_id, &series)?;

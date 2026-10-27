@@ -188,15 +188,22 @@ impl CashFlowLedger {
         }
         // Legacy transfers name the account in the Note, read as a regex.
         if columns.contains("Note")? {
-            let named = df.get_item("Note")?.getattr("str")?.call_method(
-                "contains",
-                (account,),
-                Some(&kwargs(
-                    py,
-                    &[("case", &pybool(py, false)), ("na", &pybool(py, false))],
-                )?),
+            let note = df.get_item("Note")?;
+            let contains_kw = kwargs(
+                py,
+                &[("case", &pybool(py, false)), ("na", &pybool(py, false))],
             )?;
-            let rhs = named.bitand(self._transfer_rows(py)?)?;
+            let rhs = match self._transfer_notes_naming(py, &df, &note, account, &contains_kw)? {
+                Some(rhs) => rhs,
+                None => {
+                    let named = note.getattr("str")?.call_method(
+                        "contains",
+                        (account,),
+                        Some(&contains_kw),
+                    )?;
+                    named.bitand(self._transfer_rows(py)?)?
+                }
+            };
             mask = py.import("operator")?.call_method1("ior", (mask, rhs))?;
         }
         let mask = mask.call_method(
@@ -206,6 +213,68 @@ impl CashFlowLedger {
         )?;
         masks.set_item(account, &mask)?;
         Ok(mask)
+    }
+
+    /// `df["Note"].str.contains(account, case=False, na=False) & transfer_rows`
+    /// with the regex run on the transfer rows alone (a few dozen of
+    /// thousands): every other row is False after the `&` whatever its note
+    /// says. Taken only where it cannot differ from the full call: an account
+    /// that compiles, both ways, to a pattern with no groups (so the full call
+    /// neither raises nor warns before the transfer rows are read), an object
+    /// Note column of strings and missing values (so the subset passes the
+    /// `.str` accessor's check exactly when the column does), and a plain bool
+    /// transfer mask. `None` sends the caller to the full call.
+    fn _transfer_notes_naming<'py>(
+        &mut self,
+        py: Python<'py>,
+        df: &Bound<'py, PyAny>,
+        note: &Bound<'py, PyAny>,
+        account: &Bound<'py, PyAny>,
+        contains_kw: &Bound<'py, PyDict>,
+    ) -> PyResult<Option<Bound<'py, PyAny>>> {
+        if !account.is_exact_instance_of::<pyo3::types::PyString>() {
+            return Ok(None);
+        }
+        let re = py.import("re")?;
+        for flags in [0, re.getattr("IGNORECASE")?.extract::<i64>()?] {
+            match re.call_method1("compile", (account, flags)) {
+                Ok(p) if p.getattr("groups")?.extract::<i64>()? == 0 => {}
+                _ => return Ok(None),
+            }
+        }
+        let np = py.import("numpy")?;
+        let object = np.call_method1("dtype", ("O",))?;
+        if !note.getattr("dtype")?.eq(&object)? {
+            return Ok(None);
+        }
+        let inferred = py.import("pandas.api.types")?.call_method(
+            "infer_dtype",
+            (note,),
+            Some(&kwargs(py, &[("skipna", &pybool(py, true))])?),
+        )?;
+        if !matches!(inferred.extract::<&str>()?, "string" | "empty") {
+            return Ok(None);
+        }
+        let transfer = self._transfer_rows(py)?;
+        if !transfer
+            .getattr("dtype")?
+            .eq(np.call_method1("dtype", ("bool",))?)?
+        {
+            return Ok(None);
+        }
+        let positions = np.call_method1("flatnonzero", (transfer.call_method0("to_numpy")?,))?;
+        let named = note
+            .getattr("iloc")?
+            .get_item(&positions)?
+            .getattr("str")?
+            .call_method("contains", (account,), Some(contains_kw))?;
+        let hits = np.call_method1("zeros", (df.len()?, builtin(py, "bool")?))?;
+        hits.set_item(&positions, named.call_method0("to_numpy")?)?;
+        let series = py.import("pandas")?.getattr("Series")?;
+        Ok(Some(series.call(
+            (hits,),
+            Some(&kwargs(py, &[("index", &df.getattr("index")?)])?),
+        )?))
     }
 
     fn _transfer_rows<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
