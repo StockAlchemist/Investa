@@ -1,6 +1,6 @@
 # Rust Calculation Core: Port Plan and Status
 
-**Status:** Phases 1–5 done (the Numba kernels; IRR/NPV and risk metrics; the intrinsic-value models; the Buffett ranking; projections and the reader-facing records). Phase 6 to do.
+**Status:** Phases 1–18 done (calculations, storage and import in Rust; all SQL through `rusqlite`; pandas overhead cut). The merge to `main` waits on the user. See "Benchmark after Phase 17" for the port against the Python app.
 **Branch:** `feat/rust-core`. One long-lived branch, merged to `main` when the whole port is verified.
 **Started:** 24 Oct 2026
 **Scope:** every calculation module in `src/` moves into one Rust crate, `rust/investa_core`. Python calls it through PyO3. These stay Python:
@@ -1016,6 +1016,56 @@ Checks:
   - 803 write calls on twin copies of a real book, re-staging 400 of its real transactions, then approving, rejecting and snapshotting, with the same final state.
 
 With 17b, Python no longer issues SQL of its own anywhere in the app.
+
+## Benchmark after Phase 17 (27 Oct 2026): the port against the Python app
+
+The whole port at Phase 17b (`fb055082`) against the Python app it replaced: `main` at the branch's merge base (`bd2f0509`), 57 commits earlier.
+
+Method:
+- Each side ran from its own checkout on its own APFS copy-on-write clone of `data/`, so neither saw the other's cache writes.
+- Market data was recorded once to a shared tape and replayed to both, so the network is not timed and both compute on the same inputs.
+- Each workload ran once to warm up, then three times, and the median is taken. Two rounds were interleaved (Python, Rust, Python, Rust); the table shows each side's better round.
+- The machine was otherwise idle. Even so, the one-minute load average at the start of the four runs was 5–7, and 24 for one. A first run, made while the machine was busy, is not used.
+
+Workloads are the app's own entry points on the three real books: `calculate_portfolio_summary` (THB, closed positions shown), `calculate_historical_performance` with the daily cache off, and `calculate_all_risk_metrics`. The valuation set is 150 companies from the fundamentals cache and 200 EDGAR filers (38 with quarterly facts). The price read covers 1,000 archived symbols over their full history. The Buffett ranking covers the whole US universe, without persisting or fetching market data.
+
+| Workload | Python | Rust | Speed-up |
+|---|---|---|---|
+| Summary: kitmatan | 1.945 s | 0.243 s | 8.0× |
+| Summary: dheematan | 1.889 s | 0.251 s | 7.5× |
+| Summary: atchamatan | 0.732 s | 0.124 s | 5.9× |
+| History, all time, daily, USD: kitmatan | 1.353 s | 0.571 s | 2.4× |
+| History, all time, daily, USD: dheematan | 1.434 s | 0.540 s | 2.7× |
+| History, all time, daily, USD: atchamatan | 0.812 s | 0.322 s | 2.5× |
+| History, one year, weekly, THB: kitmatan | 1.247 s | 0.471 s | 2.6× |
+| History, one year, weekly, THB: dheematan | 1.351 s | 0.450 s | 3.0× |
+| History, one year, weekly, THB: atchamatan | 0.868 s | 0.275 s | 3.2× |
+| Risk metrics (kitmatan, dheematan, atchamatan) | 1.70, 1.74, 1.98 ms | 1.15, 1.12, 1.14 ms | 1.5–1.7× |
+| Ratio history, 150 companies | 0.704 s | 0.340 s | 2.1× |
+| Intrinsic value (12 models + Monte Carlo), 150 companies | 1.617 s | 1.115 s | 1.4× |
+| EDGAR statements, 200 filers | 2.156 s | 0.964 s | 2.2× |
+| EDGAR quarterly statements, 38 filers | 1.632 s | 0.721 s | 2.3× |
+| Price archive read, 1,000 symbols | 6.939 s | 1.358 s | 5.1× |
+| Buffett ranking, whole universe (one run per round) | 71.7 s | 30.8 s | 2.3× |
+
+Start-up, in a fresh process, from the first import to the first answered summary and daily history for kitmatan:
+
+| Start | Python | Rust |
+|---|---|---|
+| Restart, Numba cache warm | 5.24 s, 5.08 s | 1.90 s, 1.90 s |
+| Fresh deploy, Numba cache empty | 8.64 s, 8.46 s | 1.92 s, 2.60 s |
+
+- The Python side's start-up is import 1.1 s, first summary 2.5 s and first history 1.4 s with a warm cache. With an empty Numba cache (the `*.nbi`/`*.nbc` files deleted, as on a fresh deploy or after an edit), summary and history each take 3.7 s, most of it JIT compilation.
+- The Rust side has no JIT. Either way it takes import 0.7–0.8 s, summary 0.6–0.9 s and history 0.6–0.9 s.
+- A first pair of start-up runs, made while the disk cache was still cold (11.0 s against 6.5 s), is left out.
+
+What it means:
+- The summary gains most because its per-row Python loops and frame work (FIFO, holdings, the per-account rows) are now Rust.
+- The histories still spent about half their time in pandas. Phase 18 went after that: by its end, kitmatan's daily history ran in about 0.39 s and its summary in about 0.19 s (see 18c; a different harness, so not directly comparable).
+- The valuation models gain least. Their Monte Carlo draws stay NumPy calls, by design, so that every draw matches.
+- Unchanged by the port: the network, Gemini and PDF parsing, none of which these timings include.
+
+The harness (`bench_harness.py` for the workloads, `bench_cold.py` for start-up, `bench_run.sh` for the interleaving) was a one-off and is not committed. `scripts/benchmark_rust_core.py` times the same entry points on the live data.
 
 ## Phase 18a (27 Oct 2026): pandas calls whose answer is known without pandas
 
