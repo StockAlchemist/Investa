@@ -12,7 +12,6 @@ import math
 import os
 import struct
 import sys
-from datetime import date
 
 import numpy as np
 import pandas as pd

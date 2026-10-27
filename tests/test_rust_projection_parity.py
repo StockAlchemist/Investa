@@ -1,14 +1,13 @@
 """Projections (rust/investa_core/src/projection.rs) against the original.
 
 compute_projection, the walk-forward backtest, its summary and the end-to-end
-backtest_projection must match tests/reference/projections.py bitwise, on
+backtest_projection must match tests/reference/projections.py bitwise (on Apple
+silicon; see tests/float_parity.py for other CPUs), on
 random wealth series: calendar-daily, business-daily and weekly dates, a plain
 integer index, gaps, crashes past the clip, and partial benchmarks.
 """
 
-import math
 import os
-import struct
 import sys
 
 import numpy as np
@@ -19,6 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 import projections as new  # noqa: E402
+from float_parity import floats_match, mismatch  # noqa: E402
 from reference import projections as ref  # noqa: E402
 
 
@@ -40,9 +40,7 @@ def _same(a, b, path="result"):
         for i, (x, y) in enumerate(zip(a, b)):
             _same(x, y, f"{path}[{i}]")
     elif isinstance(a, float):
-        assert (math.isnan(a) and math.isnan(b)) or struct.pack("<d", a) == struct.pack(
-            "<d", b
-        ), f"{path}: {a!r} vs {b!r}"
+        assert floats_match(a, b), mismatch(path, a, b)
     else:
         assert a == b, f"{path}: {a!r} vs {b!r}"
 

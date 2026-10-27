@@ -18,7 +18,6 @@ SEC fetch and a synthetic bulk archive. Results, logs and stores agree.
 import calendar
 import copy
 import datetime as dt
-import io
 import json
 import os
 import sys

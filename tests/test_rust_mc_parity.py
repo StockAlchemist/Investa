@@ -1,14 +1,14 @@
 """Monte Carlo valuation models (Rust per-sample arithmetic) against the originals.
 
 Both sides draw from NumPy's legacy global generator, seeded identically, so
-the results must be bitwise equal — and the generator must end in the same
+the results must be bitwise equal (on Apple silicon; see tests/float_parity.py
+for other CPUs) — and the generator must end in the same
 state, which proves each shim consumes exactly the draws the original did (the
 models share one seeded stream per valuation, so a shim that drew one sample
 more or less would shift every model after it).
 """
 
 import os
-import struct
 import sys
 
 import numpy as np
@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 import financial_ratios as new  # noqa: E402
+from float_parity import floats_match, mismatch  # noqa: E402
 from reference import monte_carlo as ref  # noqa: E402
 
 
@@ -34,9 +35,7 @@ def _same(a, b, path="result"):
         for i, (x, y) in enumerate(zip(a, b)):
             _same(x, y, f"{path}[{i}]")
     elif isinstance(a, float):
-        assert (np.isnan(a) and np.isnan(b)) or struct.pack("<d", a) == struct.pack(
-            "<d", b
-        ), f"{path}: {a!r} vs {b!r}"
+        assert floats_match(a, b), mismatch(path, a, b)
     else:
         assert a == b, f"{path}: {a!r} vs {b!r}"
 

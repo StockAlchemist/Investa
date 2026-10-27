@@ -85,6 +85,10 @@ def _inputs():
     out += [pd.Series(list(pd.date_range("2024-01-01", periods=80, tz="UTC")), dtype=object)]
     out += [pd.date_range("2024-01-01", periods=80, tz="UTC").array, pd.Timestamp("2024-01-01", tz="Asia/Bangkok")]
     out += [list(pd.date_range("2024-01-01", periods=80)), "2024-05-06", None, pd.Series([1.5e18, 1.6e18] * 40)]
+    try:
+        import pyarrow  # noqa: F401 -- optional; CI does not install it
+    except ImportError:
+        return out
     out += [pd.Series(pd.date_range("2024-01-01", periods=80), dtype="timestamp[ns][pyarrow]")]
     return out
 

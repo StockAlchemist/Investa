@@ -32,7 +32,7 @@ import portfolio_history as new  # noqa: E402
 from reference import portfolio_history as ref  # noqa: E402
 from test_rust_history_daily_parity import _inputs  # noqa: E402
 from test_rust_history_helpers_parity import FakeFunds  # noqa: E402
-from test_rust_market_db_parity import call, canon  # noqa: E402
+from test_rust_market_db_parity import call  # noqa: E402
 
 TODAY = date(2024, 6, 17)
 TIMING = ("Calc Time", "Pool finished in", "1D Graph Clip")

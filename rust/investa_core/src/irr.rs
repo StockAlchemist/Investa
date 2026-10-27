@@ -126,17 +126,17 @@ pub fn newton_secant(
         std::mem::swap(&mut q0, &mut q1);
     }
     for _ in 0..maxiter {
-        let p;
         if q1 == q0 {
             if p1 != p0 {
                 return None; // "Tolerance of ... reached", raised under disp=True
             }
             return Some((p1 + p0) / 2.0);
-        } else if q1.abs() > q0.abs() {
-            p = (-q0 / q1 * p1 + p0) / (1.0 - q0 / q1);
-        } else {
-            p = (-q1 / q0 * p0 + p1) / (1.0 - q1 / q0);
         }
+        let p = if q1.abs() > q0.abs() {
+            (-q0 / q1 * p1 + p0) / (1.0 - q0 / q1)
+        } else {
+            (-q1 / q0 * p0 + p1) / (1.0 - q1 / q0)
+        };
         if np_isclose(p, p1, rtol, tol) {
             return Some(p);
         }
