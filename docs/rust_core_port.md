@@ -58,7 +58,7 @@ The crate builds in four places:
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
 | 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; (d) symbol mapping and formatting **done** | Done |
 | 17 | SQL in Rust: (a) the database layer on `rusqlite`, linked to the system SQLite Python uses **done**; (b) the routes', services' and AI workers' SQL **done** | Done |
-| 18 | Pandas overhead inside the port: (a) calls whose answer is known without pandas **done**; (b) column reads in place of `iterrows`; (c) one date grid for every symbol | (a) done |
+| 18 | Pandas overhead inside the port: (a) calls whose answer is known without pandas **done**; (b) row views in place of `iterrows` **done**; (c) one date grid for every symbol | (a), (b) done |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -1053,6 +1053,29 @@ Interleaved medians of 7, best of two rounds, same Python and only the extension
 | kitmatan | 243 → 201 ms (−18%) | 591 → 446 ms (−25%) | 463 → 345 ms (−26%) |
 | dheematan | 238 → 206 ms (−13%) | 564 → 519 ms (−8%) | 448 → 420 ms (−6%) |
 | atchamatan | 124 → 115 ms (−7%) | 321 → 314 ms (−2%) | 279 → 248 ms (−11%) |
+
+## Phase 18b (27 Oct 2026): row views in place of `iterrows`
+
+After 18a, the one `iterrows` that still cost real time was dividend history: 21 ms per summary for kitmatan's 569 dividend rows and 44 ms for dheematan's. History's `iterrows` costs 1–4 ms. FIFO never used `iterrows`: Phase 6 already reads its columns whole, and what it still pays is per-value `pd.isna` and string calls.
+
+`iterrows` yields `(label, Series(df.values[i], index=df.columns))`, and the ported loops read a row only with `row[col]` and `row.get(col, default)`. On that Series, both return the `df.values` cell at the column's position. `pyhelp::iterrows` therefore yields a `RowView` over the same `df.values` cells and skips building a Series. It does so only where the lookups cannot differ:
+- the frame is an exact `DataFrame`;
+- its columns are a plain, unique `Index`;
+- its values are an object array.
+
+Any other frame gets the real `iterrows`. A key that is not text goes to the Series `iterrows` would have built, so pandas' positional fallback and its warning still apply.
+
+It is used by the dividend and tax loops of `extract_dividend_history`, the day's transactions in the summary rows, and the split loop in the daily results.
+
+Checks:
+- **Row parity** (`tests/test_rust_iterrows_parity.py`): 49 frames, each row's answer to `[key]` and `.get(key[, default])` compared with `iterrows`. That covers every column, a missing one and integer keys: value type, repr and NaN-ness, defaults, exceptions and warnings, and the labels.
+  - The frames carry every ledger dtype: float, int, nullable Int64 with NA, naive and zone-aware datetimes, bool, text with None and NaN, category and string.
+  - They use date, text, offset and reversed indexes.
+  - Frames that must fall back: homogeneous numeric or datetime values, duplicate or MultiIndex columns, a subclass, an empty frame and non-text labels.
+- **Existing parity and full suite:** both pass, with the same 2,411 warnings.
+- **Real data:** the 18a build against this one on fresh data clones with one replayed tape. All histories and summaries are identical except dheematan's summary, which also varies between fresh processes under one build (see 18a).
+
+On kitmatan's 569 dividend rows, reading the rows takes 0.6 ms instead of 9.7 ms, and `extract_dividend_history` 10.2 ms instead of 21.8 ms. End to end (best of four interleaved rounds, under a load average of 10–25), the summary is 6% faster for kitmatan (200 → 188 ms), 15% for dheematan (201 → 171 ms) and 14% for atchamatan (113 → 98 ms). The histories are unchanged within 1%.
 
 ## Found while porting
 

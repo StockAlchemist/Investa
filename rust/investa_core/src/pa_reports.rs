@@ -434,7 +434,7 @@ pub fn pa_dividend_history<'py>(
         pd.call_method("to_numeric", (x,), Some(&coerce))
     };
     let abs = py.import("builtins")?.getattr("abs")?;
-    for pair in taxes.call_method0("iterrows")?.try_iter()? {
+    for pair in crate::pyhelp::iterrows(&taxes)?.try_iter()? {
         let tx = pair?.get_item(1)?;
         let added = (|| -> PyResult<()> {
             let d = tx.get_item("Date")?.call_method0("date")?;
@@ -457,7 +457,7 @@ pub fn pa_dividend_history<'py>(
     }
     let results = PyList::empty(py);
     let bridge = pa(py)?.getattr("get_historical_rate_via_usd_bridge")?;
-    for (i, pair) in dividends.call_method0("iterrows")?.try_iter()?.enumerate() {
+    for (i, pair) in crate::pyhelp::iterrows(&dividends)?.try_iter()?.enumerate() {
         let row = pair?.get_item(1)?;
         let processed = (|| -> PyResult<()> {
             let tx_date = row.get_item("Date")?.call_method0("date")?;

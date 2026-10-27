@@ -1325,7 +1325,7 @@ impl<'py> Daily<'_, 'py> {
                 (),
                 Some(&self.kw(&[("by", &pystr(py, "Date")), ("ascending", &fals(py))])?),
             )?;
-            for row in newest_first.call_method0("iterrows")?.try_iter()? {
+            for row in crate::pyhelp::iterrows(&newest_first)?.try_iter()? {
                 let row = unpack(&row?, 2)?.remove(1);
                 let s_date = crate::pyhelp::to_datetime(pd, &row.get_item("Date")?, Some(&utc))?;
                 let mut ratio = pd.call_method(

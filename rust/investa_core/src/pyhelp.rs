@@ -253,3 +253,120 @@ pub fn to_datetime_py<'py>(
 pub fn numeric_passthrough(v: &Bound<'_, PyAny>) -> bool {
     v.is_instance_of::<pyo3::types::PyFloat>() || v.is_instance_of::<pyo3::types::PyInt>()
 }
+
+/// `df.iterrows()`, without building a Series per row.
+///
+/// `iterrows` yields `(label, Series(df.values[i], index=df.columns))`. The
+/// ported loops only ever read a row with `row[col]` and `row.get(col,
+/// default)`, which on that Series return the very `df.values` cell at the
+/// column's position. So where those lookups cannot differ (an exact
+/// `DataFrame` whose columns are a plain, unique `Index` and whose `values`
+/// are an object array), the rows come back as [`RowView`]s over the same
+/// cells. Any other frame gets the real `iterrows`.
+pub fn iterrows<'py>(df: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let py = df.py();
+    let pd = py.import("pandas")?;
+    let columns = df.getattr("columns")?;
+    let plain = df.get_type().is(&pd.getattr("DataFrame")?)
+        && columns.get_type().is(&pd.getattr("Index")?)
+        && columns.getattr("is_unique")?.is_truthy()?;
+    if !plain {
+        return df.call_method0("iterrows");
+    }
+    let values = df.getattr("values")?;
+    let object = py.import("numpy")?.call_method1("dtype", ("O",))?;
+    if !values.getattr("dtype")?.eq(&object)? {
+        return df.call_method0("iterrows");
+    }
+    let at = PyDict::new(py);
+    for (j, label) in columns.try_iter()?.enumerate() {
+        at.set_item(label?, j)?;
+    }
+    let at = at.unbind();
+    let frame = df.clone().unbind();
+    let cells = values.call_method0("tolist")?;
+    let out = pyo3::types::PyList::empty(py);
+    for (i, (label, row)) in df
+        .getattr("index")?
+        .try_iter()?
+        .zip(cells.try_iter()?)
+        .enumerate()
+    {
+        let label = label?;
+        let view = RowView {
+            cells: row?.cast_into::<pyo3::types::PyList>()?.unbind(),
+            at: at.clone_ref(py),
+            frame: frame.clone_ref(py),
+            position: i,
+            label: label.clone().unbind(),
+        };
+        out.append((label, Bound::new(py, view)?))?;
+    }
+    Ok(out.into_any())
+}
+
+/// One row of [`iterrows`]: `row[col]` and `row.get(col, default)` read the
+/// cell directly; a key that is not text goes to the Series `iterrows` would
+/// have yielded.
+#[pyclass(frozen)]
+pub struct RowView {
+    cells: Py<pyo3::types::PyList>,
+    at: Py<PyDict>,
+    frame: Py<PyAny>,
+    position: usize,
+    label: Py<PyAny>,
+}
+
+impl RowView {
+    /// `df._constructor_sliced(df.values[i], index=df.columns, name=label).__finalize__(df)`
+    fn series<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let df = self.frame.bind(py);
+        let kw = PyDict::new(py);
+        kw.set_item("index", df.getattr("columns")?)?;
+        kw.set_item("name", self.label.bind(py))?;
+        df.getattr("_constructor_sliced")?
+            .call((df.getattr("values")?.get_item(self.position)?,), Some(&kw))?
+            .call_method1("__finalize__", (df,))
+    }
+}
+
+#[pymethods]
+impl RowView {
+    fn __getitem__<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if !key.is_exact_instance_of::<PyString>() {
+            return self.series(py)?.get_item(key);
+        }
+        match self.at.bind(py).get_item(key)? {
+            Some(j) => self.cells.bind(py).get_item(j.extract()?),
+            None => Err(pyo3::exceptions::PyKeyError::new_err(key.clone().unbind())),
+        }
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn get<'py>(
+        &self,
+        py: Python<'py>,
+        key: &Bound<'py, PyAny>,
+        default: Option<Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let default = default.unwrap_or_else(|| py.None().into_bound(py));
+        if !key.is_exact_instance_of::<PyString>() {
+            return self.series(py)?.call_method1("get", (key, default));
+        }
+        match self.at.bind(py).get_item(key)? {
+            Some(j) => self.cells.bind(py).get_item(j.extract()?),
+            None => Ok(default),
+        }
+    }
+}
+
+/// `investa_core.iterrows(df)`: [`iterrows`] for Python, so the tests can
+/// hold it against `DataFrame.iterrows` directly.
+#[pyfunction(name = "iterrows")]
+pub fn iterrows_py<'py>(df: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    iterrows(df)
+}

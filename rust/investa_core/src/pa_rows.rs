@@ -654,7 +654,7 @@ fn stock_row<'py>(
                 today.get_item(sym.bitand(acc)?)?
             };
             if !tx_today.getattr("empty")?.is_truthy()? {
-                for item in tx_today.call_method0("iterrows")?.try_iter()? {
+                for item in crate::pyhelp::iterrows(&tx_today)?.try_iter()? {
                     let (_, tx) = unpack2(&item?)?;
                     let t_type = o
                         .str_t
