@@ -57,7 +57,7 @@ The crate builds in four places:
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
 | 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; (d) symbol mapping and formatting **done** | Done |
-| 17 | SQL in Rust: (a) the database layer on `rusqlite`, linked to the system SQLite Python uses **done**; then the routes' and AI workers' SQL | In progress |
+| 17 | SQL in Rust: (a) the database layer on `rusqlite`, linked to the system SQLite Python uses **done**; (b) the routes', services' and AI workers' SQL **done** | Done |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -990,7 +990,37 @@ Checks:
   - The Rust path now answers every case itself, except empty and comment-only statements, which still go to Python as before.
 - **Real data:** the Rust price reader and the pandas path agree on the full daily history of all 5,670 archive symbols, in 114 batches. The Rust reader took 134 s against 163.7 s for pandas.
 
+## Phase 17b (27 Oct 2026): the routes', services' and AI workers' SQL
+
+The last SQL written in Python now lives in Rust. It covers 25 functions across 12 callers:
+- the account lifecycle and user lookups;
+- holding tags, and the IBKR pending queue (staging, list, approve, reject);
+- idempotency receipts and daily snapshots;
+- the settings currency map;
+- the archive's data-quality probe and sync stamps;
+- the heatmap's EDGAR facts;
+- narrative search and the AI-review reads.
+
+It was done in three verifiable steps:
+1. **Pin the behaviour** (`tests/test_route_sql_behaviour.py`, commit `0f5cc912`). Most of these routes had no test. The flows now run end to end on temporary databases, with Gemini mocked so no request leaves the machine.
+2. **Extract** (commit `9630b20c`). Each statement or fixed group moved unchanged into `src/sql_store.py`. Connections, `commit`/`rollback`/`with conn:`, retries and HTTP errors stayed with the callers, and the behaviour tests and the full suite passed unchanged. The one reordering: the snapshot rows are now built just before the delete-and-insert, inside the same transaction, so only their `created_at` stamps move, by microseconds.
+3. **Port** (`ss.rs`, oracle `tests/reference/sql_store_p17.py`). Every statement runs through `PyConn`, so it behaves exactly as the connection's own `execute`: the same errors, the implicit `BEGIN`, and Python's path for connections Rust must not touch. The frames come from `read_frame`.
+   - Each function opens its `PyConn` where the original first touched the connection, so a closed or foreign-thread connection fails at the same point.
+   - The fuzz caught one difference. When the screener SELECT fails, the original has already left `sqlite3.Row` on the connection, so the port sets it whatever the outcome.
+
+Checks:
+- **Parity:** twin databases take 160 random store calls under each of four isolation levels, with four seeds, one of them without the receipts table. After every call they agree on the result or exception (class, message, SQLite code and name), the transaction state, `total_changes`, `row_factory` and every table. Every function reaches its success path, and the failing ones their failures: UNIQUE violations, a second `BEGIN IMMEDIATE`, a missing table, short snapshot rows, bad SQL, a `None` type.
+- **Real data:** all identical:
+  - 449 read calls on the live databases: users, all books, the archive, EDGAR, the screener;
+  - 803 write calls on twin copies of a real book, re-staging 400 of its real transactions, then approving, rejecting and snapshotting, with the same final state.
+
+With 17b, Python no longer issues SQL of its own anywhere in the app.
+
 ## Found while porting
+
+- **IBKR staging's amount fallback reads the unstripped type** (not changed). When a synced row has no total, `stage_pending_transaction` computes `qty x price ± commission` and adds the commission only if `Type.upper() == "BUY"`. It tests the raw type, though, while the stored type is stripped and title-cased. So a type with stray spaces (`" buy "`) is stored as `Buy`, but its commission is subtracted: 2 x 10 − 1 = 19 instead of 21. Pinned in `test_route_sql_behaviour.py`.
+- **The IBKR pending list fails when any pending row lacks a number** (not changed). `GET /sync/ibkr/pending` builds a frame, so a NULL quantity, price, commission, split ratio or total becomes NaN, and the JSON response refuses NaN. The request fails with a 500. Fee and cash rows have no quantity, so in practice the list breaks as soon as one of them is staged. Pinned in the same test. Fixing it needs NaN mapped to `null` (the routes' `clean_nans`).
+- **A failed IBKR sync leaves its write transaction open** (not changed). When staging raises, for example on a row with no `Local Currency`, the sync route neither rolls back nor closes its connection. The failed `INSERT`'s transaction then holds the write lock until the connection is garbage-collected, and other writers wait. Normally that is when the request's frame is freed, but anything that keeps the traceback, such as a log handler, keeps the lock. Pinned in the same test.
 
 - **Fetched share counts are stamped with the server's date** (not changed). `buffett_pipeline.fetch_market_data` passes `date.today()` to `upsert_share_counts`, the same server-clock reading `market_db.get_share_counts` ages them by. Both are a day ahead of the US market on the Bangkok host.
 - **The ranking's age is counted on the server's clock** (not changed). `strategies.ranking_age_days` defaults `today` to `date.today()`, while the same allocation's `as_of` uses the market clock. On the Bangkok host a run finished late on a US day can read a day older than it is.

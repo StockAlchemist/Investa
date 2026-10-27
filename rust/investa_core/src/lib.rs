@@ -57,6 +57,7 @@ pub mod records;
 pub mod rm;
 pub mod sql;
 pub mod sqlite_read;
+pub mod ss;
 pub mod st;
 pub mod stats;
 pub mod tr;
@@ -614,5 +615,30 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fu_fmt::fu_format_large_number_display, m)?)?;
     m.add_function(wrap_pyfunction!(fu_fmt::fu_format_integer_with_commas, m)?)?;
     m.add_function(wrap_pyfunction!(fu_fmt::fu_format_float_with_commas, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_find_user_id, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_insert_user, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_user_credentials, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_user_record, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_set_user_alias, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_delete_user, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_user_password_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_set_user_password, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_set_holding_tags, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_stage_pending_transaction, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_pending_transaction_records, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_approve_pending_transactions, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_reject_pending_transactions, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_begin_immediate, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_find_receipt, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_insert_receipt, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_replace_portfolio_snapshots, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_symbol_currency_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_data_quality_table_present, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_touch_sync_metadata, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_facts_for, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_screener_rows, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_cached_ai_review, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_symbols_missing_ai_review, m)?)?;
+    m.add_function(wrap_pyfunction!(ss::ss_ai_review_frame, m)?)?;
     Ok(())
 }
