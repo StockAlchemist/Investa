@@ -37,6 +37,7 @@ except ImportError:
 
 # --- END ADDED ---
 import config
+import sql_store
 
 # --- Finance API Import ---
 # Lazy load yfinance to improve startup time
@@ -4921,15 +4922,7 @@ class MarketDataProvider:
         # reset a converted symbol's price_basis back to the legacy basis on the
         # next sync. Touch only last_synced.
         with self.db._get_connection() as conn:
-            for sym in symbols:
-                conn.execute(
-                    """
-                    INSERT INTO sync_metadata (symbol, last_synced)
-                    VALUES (?, ?)
-                    ON CONFLICT(symbol) DO UPDATE SET last_synced = excluded.last_synced
-                """,
-                    (sym, now.isoformat()),
-                )
+            sql_store.touch_sync_metadata(conn, symbols, now.isoformat())
             conn.commit()
 
     def get_historical_data(

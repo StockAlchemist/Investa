@@ -62,19 +62,15 @@ def load_ai_reviews(symbols: Optional[Iterable[str]] = None) -> pd.DataFrame:
     empty frame rather than raising when the screener cache is unavailable —
     the ranking must still be served without it.
     """
+    import sql_store
     from db_utils import get_db_connection, get_global_screener_db_path
 
-    columns = ", ".join(AI_DIMENSIONS)
-    query = (
-        f"SELECT symbol, {columns}, updated_at FROM screener_cache "
-        "WHERE " + " OR ".join(f"{c} > 0" for c in AI_DIMENSIONS)
-    )
     try:
         conn = get_db_connection(get_global_screener_db_path(), use_cache=False)
         if conn is None:
             return pd.DataFrame(columns=[*AI_DIMENSIONS, "ai_reviewed_at"])
         try:
-            frame = pd.read_sql_query(query, conn)
+            frame = sql_store.ai_review_frame(conn, AI_DIMENSIONS)
         finally:
             conn.close()
     except Exception as exc:

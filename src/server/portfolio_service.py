@@ -24,6 +24,7 @@ from starlette.concurrency import run_in_threadpool
 import config
 from config import BENCHMARK_MAPPING, YFINANCE_INDEX_TICKER_MAP
 from db_utils import get_db_connection
+import sql_store
 from portfolio_logic import (
     CURRENT_HIST_VERSION,
     calculate_historical_performance,
@@ -267,18 +268,9 @@ def trigger_background_precalculation(current_user: User):
             try:
                 # Use connection as context manager so any failure rolls back atomically.
                 with conn:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "DELETE FROM portfolio_snapshots WHERE snapshot_date=?",
-                        (today.isoformat(),),
-                    )
-
+                    rows = []
                     if overall_metrics:
-                        cursor.execute(
-                            """
-                            INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+                        rows.append(
                             (
                                 today.isoformat(),
                                 "ALL",
@@ -289,16 +281,11 @@ def trigger_background_precalculation(current_user: User):
                                 sf(overall_twr),
                                 sf(overall_metrics.get("portfolio_mwr")),
                                 datetime.now().isoformat(),
-                            ),
+                            )
                         )
-
                     if account_metrics:
                         for acc, acc_data in account_metrics.items():
-                            cursor.execute(
-                                """
-                                INSERT INTO portfolio_snapshots (snapshot_date, account, total_value, total_cost, total_gain, total_return_pct, twr, irr, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
+                            rows.append(
                                 (
                                     today.isoformat(),
                                     acc,
@@ -309,8 +296,9 @@ def trigger_background_precalculation(current_user: User):
                                     sf(acc_data.get("twr", 0.0)),
                                     sf(acc_data.get("mwr")),
                                     datetime.now().isoformat(),
-                                ),
+                                )
                             )
+                    sql_store.replace_portfolio_snapshots(conn, today.isoformat(), rows)
             finally:
                 conn.close()
             logging.info(
@@ -369,10 +357,7 @@ async def warm_summary_caches(max_users: int = 2) -> None:
             if not conn:
                 return
             try:
-                row = conn.execute(
-                    "SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?",
-                    (username,),
-                ).fetchone()
+                row = sql_store.user_record(conn, username)
             finally:
                 conn.close()
             if not row or not row[2]:
@@ -724,7 +709,9 @@ async def _compute_raw_summary(
 
     try:
         return await _RAW_CALC_CACHE.get_or_compute(
-            raw_key, cache_ttl_seconds, compute,
+            raw_key,
+            cache_ttl_seconds,
+            compute,
             wait_timeout=None if wait_for_completion else _RAW_SUMMARY_WAIT_SECONDS,
         )
     except ComputationPending:

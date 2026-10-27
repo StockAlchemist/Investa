@@ -13,7 +13,6 @@ import os
 import sqlite3
 import sys
 
-import pandas as pd
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

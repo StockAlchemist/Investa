@@ -8,6 +8,7 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 from ai_review_worker import process_ticker_list, _open_screener_conn  # noqa: E402
+import sql_store  # noqa: E402
 from market_data import get_shared_mdp  # noqa: E402
 
 
@@ -23,16 +24,7 @@ def get_missing_reviews():
     if not conn:
         return {}
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT symbol, universe FROM screener_cache
-            WHERE ai_summary IS NULL
-               OR length(trim(ai_summary)) <= 20
-               OR lower(ai_summary) LIKE '%error%'
-            """
-        )
-        rows = cursor.fetchall()
+        rows = sql_store.symbols_missing_ai_review(conn)
         missing = {}
         for symbol, universe in rows:
             missing.setdefault(universe or "manual", []).append(symbol)

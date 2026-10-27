@@ -11,6 +11,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from server.auth import User, decode_access_token
 from db_utils import get_db_connection
+import sql_store
 from data_loader import load_and_clean_transactions
 
 # Ensure src is in path for imports
@@ -62,15 +63,10 @@ def get_current_user(
 
     # Connect to GLOBAL DB for Auth - Now uses the 'conn' dependency which handles lifecycle and retries
     try:
-        cursor = conn.cursor()
         # Transient retry for cloud drives
         for i in range(3):
             try:
-                cursor.execute(
-                    "SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?",
-                    (token_data.username,),
-                )
-                row = cursor.fetchone()
+                row = sql_store.user_record(conn, token_data.username)
                 break
             except sqlite3.OperationalError as e:
                 if "disk i/o error" in str(e).lower() and i < 2:
@@ -115,12 +111,7 @@ def get_current_user_optional(
         return None
 
     try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, username, is_active, created_at, alias FROM users WHERE username = ?",
-            (token_data.username,),
-        )
-        row = cursor.fetchone()
+        row = sql_store.user_record(conn, token_data.username)
         if row is None:
             return None
         user = User(
