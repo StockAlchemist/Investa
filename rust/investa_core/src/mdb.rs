@@ -1375,9 +1375,15 @@ pub fn mdb_read_daily_frames<'py>(
         Ok(crate::sqlite_read::Outcome::Batch(b)) => b,
     };
     let pd = py.import("pandas")?;
-    let stamps = Array1::from_vec(batch.dates_ns)
+    // Midnight stamps, so the cast to pandas' own unit for parsed dates
+    // (`pd.to_datetime` on the stored strings, which this read replaces) is exact.
+    let mut stamps = Array1::from_vec(batch.dates_ns)
         .into_pyarray(py)
         .call_method1("view", ("M8[ns]",))?;
+    let unit = crate::pyhelp::parsed_date_unit(py)?;
+    if unit != "ns" {
+        stamps = stamps.call_method1("astype", (format!("M8[{unit}]"),))?;
+    }
     let columns: Vec<Bound<'py, PyAny>> = batch
         .columns
         .into_iter()

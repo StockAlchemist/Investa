@@ -697,20 +697,44 @@ pub fn read_frame<'py>(
     let mut rows = match pc.execute(sql, params.unwrap_or(&empty)) {
         Ok(rows) => rows,
         Err(exc) => {
+            // pandas 2 wraps any exception; pandas 3 only sqlite3.Error (the
+            // rest propagate as they are, with no rollback), and it adds a
+            // hint when the query is a bare identifier.
+            let pandas3 = crate::pyhelp::pandas_major(&pd)? >= 3;
+            let sqlite_error = py.import("sqlite3")?.getattr("Error")?;
+            if pandas3 && !exc.value(py).is_instance(&sqlite_error)? {
+                return Err(exc);
+            }
             let database_error = pd.getattr("errors")?.getattr("DatabaseError")?;
             let exc_text = exc.value(py).str()?.to_string();
             let sql_text = sql.str()?.to_string();
             if let Err(inner) = pc.rollback() {
+                if pandas3 && !inner.value(py).is_instance(&sqlite_error)? {
+                    return Err(inner);
+                }
                 let ex = PyErr::from_value(database_error.call1((format!(
                     "Execution failed on sql: {sql_text}\n{exc_text}\nunable to rollback"
                 ),))?);
                 ex.set_cause(py, Some(inner));
                 return Err(ex);
             }
-            let ex = PyErr::from_value(
-                database_error
-                    .call1((format!("Execution failed on sql '{sql_text}': {exc_text}"),))?,
-            );
+            let bare_identifier = pandas3
+                && py
+                    .import("re")?
+                    .call_method1("fullmatch", (r"[A-Za-z_]\w*", sql.call_method0("strip")?))?
+                    .is_truthy()?;
+            let message = if bare_identifier {
+                let table = sql.call_method0("strip")?.str()?.to_string();
+                format!(
+                    "Execution failed on sql '{sql_text}': {exc_text}\n\n\
+                     Reading a table by name is only supported when using a \
+                     SQLAlchemy connection. With a DBAPI connection, pass a SQL \
+                     query instead, e.g. 'SELECT * FROM {table}'."
+                )
+            } else {
+                format!("Execution failed on sql '{sql_text}': {exc_text}")
+            };
+            let ex = PyErr::from_value(database_error.call1((message,))?);
             ex.set_cause(py, Some(exc));
             return Err(ex);
         }

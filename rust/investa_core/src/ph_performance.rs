@@ -53,12 +53,13 @@ fn one_of(v: &Bound<'_, PyAny>, items: &[&str]) -> PyResult<bool> {
 /// ```
 ///
 /// On a frame of float64 and int64 columns (the price tables carry an int64
-/// Volume) over a unique, increasing, NaT-free UTC nanosecond index that
-/// starts after `full_start_ts`, that is: every column cast to float64, as the
-/// reindex's missing start row casts it, the start stamp prepended (the union takes pandas' generic path, the stamp's own
-/// one-row index having no freq, so the result's freq is inferred), and each
-/// column's missing cells replaced by `np.interp` over the int64 stamps of its
-/// valid ones. That is `interpolate(method="time")` exactly; the leading cells
+/// Volume) over a unique, increasing, NaT-free UTC index (s, ms, us or ns)
+/// that starts after `full_start_ts`, that is: every column cast to float64,
+/// as the reindex's missing start row casts it, the start stamp prepended in
+/// the union's unit, the finer of the two (the union takes pandas' generic
+/// path, the stamp's own one-row index having no freq, so the result's freq is
+/// inferred), and each column's missing cells replaced by `np.interp` over the
+/// int64 stamps of its valid ones, counted in that unit. That is `interpolate(method="time")` exactly; the leading cells
 /// it puts back to NaN are then backfilled with the first valid value, which
 /// is what `np.interp` holds them at, and the trailing ones it already holds at
 /// the last. A column with no valid cell stays empty. The values go in a
@@ -78,7 +79,7 @@ fn stabilized<'py>(
             .getattr("allows_duplicate_labels")?
             .is_truthy()?
         && index.get_type().is(&pd.getattr("DatetimeIndex")?)
-        && index.getattr("dtype")?.str()?.to_str()? == "datetime64[ns, UTC]"
+        && index.getattr("tz")?.str()?.to_str()? == "UTC"
         && index.getattr("is_unique")?.is_truthy()?
         && index.getattr("is_monotonic_increasing")?.is_truthy()?
         && !index.getattr("hasnans")?.is_truthy()?
@@ -100,8 +101,31 @@ fn stabilized<'py>(
     if rows == 0 || ncols == 0 {
         return Ok(None);
     }
-    let start: i64 = full_start_ts.getattr("value")?.extract()?;
-    let stamps = index.getattr("asi8")?;
+    // The union's unit: the finer of the index's and the start stamp's (pandas
+    // casts both to it), in which both convert exactly. The interpolation
+    // runs on integer stamps in this unit, as pandas' does.
+    // The start's side of the union is `pd.Index([full_start_ts])`, whose unit
+    // is pandas' to choose: nanoseconds in pandas 2 whatever the stamp's own,
+    // the stamp's unit in pandas 3.
+    let start_index = pd
+        .getattr("Index")?
+        .call1((PyList::new(py, [full_start_ts])?,))?;
+    let index_unit: String = index.getattr("unit")?.extract()?;
+    let start_unit: String = start_index.getattr("unit")?.extract()?;
+    let (Some(a), Some(b)) = (ticks_per_day(&index_unit), ticks_per_day(&start_unit)) else {
+        return Ok(None);
+    };
+    let (unit, day) = if a >= b {
+        (index_unit, a)
+    } else {
+        (start_unit, b)
+    };
+    let start: i64 = start_index
+        .call_method1("as_unit", (&unit,))?
+        .getattr("asi8")?
+        .get_item(0)?
+        .extract()?;
+    let stamps = index.call_method1("as_unit", (&unit,))?.getattr("asi8")?;
     let first: i64 = stamps.get_item(0)?.extract()?;
     if start >= first {
         return Ok(None);
@@ -114,11 +138,11 @@ fn stabilized<'py>(
         ),),
     )?;
     let mut new_index = pd.getattr("DatetimeIndex")?.call(
-        (x.call_method1("view", ("M8[ns]",))?,),
+        (x.call_method1("view", (format!("M8[{unit}]"),))?,),
         Some(&kwargs(py, &[("tz", &index.getattr("tz")?)])?),
     )?;
     let ints: numpy::PyReadonlyArray1<i64> = x.extract()?;
-    if !surely_no_freq(ints.as_slice()?) {
+    if !surely_no_freq(ints.as_slice()?, day) {
         new_index = new_index.call_method1("_with_freq", ("infer",))?;
     }
 
@@ -160,8 +184,20 @@ fn stabilized<'py>(
     Ok(Some(frame))
 }
 
+/// Ticks in a day for a datetime64 unit; None for a unit the fill leaves to
+/// pandas.
+fn ticks_per_day(unit: &str) -> Option<i64> {
+    match unit {
+        "s" => Some(86_400),
+        "ms" => Some(86_400_000),
+        "us" => Some(86_400_000_000),
+        "ns" => Some(86_400_000_000_000),
+        _ => None,
+    }
+}
+
 /// Whether pandas' frequency inference (`_FrequencyInferer.get_freq`) must
-/// answer `None` for these UTC nanosecond stamps, unique and increasing: true
+/// answer `None` for these UTC stamps (`day` ticks to a day), unique and increasing: true
 /// only where every rule it tries is ruled out, false where it might find one
 /// (the caller then asks pandas). The rules, in its order:
 /// - with whole-day steps, the yearly, quarterly and monthly rules need one
@@ -169,9 +205,9 @@ fn stabilized<'py>(
 ///   exactly {1, 3} days; week-of-month, one weekday;
 /// - with shorter steps, business hours are steps of {1, 17}, {1, 65} or
 ///   {1, 17, 65} hours, and any other rule needs one step.
-fn surely_no_freq(stamps: &[i64]) -> bool {
-    const DAY: i64 = 86_400_000_000_000;
-    const HOUR: i64 = DAY / 24;
+#[allow(non_snake_case)]
+fn surely_no_freq(stamps: &[i64], DAY: i64) -> bool {
+    let HOUR = DAY / 24;
     if stamps.len() < 3 {
         return false;
     }

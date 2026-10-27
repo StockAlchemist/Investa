@@ -25,6 +25,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
+import re
 import sqlite3
 import tempfile
 from typing import Any, Iterable, Optional
@@ -134,13 +135,29 @@ def read_frame(conn: sqlite3.Connection, sql: str, params: Any = None):
     try:
         cursor = execute(conn, sql, () if params is None else params)
     except Exception as exc:
+        # pandas 2 wraps any exception; pandas 3 only sqlite3.Error (the rest
+        # propagate as they are, with no rollback), and it adds a hint when
+        # the query is a bare identifier.
+        pandas3 = int(pd.__version__.split(".")[0]) >= 3
+        if pandas3 and not isinstance(exc, sqlite3.Error):
+            raise
         try:
             conn.rollback()
         except Exception as inner_exc:  # pragma: no cover - mirrors pandas
+            if pandas3 and not isinstance(inner_exc, sqlite3.Error):
+                raise
             ex = pd.errors.DatabaseError(
                 f"Execution failed on sql: {sql}\n{exc}\nunable to rollback"
             )
             raise ex from inner_exc
+        if pandas3 and re.fullmatch(r"[A-Za-z_]\w*", sql.strip()):
+            ex = pd.errors.DatabaseError(
+                f"Execution failed on sql '{sql}': {exc}\n\n"
+                "Reading a table by name is only supported when using a "
+                "SQLAlchemy connection. With a DBAPI connection, pass a SQL "
+                f"query instead, e.g. 'SELECT * FROM {sql.strip()}'."
+            )
+            raise ex from exc
         ex = pd.errors.DatabaseError(f"Execution failed on sql '{sql}': {exc}")
         raise ex from exc
     # pandas iterates the description as is: None (no result columns) raises.

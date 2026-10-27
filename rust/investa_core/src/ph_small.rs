@@ -723,7 +723,7 @@ pub fn ph_fund_nav_series<'py>(
 /// ```
 ///
 /// With float64 series and a grid all on unique, increasing, NaT-free UTC
-/// nanosecond stamps, the union is ordered by time and a symbol's column is
+/// stamps (in any unit; compared as nanoseconds), the union is ordered by time and a symbol's column is
 /// empty wherever it has no stamp, so each grid point takes the symbol's last
 /// valid (non-NaN) price at or before it; points before its first valid price
 /// take that price (the backfill), and a symbol with none stays empty. The
@@ -737,12 +737,18 @@ fn aligned_natively<'py>(
 ) -> PyResult<Option<Bound<'py, PyAny>>> {
     let py = date_range.py();
     let np = py.import("numpy")?;
+    // Any unit (pandas 3 picks it from the input): the sweep compares the
+    // stamps as nanosecond integers, so the units need not agree.
     let utc_ns = |index: &Bound<'py, PyAny>| -> PyResult<bool> {
         Ok(index.get_type().is(&pd.getattr("DatetimeIndex")?)
-            && index.getattr("dtype")?.str()?.to_str()? == "datetime64[ns, UTC]"
+            && index.getattr("tz")?.str()?.to_str()? == "UTC"
             && index.getattr("is_unique")?.is_truthy()?
             && index.getattr("is_monotonic_increasing")?.is_truthy()?
             && !index.getattr("hasnans")?.is_truthy()?)
+    };
+    // A stamp past nanosecond range cannot be compared that way: leave it to pandas.
+    let ns = |index: &Bound<'py, PyAny>| -> Option<Bound<'py, PyAny>> {
+        crate::pyhelp::ns_ints(index).ok()
     };
     let Ok(series_by_id) = price_series_by_id.cast::<PyDict>() else {
         return Ok(None);
@@ -760,12 +766,17 @@ fn aligned_natively<'py>(
         {
             return Ok(None);
         }
-        let stamps: numpy::PyReadonlyArray1<i64> =
-            series.getattr("index")?.getattr("asi8")?.extract()?;
+        let Some(stamps) = ns(&series.getattr("index")?) else {
+            return Ok(None);
+        };
+        let stamps: numpy::PyReadonlyArray1<i64> = stamps.extract()?;
         let values: numpy::PyReadonlyArray1<f64> = series.call_method0("to_numpy")?.extract()?;
         columns.push((key, stamps, values));
     }
-    let grid: numpy::PyReadonlyArray1<i64> = date_range.getattr("asi8")?.extract()?;
+    let Some(grid) = ns(date_range) else {
+        return Ok(None);
+    };
+    let grid: numpy::PyReadonlyArray1<i64> = grid.extract()?;
     let grid = grid.as_array();
     let mut block = Vec::with_capacity(columns.len() * grid.len());
     for (_, stamps, values) in &columns {
@@ -788,7 +799,15 @@ fn aligned_natively<'py>(
     }
     let block = numpy::ndarray::Array2::from_shape_vec((columns.len(), grid.len()), block)
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-    let keys = PyList::new(py, columns.iter().map(|(k, _, _)| k))?;
+    // The columns as `DataFrame(dict)` labels them: pandas 3 first turns keys
+    // that step evenly into a range (a RangeIndex); pandas 2 has no such step.
+    let mut keys = PyList::new(py, columns.iter().map(|(k, _, _)| k))?.into_any();
+    if let Ok(to_range) = py
+        .import("pandas.core.indexes.base")
+        .and_then(|m| m.getattr("maybe_sequence_to_range"))
+    {
+        keys = to_range.call1((keys,))?;
+    }
     let kw = PyDict::new(py);
     kw.set_item("index", date_range)?;
     kw.set_item("columns", pd.getattr("Index")?.call1((keys,))?)?;

@@ -1067,12 +1067,9 @@ impl<'py> Daily<'_, 'py> {
         let int64 = np.getattr("int64")?;
         let float64 = np.getattr("float64")?;
         let i64_kw = self.kw(&[("dtype", &int64)])?;
+        // Grid and transaction stamps as nanosecond integers (see `ns_ints`).
         let ordinals = |v: Bound<'py, PyAny>| -> PyResult<Bound<'py, PyAny>> {
-            np.call_method(
-                "array",
-                (v.getattr("values")?.call_method1("astype", ("int64",))?,),
-                Some(&i64_kw),
-            )
+            np.call_method("array", (crate::pyhelp::ns_ints(&v)?,), Some(&i64_kw))
         };
         let date_ordinals = ordinals(grid.clone())?;
         let tx_dates = ordinals(crate::pyhelp::to_datetime(
