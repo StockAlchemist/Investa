@@ -58,7 +58,7 @@ The crate builds in four places:
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
 | 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; (d) symbol mapping and formatting **done** | Done |
 | 17 | SQL in Rust: (a) the database layer on `rusqlite`, linked to the system SQLite Python uses **done**; (b) the routes', services' and AI workers' SQL **done** | Done |
-| 18 | Pandas overhead inside the port: (a) calls whose answer is known without pandas **done**; (b) row views in place of `iterrows` **done**; (c) one date grid for every symbol | (a), (b) done |
+| 18 | Pandas overhead inside the port: (a) calls whose answer is known without pandas **done**; (b) row views in place of `iterrows` **done**; (c) the history's per-table fill and grid alignment without pandas' frame machinery **done** | Done |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -1076,6 +1076,52 @@ Checks:
 - **Real data:** the 18a build against this one on fresh data clones with one replayed tape. All histories and summaries are identical except dheematan's summary, which also varies between fresh processes under one build (see 18a).
 
 On kitmatan's 569 dividend rows, reading the rows takes 0.6 ms instead of 9.7 ms, and `extract_dividend_history` 10.2 ms instead of 21.8 ms. End to end (best of four interleaved rounds, under a load average of 10–25), the summary is 6% faster for kitmatan (200 → 188 ms), 15% for dheematan (201 → 171 ms) and 14% for atchamatan (113 → 98 ms). The histories are unchanged within 1%.
+
+## Phase 18c (27 Oct 2026): the history's table fill and grid alignment
+
+Two steps of every history built pandas frames only to copy values that were already known.
+
+**The stabilization fill** runs once for each price or FX table that starts after the history does: 46 tables for kitmatan, 68 for dheematan. It was:
+
+```python
+new_index = pd.Index([full_start_ts]).union(v.index)
+v = v.reindex(new_index).sort_index()
+v = v.interpolate(method="time").bfill().ffill()
+```
+
+`ph_performance::stabilized` does the same work directly:
+- It prepends the start stamp to the index.
+- It casts each column to float64, as the reindex's missing start row does: the tables carry an int64 Volume.
+- It fills each column's missing cells with `np.interp` over the int64 stamps. That is `interpolate(method="time")` exactly. The leading cells that `interpolate` returns to NaN are then backfilled with the first valid value, which is where `np.interp` already holds them, and it holds the trailing ones at the last valid value, as the ffill would.
+- The union takes pandas' generic path, so the new index's freq is inferred. That inference was 75% of the remaining cost. `surely_no_freq` decides natively when pandas must answer `None`, and asks pandas otherwise. It answers `None` only when all of these hold:
+  - the steps vary;
+  - for whole-day steps: the month-to-month steps vary, the steps are not exactly {1, 3} days, and the stamps fall on more than one weekday;
+  - for shorter steps: they are not the business-hour patterns.
+
+It applies to an exact `DataFrame` of float64 or int64 columns, without attrs, over a unique, increasing, NaT-free UTC nanosecond index that starts after the start stamp. Anything else takes the pandas lines.
+
+**The grid alignment** (`align_prices_to_grid`) built one frame from every symbol's series, joined it to the grid, filled forward and back, and kept the grid rows. With float64 series and a grid all on unique, increasing UTC nanosecond stamps, `ph_small::aligned_natively` gives each grid point the symbol's last valid price at or before it, or its first valid price when there is none earlier. It does this in one sweep per symbol, copying values and computing none.
+
+Checks:
+- **Fill parity** (`tests/test_rust_stabilize_parity.py`): bit for bit on every cell, and exact on index values, dtype, zone, freq and name, columns and dtypes.
+  - Inputs: 1,200 random tables (daily with gaps, business days, weekly, month ends, irregular intraday, a regular daily index); missing cells anywhere; infinities; int64 columns up to 2^62, beyond exact float range; second- and nanosecond-resolution starts.
+  - Ten index patterns where pandas does infer a freq after the start is prepended (`D`, `B`, `W-FRI`, `WOM-3FRI`, `MS`, `QE-DEC`, `YS-JAN`, `bh`, `h`), each with starts that keep or break the rhythm.
+  - 320 tables that must fall back.
+- **Alignment parity** (`tests/test_rust_align_grid_parity.py`): bit for bit, on 480 random grids and symbol sets. They include intraday bars between grid points, prices that start before, inside or after the grid, missing prices, infinities and named series, plus 240 inputs that must fall back.
+- **Full suite:** passes, with the same 2,411 warnings.
+- **Real data:** the 18b build against this one, on fresh data clones replaying one tape. All six histories and three summaries are identical.
+
+On the captured real inputs, the fill takes 7.3 ms instead of 42.7 ms for kitmatan's 46 tables, and the alignment 1.3 ms instead of 18.5 ms (48 symbols × 8,886 days). Both times were measured before int64 columns were accepted, on tables already cast to float64.
+
+End to end (best of two interleaved rounds of medians of 7, load average 3–5), the summary is unchanged:
+
+| Book | Daily history (all time, USD) | Weekly history (1 year, THB) |
+|---|---|---|
+| kitmatan | 446 → 387 ms (−13%) | 336 → 281 ms (−16%) |
+| dheematan | 512 → 423 ms (−17%) | 406 → 314 ms (−23%) |
+| atchamatan | 309 → 259 ms (−16%) | 250 → 206 ms (−18%) |
+
+Seen while profiling, not changed: each benchmarked history also spends about 75 ms in `mdb_upsert_ohlcv` and 25 ms in `mdb_upsert_fx`, storing fetched prices back into the archive. Under the benchmark's replayed tape every fetch "returns" data, so this may overstate what a live request pays when its data is fresh.
 
 ## Found while porting
 

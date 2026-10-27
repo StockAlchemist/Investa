@@ -643,5 +643,6 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(pyhelp::to_datetime_py, m)?)?;
     m.add_function(wrap_pyfunction!(pyhelp::iterrows_py, m)?)?;
     m.add_class::<pyhelp::RowView>()?;
+    m.add_function(wrap_pyfunction!(ph_performance::ph_stabilize, m)?)?;
     Ok(())
 }

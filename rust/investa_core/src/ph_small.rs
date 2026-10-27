@@ -714,6 +714,91 @@ pub fn ph_fund_nav_series<'py>(
     Ok(out)
 }
 
+/// `align_prices_to_grid` without building the union frame:
+///
+/// ```python
+/// raw_prices = pd.DataFrame(price_series_by_id).sort_index()
+/// fill_index = raw_prices.index.union(date_range)
+/// return raw_prices.reindex(fill_index).ffill().bfill().reindex(date_range)
+/// ```
+///
+/// With float64 series and a grid all on unique, increasing, NaT-free UTC
+/// nanosecond stamps, the union is ordered by time and a symbol's column is
+/// empty wherever it has no stamp, so each grid point takes the symbol's last
+/// valid (non-NaN) price at or before it; points before its first valid price
+/// take that price (the backfill), and a symbol with none stays empty. The
+/// values are copied, never computed. The frame is the grid by the dict's keys,
+/// one column-major block as the reindex leaves it. Any other input returns
+/// `None` for the pandas path.
+fn aligned_natively<'py>(
+    pd: &Bound<'py, PyModule>,
+    price_series_by_id: &Bound<'py, PyAny>,
+    date_range: &Bound<'py, PyAny>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let py = date_range.py();
+    let np = py.import("numpy")?;
+    let utc_ns = |index: &Bound<'py, PyAny>| -> PyResult<bool> {
+        Ok(index.get_type().is(&pd.getattr("DatetimeIndex")?)
+            && index.getattr("dtype")?.str()?.to_str()? == "datetime64[ns, UTC]"
+            && index.getattr("is_unique")?.is_truthy()?
+            && index.getattr("is_monotonic_increasing")?.is_truthy()?
+            && !index.getattr("hasnans")?.is_truthy()?)
+    };
+    let Ok(series_by_id) = price_series_by_id.cast::<PyDict>() else {
+        return Ok(None);
+    };
+    if series_by_id.is_empty() || !utc_ns(date_range)? {
+        return Ok(None);
+    }
+    let series_type = pd.getattr("Series")?;
+    let float64 = np.call_method1("dtype", ("float64",))?;
+    let mut columns = Vec::with_capacity(series_by_id.len());
+    for (key, series) in series_by_id.iter() {
+        if !series.get_type().is(&series_type)
+            || !series.getattr("dtype")?.eq(&float64)?
+            || !utc_ns(&series.getattr("index")?)?
+        {
+            return Ok(None);
+        }
+        let stamps: numpy::PyReadonlyArray1<i64> =
+            series.getattr("index")?.getattr("asi8")?.extract()?;
+        let values: numpy::PyReadonlyArray1<f64> = series.call_method0("to_numpy")?.extract()?;
+        columns.push((key, stamps, values));
+    }
+    let grid: numpy::PyReadonlyArray1<i64> = date_range.getattr("asi8")?.extract()?;
+    let grid = grid.as_array();
+    let mut block = Vec::with_capacity(columns.len() * grid.len());
+    for (_, stamps, values) in &columns {
+        let (stamps, values) = (stamps.as_array(), values.as_array());
+        let first_valid = values
+            .iter()
+            .copied()
+            .find(|v| !v.is_nan())
+            .unwrap_or(f64::NAN);
+        let (mut j, mut last) = (0usize, f64::NAN);
+        for &point in grid.iter() {
+            while j < stamps.len() && stamps[j] <= point {
+                if !values[j].is_nan() {
+                    last = values[j];
+                }
+                j += 1;
+            }
+            block.push(if last.is_nan() { first_valid } else { last });
+        }
+    }
+    let block = numpy::ndarray::Array2::from_shape_vec((columns.len(), grid.len()), block)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let keys = PyList::new(py, columns.iter().map(|(k, _, _)| k))?;
+    let kw = PyDict::new(py);
+    kw.set_item("index", date_range)?;
+    kw.set_item("columns", pd.getattr("Index")?.call1((keys,))?)?;
+    let frame = pd.getattr("DataFrame")?.call(
+        (numpy::IntoPyArray::into_pyarray(block, py).getattr("T")?,),
+        Some(&kw),
+    )?;
+    Ok(Some(frame))
+}
+
 /// `align_prices_to_grid`: each symbol's last observed price carried onto
 /// the grid, never interpolated across a gap.
 #[pyfunction]
@@ -723,6 +808,9 @@ pub fn ph_align_prices_to_grid<'py>(
     date_range: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let pd = py.import("pandas")?;
+    if let Some(aligned) = aligned_natively(&pd, price_series_by_id, date_range)? {
+        return Ok(aligned);
+    }
     let raw = pd
         .getattr("DataFrame")?
         .call1((price_series_by_id,))?

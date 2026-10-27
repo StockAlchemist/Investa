@@ -44,6 +44,206 @@ fn one_of(v: &Bound<'_, PyAny>, items: &[&str]) -> PyResult<bool> {
     Ok(false)
 }
 
+/// The stabilization fill without pandas' per-table machinery:
+///
+/// ```python
+/// new_index = pd.Index([full_start_ts]).union(v.index)
+/// v = v.reindex(new_index).sort_index()
+/// v = v.interpolate(method="time").bfill().ffill()
+/// ```
+///
+/// On a frame of float64 and int64 columns (the price tables carry an int64
+/// Volume) over a unique, increasing, NaT-free UTC nanosecond index that
+/// starts after `full_start_ts`, that is: every column cast to float64, as the
+/// reindex's missing start row casts it, the start stamp prepended (the union takes pandas' generic path, the stamp's own
+/// one-row index having no freq, so the result's freq is inferred), and each
+/// column's missing cells replaced by `np.interp` over the int64 stamps of its
+/// valid ones. That is `interpolate(method="time")` exactly; the leading cells
+/// it puts back to NaN are then backfilled with the first valid value, which
+/// is what `np.interp` holds them at, and the trailing ones it already holds at
+/// the last. A column with no valid cell stays empty. The values go in a
+/// column-major block, as `reindex` builds them. Any other frame, or a start
+/// that does not sort first, returns `None` for the pandas path.
+fn stabilized<'py>(
+    pd: &Bound<'py, PyAny>,
+    v: &Bound<'py, PyAny>,
+    full_start_ts: &Bound<'py, PyAny>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let py = v.py();
+    let np = py.import("numpy")?;
+    let index = v.getattr("index")?;
+    let plain = v.get_type().is(&pd.getattr("DataFrame")?)
+        && !v.getattr("attrs")?.is_truthy()?
+        && v.getattr("flags")?
+            .getattr("allows_duplicate_labels")?
+            .is_truthy()?
+        && index.get_type().is(&pd.getattr("DatetimeIndex")?)
+        && index.getattr("dtype")?.str()?.to_str()? == "datetime64[ns, UTC]"
+        && index.getattr("is_unique")?.is_truthy()?
+        && index.getattr("is_monotonic_increasing")?.is_truthy()?
+        && !index.getattr("hasnans")?.is_truthy()?
+        && full_start_ts.getattr("tz")?.str()?.to_str()? == "UTC";
+    if !plain {
+        return Ok(None);
+    }
+    let rows = index.len()?;
+    let float64 = np.call_method1("dtype", ("float64",))?;
+    let int64 = np.call_method1("dtype", ("int64",))?;
+    let mut ncols = 0usize;
+    for dtype in v.getattr("dtypes")?.try_iter()? {
+        let dtype = dtype?;
+        if !dtype.eq(&float64)? && !dtype.eq(&int64)? {
+            return Ok(None);
+        }
+        ncols += 1;
+    }
+    if rows == 0 || ncols == 0 {
+        return Ok(None);
+    }
+    let start: i64 = full_start_ts.getattr("value")?.extract()?;
+    let stamps = index.getattr("asi8")?;
+    let first: i64 = stamps.get_item(0)?.extract()?;
+    if start >= first {
+        return Ok(None);
+    }
+    let x = np.call_method1(
+        "concatenate",
+        ((
+            np.call_method1("array", (PyList::new(py, [start])?, &int64))?,
+            &stamps,
+        ),),
+    )?;
+    let mut new_index = pd.getattr("DatetimeIndex")?.call(
+        (x.call_method1("view", ("M8[ns]",))?,),
+        Some(&kwargs(py, &[("tz", &index.getattr("tz")?)])?),
+    )?;
+    let ints: numpy::PyReadonlyArray1<i64> = x.extract()?;
+    if !surely_no_freq(ints.as_slice()?) {
+        new_index = new_index.call_method1("_with_freq", ("infer",))?;
+    }
+
+    let block = np.call_method1("empty", (PyTuple::new(py, [ncols, rows + 1])?, &float64))?;
+    let slice = py.import("builtins")?.getattr("slice")?;
+    let all = slice.call1((py.None(),))?;
+    block.set_item(
+        PyTuple::new(py, [all.clone(), 0usize.into_pyobject(py)?.into_any()])?,
+        f64::NAN,
+    )?;
+    block.set_item(
+        PyTuple::new(py, [all, slice.call1((1usize, py.None()))?])?,
+        v.getattr("values")?.getattr("T")?,
+    )?;
+    for j in 0..ncols {
+        let col = block.get_item(j)?;
+        let invalid = np.call_method1("isnan", (&col,))?;
+        let valid = invalid.call_method0("__invert__")?;
+        if !valid.call_method0("any")?.is_truthy()? {
+            continue;
+        }
+        let filled = np.call_method1(
+            "interp",
+            (
+                x.get_item(&invalid)?,
+                x.get_item(&valid)?,
+                col.get_item(&valid)?,
+            ),
+        )?;
+        col.set_item(&invalid, filled)?;
+    }
+    let frame = pd.getattr("DataFrame")?.call(
+        (block.getattr("T")?,),
+        Some(&kwargs(
+            py,
+            &[("index", &new_index), ("columns", &v.getattr("columns")?)],
+        )?),
+    )?;
+    Ok(Some(frame))
+}
+
+/// Whether pandas' frequency inference (`_FrequencyInferer.get_freq`) must
+/// answer `None` for these UTC nanosecond stamps, unique and increasing: true
+/// only where every rule it tries is ruled out, false where it might find one
+/// (the caller then asks pandas). The rules, in its order:
+/// - with whole-day steps, the yearly, quarterly and monthly rules need one
+///   month-to-month step; the daily rule, one step; business days, steps of
+///   exactly {1, 3} days; week-of-month, one weekday;
+/// - with shorter steps, business hours are steps of {1, 17}, {1, 65} or
+///   {1, 17, 65} hours, and any other rule needs one step.
+fn surely_no_freq(stamps: &[i64]) -> bool {
+    const DAY: i64 = 86_400_000_000_000;
+    const HOUR: i64 = DAY / 24;
+    if stamps.len() < 3 {
+        return false;
+    }
+    let steps: std::collections::BTreeSet<i64> = stamps.windows(2).map(|w| w[1] - w[0]).collect();
+    if steps.len() < 2 {
+        return false;
+    }
+    let smallest = *steps.iter().next().expect("two steps");
+    let is = |want: &[i64]| steps.iter().copied().eq(want.iter().copied());
+    if smallest % DAY != 0 {
+        return !(is(&[HOUR, 17 * HOUR])
+            || is(&[HOUR, 65 * HOUR])
+            || is(&[HOUR, 17 * HOUR, 65 * HOUR]));
+    }
+    if is(&[DAY, 3 * DAY]) {
+        return false;
+    }
+    let days: Vec<i64> = stamps.iter().map(|s| s.div_euclid(DAY)).collect();
+    let weekdays: std::collections::BTreeSet<i64> =
+        days.iter().map(|d| (d + 3).rem_euclid(7)).collect();
+    if weekdays.len() < 2 {
+        return false;
+    }
+    let months: Vec<i64> = days.iter().map(|&d| month_number(d)).collect();
+    let month_steps: std::collections::BTreeSet<i64> =
+        months.windows(2).map(|w| w[1] - w[0]).collect();
+    month_steps.len() > 1
+}
+
+/// `year * 12 + month` of the civil (proleptic Gregorian) date `days` after
+/// 1970-01-01, as pandas' `fields["Y"] * 12 + fields["M"]` (H. Hinnant's
+/// `civil_from_days`).
+fn month_number(days: i64) -> i64 {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    year * 12 + month
+}
+
+/// `investa_core.ph_stabilize(v, full_start_ts)`: [`stabilized`], or the
+/// pandas sequence where it declines, so the tests can hold the fill against
+/// pandas directly.
+#[pyfunction]
+pub fn ph_stabilize<'py>(
+    v: &Bound<'py, PyAny>,
+    full_start_ts: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = v.py();
+    let pd = py.import("pandas")?;
+    if let Some(filled) = stabilized(pd.as_any(), v, full_start_ts)? {
+        return Ok(filled);
+    }
+    let new_index = pd
+        .getattr("Index")?
+        .call1((PyList::new(py, [full_start_ts])?,))?
+        .call_method1("union", (v.getattr("index")?,))?;
+    v.call_method1("reindex", (new_index,))?
+        .call_method0("sort_index")?
+        .call_method(
+            "interpolate",
+            (),
+            Some(&kwargs(py, &[("method", &pystr(py, "time"))])?),
+        )?
+        .call_method0("bfill")?
+        .call_method0("ffill")
+}
+
 /// `calculate_historical_performance`: (daily frame, adjusted prices, FX
 /// tables, status line with the TWR factor).
 #[pyfunction]
@@ -781,21 +981,25 @@ pub fn ph_historical_performance<'py>(
                             o.fmt(&full_start_ts)?
                         ),
                     )?;
-                    let new_index = pd
-                        .getattr("Index")?
-                        .call1((PyList::new(py, [&full_start_ts])?,))?
-                        .call_method1("union", (v.getattr("index")?,))?;
-                    v = v
-                        .call_method1("reindex", (new_index,))?
-                        .call_method0("sort_index")?;
-                    v = v
-                        .call_method(
-                            "interpolate",
-                            (),
-                            Some(&kwargs(py, &[("method", &pystr(py, "time"))])?),
-                        )?
-                        .call_method0("bfill")?
-                        .call_method0("ffill")?;
+                    v = match stabilized(&pd, &v, &full_start_ts)? {
+                        Some(filled) => filled,
+                        None => {
+                            let new_index = pd
+                                .getattr("Index")?
+                                .call1((PyList::new(py, [&full_start_ts])?,))?
+                                .call_method1("union", (v.getattr("index")?,))?;
+                            v = v
+                                .call_method1("reindex", (new_index,))?
+                                .call_method0("sort_index")?;
+                            v.call_method(
+                                "interpolate",
+                                (),
+                                Some(&kwargs(py, &[("method", &pystr(py, "time"))])?),
+                            )?
+                            .call_method0("bfill")?
+                            .call_method0("ffill")?
+                        }
+                    };
                     s_map.set_item(&k, v)?;
                 }
             }
