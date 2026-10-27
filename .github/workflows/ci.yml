@@ -31,6 +31,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
           # The Rust calculation core; the runner's preinstalled toolchain builds it.
+          # It links the system libsqlite3, the one Python's sqlite3 module uses.
+          sudo apt-get update && sudo apt-get install -y libsqlite3-dev
           pip install ./rust/investa_core
 
       - name: Run pytest
@@ -55,6 +57,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: System SQLite
+        # rusqlite links the system libsqlite3 (no bundled copy).
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
 
       - name: Format
         run: cargo fmt --check
@@ -173,6 +179,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
           # The Rust calculation core; the runner's preinstalled toolchain builds it.
+          # It links the system libsqlite3, the one Python's sqlite3 module uses.
+          sudo apt-get update && sudo apt-get install -y libsqlite3-dev
           pip install ./rust/investa_core
 
       - uses: actions/setup-node@v6

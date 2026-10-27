@@ -57,6 +57,7 @@ The crate builds in four places:
 | 14 | History engine: (a) `portfolio_cashflows`; (b) the small history helpers; (c) input prep and daily valuation; (d) accumulation and the daily results; (e) `calculate_historical_performance` | **Done** |
 | 15 | Valuation and ranking glue: (a) `valuation_history` **done**; (b) `track_record` **done**; (c) `strategies` **done**; (d) the `buffett_metrics` and `buffett_value` glue **done**; (e) the `buffett_rank` glue **done**; (f) `buffett_pipeline` **done**; (g) the `edgar_provider` glue **done**; (h) the `financial_ratios` statement and ratio glue **done**; (i) its growth, normalization and Monte Carlo glue **done**; (j) the twelve valuation models **done**; (k) the recommendation, the blend and the comprehensive valuation **done** | Done |
 | 16 | Utilities: (a) `risk_metrics` and the first block of `finutils` **done**; (b) the cash-flow ledger and builders **done**; (c) FX and historical prices **done**; (d) symbol mapping and formatting **done** | Done |
+| 17 | SQL in Rust: (a) the database layer on `rusqlite`, linked to the system SQLite Python uses **done**; then the routes' and AI workers' SQL | In progress |
 
 ## Phase 1 results (24 Oct 2026)
 
@@ -955,6 +956,39 @@ Checks:
   - 112,896 formatter calls on every number in the real summary rows.
 
 `finutils.py` is now 611 lines, down from 1,655, and `risk_metrics.py` is 220, down from 327. Phase 16, and with it the second port (Phases 10–16), is done. Python now keeps only the FastAPI routes, the network fetchers, PDF parsing, the market calendar, Gemini, pandas frame construction, and the dataclasses and registries.
+
+## Phase 17a (27 Oct 2026): the database layer on `rusqlite`
+
+The crate's SQLite code now uses `rusqlite` instead of hand-resolved C entry points. `rusqlite` is linked against the system's shared SQLite, not a bundled copy.
+
+**Why it is safe.** A process must hold only one SQLite library, because two copies can corrupt a database through POSIX locks (phase 8). Python's `_sqlite3` links the system library: `/usr/lib/libsqlite3.dylib` on macOS, and the distro's `libsqlite3.so.0` on Debian and Ubuntu. The crate now links that same library, so the dynamic loader maps a single image for both.
+- `sqlite_read::bind` proves this at start-up. It resolves `sqlite3_libversion` through Python's already-loaded extension and compares the address with the crate's own. If they differ, every Rust SQL path declines and Python keeps its own, as before. A mismatched build costs speed, never data.
+- On this Mac, `otool` shows the extension linking `/usr/lib/libsqlite3.dylib`, and `vmmap` shows one SQLite image in the process.
+- Homebrew's keg-only SQLite (3.53.2) is installed but never linked.
+
+**What changed:**
+- `sql.rs` drives statements on a connection borrowed from Python with `Connection::from_handle`, which neither reconfigures nor closes it.
+- `sqlite_read.rs` reads the price archive on its own `rusqlite` connection.
+- The 33 C entry points looked up by name are gone. `unsafe` in the two files fell from 87 to 9 occurrences, and their lines from 1,006 to 745.
+- What remains unsafe: the one-library check, borrowing the handle, the statement's self-reference to its connection, and a tail probe (below).
+
+**CPython's rules are still the ones applied, not `rusqlite`'s:**
+- **The one-statement rule.** `rusqlite` would re-parse the leftover text (so `SELECT 1; garbage` fails as a syntax error) and accept `SELECT 1;;`. CPython refuses any leftover text that isn't whitespace or comments. So the end of the first statement is found by a direct prepare, needed only when the text contains a `;`, since SQLite cannot end a statement anywhere else. The first statement alone is then prepared through `rusqlite`.
+- **Extended error codes.** Python's connections leave extended result codes off, so `rusqlite` would report `SQLITE_CONSTRAINT` (19). CPython reports `sqlite3_extended_errcode`, for example 2067 `SQLITE_CONSTRAINT_UNIQUE`. The code and message are therefore read from the handle, as before.
+- **Step failures.** A failure raised while stepping is read after `rusqlite` resets the statement. SQLite carries the same code and message across the reset, and the tests pin it.
+
+**Builds:**
+- The Docker builder installs `libsqlite3-dev`; the runtime image already has the library.
+- Both CI jobs install it too.
+- The Linux builds have not been run yet: there is no container runtime on this machine. `tests/test_rust_sqlite_link.py::test_one_sqlite_image` will fail in CI if the runner's Python uses a different SQLite.
+
+Checks:
+- **Parity:** the full suite passes, 1,735 tests, including phase 10's random statement sequences and the storage parity tests of phases 11–12. A new test covers:
+  - 27 tail cases that are accepted, refused, or have `;` inside strings and comments, under three isolation levels;
+  - failures raised mid-step, mid-`executemany`, and by constraints;
+  - the one-image check.
+  - The Rust path now answers every case itself, except empty and comment-only statements, which still go to Python as before.
+- **Real data:** the Rust price reader and the pandas path agree on the full daily history of all 5,670 archive symbols, in 114 batches. The Rust reader took 134 s against 163.7 s for pandas.
 
 ## Found while porting
 

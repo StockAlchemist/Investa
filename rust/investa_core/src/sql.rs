@@ -3,36 +3,34 @@
 //! The storage modules hand this a `sqlite3*` taken from a Python
 //! `sqlite3.Connection` (see `src/rust_sql.py`), so a statement run here is
 //! inside whatever transaction the caller has open, sees its uncommitted
-//! writes, and is committed or rolled back with it. The library is the one
-//! Python's module calls (`sqlite_read::bind`).
+//! writes, and is committed or rolled back with it. The handle is borrowed
+//! through `rusqlite` (`Connection::from_handle`, which neither reconfigures
+//! nor closes it), and the library is the one Python's module calls
+//! (`sqlite_read::bind`).
 //!
 //! What Python's `sqlite3` does around a statement, CPython 3.12
 //! (`Modules/_sqlite/cursor.c`, `statement.c`), is reproduced:
 //! - under legacy transaction control, a DML statement (INSERT, UPDATE,
 //!   DELETE, REPLACE after any whitespace and comments) run while the
 //!   connection is in autocommit first executes the caller's `BEGIN`;
-//! - a second statement after the first is refused;
+//! - a second statement after the first is refused, by CPython's own test
+//!   (anything but whitespace and comments after it), not rusqlite's;
 //! - the binding count must match;
 //! - `rowcount` is the changes of DML statements, `lastrowid` the last
 //!   inserted rowid;
-//! - errors carry SQLite's extended code and message, for the shim to raise
-//!   as the class Python would.
+//! - errors carry SQLite's extended code and message (Python's connections
+//!   leave extended result codes off, so the code is read from the handle,
+//!   as CPython reads it), for the shim to raise as the class Python would.
 //!
 //! The caller (the shim) only sends what this binds exactly as Python would;
 //! anything else stays on Python's own `execute`.
 
-use std::ffi::{CStr, c_char, c_int};
+use std::cell::RefCell;
 
-use crate::sqlite_read::{Api, Db, Stmt, api};
+use rusqlite::types::{ToSqlOutput, ValueRef};
+use rusqlite::{Connection, ffi};
 
-const SQLITE_OK: c_int = 0;
-const SQLITE_ROW: c_int = 100;
-const SQLITE_DONE: c_int = 101;
-const SQLITE_INTEGER: c_int = 1;
-const SQLITE_FLOAT: c_int = 2;
-const SQLITE_TEXT: c_int = 3;
-const SQLITE_BLOB: c_int = 4;
-const SQLITE_TRANSIENT: isize = -1;
+use crate::sqlite_read::bound;
 
 /// A value bound to, or read from, a statement.
 #[derive(Clone, Debug, PartialEq)]
@@ -50,7 +48,7 @@ pub enum Value {
 #[derive(Debug, PartialEq)]
 pub enum Failure {
     /// SQLite refused it: extended result code and `sqlite3_errmsg`.
-    Sqlite { code: c_int, message: String },
+    Sqlite { code: i32, message: String },
     /// Python raises ProgrammingError with this message.
     Programming(String),
     /// Not something the port reproduces; the caller lets Python run it.
@@ -100,191 +98,268 @@ pub fn is_dml(sql: &[u8]) -> bool {
     starts(b"insert") || starts(b"update") || starts(b"delete") || starts(b"replace")
 }
 
-fn sqlite_failure(api: &Api, db: *mut Db) -> Failure {
+/// The extended code and message SQLite holds for the handle's last failure.
+fn failure_of(conn: &Connection) -> Failure {
+    // SAFETY: the handle is live for as long as `conn` is, and both calls
+    // only read the connection's error state.
     unsafe {
-        let code = (api.extended_errcode)(db);
-        let p = (api.errmsg)(db);
+        let db = conn.handle();
+        let code = ffi::sqlite3_extended_errcode(db);
+        let p = ffi::sqlite3_errmsg(db);
         let message = if p.is_null() {
             String::new()
         } else {
-            CStr::from_ptr(p).to_string_lossy().into_owned()
+            std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned()
         };
         Failure::Sqlite { code, message }
     }
 }
 
-struct Prepared<'a> {
-    api: &'a Api,
-    stmt: *mut Stmt,
-}
-
-impl Drop for Prepared<'_> {
-    fn drop(&mut self) {
-        unsafe { (self.api.finalize)(self.stmt) };
+/// A rusqlite error as the shim reports it: SQLite's own failures from the
+/// handle, anything rusqlite raised itself declined to Python.
+fn failure(conn: &Connection, e: &rusqlite::Error) -> Failure {
+    match e {
+        rusqlite::Error::SqliteFailure(..) | rusqlite::Error::SqlInputError { .. } => {
+            failure_of(conn)
+        }
+        _ => Failure::Decline("a rusqlite error outside SQLite"),
     }
 }
 
-/// Prepare exactly one statement, as Python's statement cache would.
-fn prepare<'a>(api: &'a Api, db: *mut Db, sql: &str) -> Result<Prepared<'a>, Failure> {
-    let bytes = sql.as_bytes();
-    if bytes.contains(&0) {
-        return Err(Failure::Decline("a NUL in the query"));
+/// Where the first statement of `sql` ends (`sqlite3_prepare_v2`'s tail),
+/// and whether the text holds a statement at all. SQLite ends a statement
+/// only at a `;` or the end of the input, so text without one needs no
+/// probe; otherwise the statement is prepared once here, for its tail, and
+/// finalized.
+fn first_statement(conn: &Connection, sql: &str) -> Result<(usize, bool), Failure> {
+    if !sql.as_bytes().contains(&b';') {
+        return Ok((sql.len(), lstrip_sql(sql.as_bytes()).is_some()));
     }
-    let Ok(len) = c_int::try_from(bytes.len()) else {
+    let Ok(len) = i32::try_from(sql.len()) else {
         return Err(Failure::Decline("query too long"));
     };
-    let mut stmt: *mut Stmt = std::ptr::null_mut();
-    let mut tail: *const c_char = std::ptr::null();
-    let rc = unsafe { (api.prepare_v2)(db, bytes.as_ptr().cast(), len, &mut stmt, &mut tail) };
-    if rc != SQLITE_OK {
-        if !stmt.is_null() {
-            unsafe { (api.finalize)(stmt) };
+    let mut stmt: *mut ffi::sqlite3_stmt = std::ptr::null_mut();
+    let mut tail: *const std::ffi::c_char = std::ptr::null();
+    // SAFETY: the text outlives the call, and the statement is finalized
+    // before this returns.
+    unsafe {
+        let rc = ffi::sqlite3_prepare_v2(
+            conn.handle(),
+            sql.as_ptr().cast(),
+            len,
+            &mut stmt,
+            &mut tail,
+        );
+        let present = !stmt.is_null();
+        if present {
+            ffi::sqlite3_finalize(stmt);
         }
-        return Err(sqlite_failure(api, db));
+        if rc != ffi::SQLITE_OK {
+            return Err(failure_of(conn));
+        }
+        let end = if tail.is_null() {
+            sql.len()
+        } else {
+            (tail.offset_from(sql.as_ptr().cast()) as usize).min(sql.len())
+        };
+        Ok((end, present))
     }
-    if stmt.is_null() {
-        return Err(Failure::Decline("an empty statement"));
-    }
-    let prepared = Prepared { api, stmt };
-    if !tail.is_null() {
-        let consumed = unsafe { tail.offset_from(bytes.as_ptr().cast()) } as usize;
-        if lstrip_sql(&bytes[consumed.min(bytes.len())..]).is_some() {
+}
+
+/// One prepared statement on a borrowed handle, driven a step at a time by
+/// the PyO3 layer (`pyconn.rs`), which looks named parameters up in a Python
+/// dict between `prepare` and `bind`.
+pub struct Statement {
+    // Declared first, so it is finalized before the connection it borrows.
+    stmt: RefCell<rusqlite::Statement<'static>>,
+    conn: Box<Connection>,
+    dml: bool,
+}
+
+// The handle and statement are used only while the caller's Python call is
+// running, on that call's thread (`py.detach` releases the GIL but stays on
+// the thread), as CPython's own module does when it releases the GIL.
+unsafe impl Send for Statement {}
+unsafe impl Sync for Statement {}
+
+impl Statement {
+    /// Prepare exactly one statement on the handle a shim verified (see
+    /// `rust_sql.py`), as Python's statement cache would.
+    pub fn prepare(db: usize, sql: &str) -> Result<Statement, Failure> {
+        if !bound() {
+            return Err(Failure::Decline("SQLite is not bound"));
+        }
+        if db == 0 {
+            return Err(Failure::Decline("no connection handle"));
+        }
+        if sql.as_bytes().contains(&0) {
+            return Err(Failure::Decline("a NUL in the query"));
+        }
+        // SAFETY: the shim hands over the live `sqlite3*` of a connection it
+        // holds; a borrowed connection is never closed by rusqlite.
+        let conn = Box::new(
+            unsafe { Connection::from_handle(db as *mut ffi::sqlite3) }
+                .map_err(|_| Failure::Decline("the handle could not be borrowed"))?,
+        );
+        let (end, present) = first_statement(&conn, sql)?;
+        if !present {
+            return Err(Failure::Decline("an empty statement"));
+        }
+        if lstrip_sql(&sql.as_bytes()[end..]).is_some() {
             return Err(Failure::Programming(
                 "You can only execute one statement at a time.".into(),
             ));
         }
-    }
-    Ok(prepared)
-}
-
-fn bind_all(p: &Prepared<'_>, db: *mut Db, params: &[Value]) -> Result<(), Failure> {
-    let api = p.api;
-    let expected = unsafe { (api.bind_parameter_count)(p.stmt) } as usize;
-    if expected != params.len() {
-        return Err(Failure::Programming(format!(
-            "Incorrect number of bindings supplied. The current statement uses {expected}, and there are {} supplied.",
-            params.len()
-        )));
-    }
-    // A named placeholder given a sequence: CPython 3.12 warns (DeprecationWarning).
-    if param_names(p)
-        .iter()
-        .any(|n| n.as_ref().is_some_and(|n| n.first() != Some(&b'?')))
-    {
-        return Err(Failure::Decline("a named placeholder bound by position"));
-    }
-    bind_values(p, db, params)
-}
-
-/// The names of a statement's placeholders, `None` for a bare `?`.
-fn param_names(p: &Prepared<'_>) -> Vec<Option<Vec<u8>>> {
-    let n = unsafe { (p.api.bind_parameter_count)(p.stmt) };
-    (1..=n)
-        .map(|i| unsafe {
-            let ptr = (p.api.bind_parameter_name)(p.stmt, i);
-            (!ptr.is_null()).then(|| CStr::from_ptr(ptr).to_bytes().to_vec())
+        let stmt = conn.prepare(&sql[..end]).map_err(|e| failure(&conn, &e))?;
+        // SAFETY: the statement borrows the boxed connection, whose address
+        // never moves, and the field order drops the statement first.
+        let stmt: rusqlite::Statement<'static> = unsafe { std::mem::transmute(stmt) };
+        Ok(Statement {
+            stmt: RefCell::new(stmt),
+            conn,
+            dml: is_dml(sql.as_bytes()),
         })
-        .collect()
-}
+    }
 
-fn bind_values(p: &Prepared<'_>, db: *mut Db, params: &[Value]) -> Result<(), Failure> {
-    let api = p.api;
-    for (k, v) in params.iter().enumerate() {
-        let i = (k + 1) as c_int;
-        let rc = unsafe {
-            match v {
-                Value::Null => (api.bind_null)(p.stmt, i),
-                Value::Int(x) => (api.bind_int64)(p.stmt, i, *x),
-                Value::Real(x) => (api.bind_double)(p.stmt, i, *x),
-                Value::Text(t) => {
-                    let Ok(n) = c_int::try_from(t.len()) else {
-                        return Err(Failure::Decline("a string too long to bind"));
-                    };
-                    (api.bind_text)(p.stmt, i, t.as_ptr().cast(), n, SQLITE_TRANSIENT)
-                }
-                Value::Blob(b) => {
-                    let Ok(n) = c_int::try_from(b.len()) else {
-                        return Err(Failure::Decline("a blob too long to bind"));
-                    };
-                    (api.bind_blob)(p.stmt, i, b.as_ptr().cast(), n, SQLITE_TRANSIENT)
-                }
-            }
+    pub fn is_dml(&self) -> bool {
+        self.dml
+    }
+
+    /// The names of the placeholders, `None` for a bare `?`.
+    pub fn param_names(&self) -> Vec<Option<Vec<u8>>> {
+        let stmt = self.stmt.borrow();
+        (1..=stmt.parameter_count())
+            .map(|i| stmt.parameter_name(i).map(|n| n.as_bytes().to_vec()))
+            .collect()
+    }
+
+    /// Python's implicit BEGIN, before any binding.
+    pub fn begin(&self, begin: Option<&str>) -> Result<(), Failure> {
+        let Some(begin) = begin else {
+            return Ok(());
         };
-        if rc != SQLITE_OK {
-            return Err(sqlite_failure(api, db));
+        if !self.dml || !self.conn.is_autocommit() {
+            return Ok(());
+        }
+        let mut b = self
+            .conn
+            .prepare(begin)
+            .map_err(|e| failure(&self.conn, &e))?;
+        let mut rows = b.raw_query();
+        match rows.next() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(failure(&self.conn, &e)),
         }
     }
-    Ok(())
-}
 
-fn read_row(p: &Prepared<'_>, n: c_int) -> Vec<Value> {
-    let api = p.api;
-    (0..n)
-        .map(|c| unsafe {
-            match (api.column_type)(p.stmt, c) {
-                SQLITE_INTEGER => Value::Int((api.column_int64)(p.stmt, c)),
-                SQLITE_FLOAT => Value::Real((api.column_double)(p.stmt, c)),
-                SQLITE_TEXT => {
-                    let ptr = (api.column_text)(p.stmt, c);
-                    let len = (api.column_bytes)(p.stmt, c);
-                    if ptr.is_null() || len <= 0 {
-                        Value::Text(Vec::new())
-                    } else {
-                        Value::Text(std::slice::from_raw_parts(ptr, len as usize).to_vec())
-                    }
-                }
-                SQLITE_BLOB => {
-                    let ptr = (api.column_blob)(p.stmt, c);
-                    let len = (api.column_bytes)(p.stmt, c);
-                    if ptr.is_null() || len <= 0 {
-                        Value::Blob(Vec::new())
-                    } else {
-                        Value::Blob(
-                            std::slice::from_raw_parts(ptr.cast::<u8>(), len as usize).to_vec(),
-                        )
-                    }
-                }
-                _ => Value::Null,
+    /// A sequence of parameters, with Python's count check.
+    pub fn bind_positional(&self, params: &[Value]) -> Result<(), Failure> {
+        let expected = self.stmt.borrow().parameter_count();
+        if expected != params.len() {
+            return Err(Failure::Programming(format!(
+                "Incorrect number of bindings supplied. The current statement uses {expected}, and there are {} supplied.",
+                params.len()
+            )));
+        }
+        // A named placeholder given a sequence: CPython 3.12 warns (DeprecationWarning).
+        if self
+            .param_names()
+            .iter()
+            .any(|n| n.as_ref().is_some_and(|n| n.first() != Some(&b'?')))
+        {
+            return Err(Failure::Decline("a named placeholder bound by position"));
+        }
+        self.bind_in_order(params)
+    }
+
+    /// Values already matched to the placeholders by name.
+    pub fn bind_in_order(&self, params: &[Value]) -> Result<(), Failure> {
+        let mut stmt = self.stmt.borrow_mut();
+        for (k, v) in params.iter().enumerate() {
+            let value = match v {
+                Value::Null => ValueRef::Null,
+                Value::Int(x) => ValueRef::Integer(*x),
+                Value::Real(x) => ValueRef::Real(*x),
+                Value::Text(t) => ValueRef::Text(t),
+                Value::Blob(b) => ValueRef::Blob(b),
+            };
+            stmt.raw_bind_parameter(k + 1, ToSqlOutput::Borrowed(value))
+                .map_err(|e| failure(&self.conn, &e))?;
+        }
+        Ok(())
+    }
+
+    /// Step to the end, collecting rows.
+    pub fn run(&self) -> Result<Outcome, Failure> {
+        let mut stmt = self.stmt.borrow_mut();
+        let n = stmt.column_count();
+        let mut columns = Vec::with_capacity(n);
+        for c in 0..n {
+            match stmt.column_name(c) {
+                Ok(name) => columns.push(name.to_owned()),
+                Err(_) => return Err(Failure::Decline("a column without a name")),
             }
-        })
-        .collect()
-}
-
-fn column_names(p: &Prepared<'_>, n: c_int) -> Vec<String> {
-    (0..n)
-        .map(|c| unsafe {
-            let ptr = (p.api.column_name)(p.stmt, c);
-            if ptr.is_null() {
-                String::new()
-            } else {
-                CStr::from_ptr(ptr).to_string_lossy().into_owned()
+        }
+        let mut out = Vec::new();
+        {
+            let mut rows = stmt.raw_query();
+            loop {
+                // The failure is read before the rows are dropped (and the
+                // statement reset).
+                let row = match rows.next() {
+                    Ok(Some(row)) => row,
+                    Ok(None) => break,
+                    Err(e) => return Err(failure(&self.conn, &e)),
+                };
+                let mut values = Vec::with_capacity(n);
+                for c in 0..n {
+                    let v = row.get_ref(c).map_err(|e| failure(&self.conn, &e))?;
+                    values.push(match v {
+                        ValueRef::Null => Value::Null,
+                        ValueRef::Integer(x) => Value::Int(x),
+                        ValueRef::Real(x) => Value::Real(x),
+                        ValueRef::Text(t) => Value::Text(t.to_vec()),
+                        ValueRef::Blob(b) => Value::Blob(b.to_vec()),
+                    });
+                }
+                out.push(values);
             }
+        }
+        let rowcount = if self.dml {
+            self.conn.changes() as i64
+        } else {
+            -1
+        };
+        Ok(Outcome {
+            columns,
+            rows: out,
+            rowcount,
+            lastrowid: self.conn.last_insert_rowid(),
         })
-        .collect()
-}
+    }
 
-/// Python's implicit `BEGIN` before DML in autocommit, under legacy control.
-fn maybe_begin(api: &Api, db: *mut Db, sql: &str, begin: Option<&str>) -> Result<(), Failure> {
-    let Some(begin) = begin else {
-        return Ok(());
-    };
-    if !is_dml(sql.as_bytes()) || unsafe { (api.get_autocommit)(db) } == 0 {
-        return Ok(());
+    /// One `executemany` round: clear, bind, step once; the changes it made.
+    pub fn run_once(&self, params: &[Value], named: bool) -> Result<i64, Failure> {
+        self.stmt.borrow_mut().clear_bindings();
+        if named {
+            self.bind_in_order(params)?;
+        } else {
+            self.bind_positional(params)?;
+        }
+        let mut stmt = self.stmt.borrow_mut();
+        let mut rows = stmt.raw_query();
+        match rows.next() {
+            Ok(None) => Ok(self.conn.changes() as i64),
+            Ok(Some(_)) => Err(Failure::Programming(
+                "executemany() can only execute DML statements.".into(),
+            )),
+            Err(e) => Err(failure(&self.conn, &e)),
+        }
     }
-    let p = prepare(api, db, begin)?;
-    match unsafe { (api.step)(p.stmt) } {
-        SQLITE_DONE | SQLITE_ROW => Ok(()),
-        _ => Err(sqlite_failure(api, db)),
-    }
-}
 
-/// The handle a shim verified (see `rust_sql.py`); never null.
-fn handle(db: usize) -> Result<(&'static Api, *mut Db), Failure> {
-    let api = api().ok_or(Failure::Decline("SQLite is not bound"))?;
-    if db == 0 {
-        return Err(Failure::Decline("no connection handle"));
+    pub fn last_insert_rowid(&self) -> i64 {
+        self.conn.last_insert_rowid()
     }
-    Ok((api, db as *mut Db))
 }
 
 /// `cursor.execute(sql, params)` followed by `fetchall()`.
@@ -294,36 +369,11 @@ pub fn execute(
     params: &[Value],
     begin: Option<&str>,
 ) -> Result<Outcome, Failure> {
-    let (api, db) = handle(db)?;
-    let p = prepare(api, db, sql)?;
+    let st = Statement::prepare(db, sql)?;
     // CPython opens the transaction before binding: a binding error leaves it open.
-    maybe_begin(api, db, sql, begin)?;
-    bind_all(&p, db, params)?;
-    let n = unsafe { (api.column_count)(p.stmt) };
-    let columns = if n > 0 {
-        column_names(&p, n)
-    } else {
-        Vec::new()
-    };
-    let mut rows = Vec::new();
-    loop {
-        match unsafe { (api.step)(p.stmt) } {
-            SQLITE_ROW => rows.push(read_row(&p, n)),
-            SQLITE_DONE => break,
-            _ => return Err(sqlite_failure(api, db)),
-        }
-    }
-    let rowcount = if is_dml(sql.as_bytes()) {
-        unsafe { (api.changes64)(db) }
-    } else {
-        -1
-    };
-    Ok(Outcome {
-        columns,
-        rows,
-        rowcount,
-        lastrowid: unsafe { (api.last_insert_rowid)(db) },
-    })
+    st.begin(begin)?;
+    st.bind_positional(params)?;
+    st.run()
 }
 
 /// `cursor.executemany(sql, seq)`: one prepared statement, stepped once per
@@ -334,178 +384,34 @@ pub fn executemany(
     param_sets: &[Vec<Value>],
     begin: Option<&str>,
 ) -> Result<Outcome, Failure> {
-    let (api, db) = handle(db)?;
-    let p = prepare(api, db, sql)?;
-    if !is_dml(sql.as_bytes()) {
+    let st = Statement::prepare(db, sql)?;
+    if !st.is_dml() {
         return Err(Failure::Programming(
             "executemany() can only execute DML statements.".into(),
         ));
     }
-    maybe_begin(api, db, sql, begin)?;
+    st.begin(begin)?;
     let mut rowcount: i64 = 0;
     for params in param_sets {
-        unsafe {
-            (api.reset)(p.stmt);
-            (api.clear_bindings)(p.stmt);
-        }
-        bind_all(&p, db, params)?;
-        match unsafe { (api.step)(p.stmt) } {
-            SQLITE_DONE => rowcount += unsafe { (api.changes64)(db) },
-            SQLITE_ROW => {
-                return Err(Failure::Programming(
-                    "executemany() can only execute DML statements.".into(),
-                ));
-            }
-            _ => return Err(sqlite_failure(api, db)),
-        }
+        rowcount += st.run_once(params, false)?;
     }
     Ok(Outcome {
         columns: Vec::new(),
         rows: Vec::new(),
         rowcount,
-        lastrowid: unsafe { (api.last_insert_rowid)(db) },
+        lastrowid: st.last_insert_rowid(),
     })
 }
 
 /// `sqlite3_db_filename(db, "main")`, to check a handle belongs to the
 /// connection the shim thinks it does.
 pub fn db_filename(db: usize) -> Option<String> {
-    let (api, db) = handle(db).ok()?;
-    let p = unsafe { (api.db_filename)(db, c"main".as_ptr()) };
-    if p.is_null() {
+    if !bound() || db == 0 {
         return None;
     }
-    Some(unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
-}
-
-/// One prepared statement, driven a step at a time by the PyO3 layer
-/// (`pyconn.rs`), which looks named parameters up in a Python dict between
-/// `prepare` and `bind`.
-pub struct Statement {
-    api: &'static Api,
-    db: *mut Db,
-    stmt: *mut Stmt,
-    dml: bool,
-}
-
-// The handle and statement are used only while the caller's Python call is
-// running, as CPython's own module does when it releases the GIL.
-unsafe impl Send for Statement {}
-unsafe impl Sync for Statement {}
-
-impl Drop for Statement {
-    fn drop(&mut self) {
-        unsafe { (self.api.finalize)(self.stmt) };
-    }
-}
-
-impl Statement {
-    pub fn prepare(db: usize, sql: &str) -> Result<Statement, Failure> {
-        let (api, db) = handle(db)?;
-        let p = prepare(api, db, sql)?;
-        let stmt = p.stmt;
-        std::mem::forget(p); // ownership moves to Statement
-        Ok(Statement {
-            api,
-            db,
-            stmt,
-            dml: is_dml(sql.as_bytes()),
-        })
-    }
-
-    fn prepared(&self) -> std::mem::ManuallyDrop<Prepared<'static>> {
-        std::mem::ManuallyDrop::new(Prepared {
-            api: self.api,
-            stmt: self.stmt,
-        })
-    }
-
-    pub fn is_dml(&self) -> bool {
-        self.dml
-    }
-
-    pub fn param_names(&self) -> Vec<Option<Vec<u8>>> {
-        param_names(&self.prepared())
-    }
-
-    /// Python's implicit BEGIN, before any binding.
-    pub fn begin(&self, begin: Option<&str>) -> Result<(), Failure> {
-        let Some(begin) = begin else {
-            return Ok(());
-        };
-        if !self.dml || unsafe { (self.api.get_autocommit)(self.db) } == 0 {
-            return Ok(());
-        }
-        let p = prepare(self.api, self.db, begin)?;
-        match unsafe { (self.api.step)(p.stmt) } {
-            SQLITE_DONE | SQLITE_ROW => Ok(()),
-            _ => Err(sqlite_failure(self.api, self.db)),
-        }
-    }
-
-    /// A sequence of parameters, with Python's count check.
-    pub fn bind_positional(&self, params: &[Value]) -> Result<(), Failure> {
-        bind_all(&self.prepared(), self.db, params)
-    }
-
-    /// Values already matched to the placeholders by name.
-    pub fn bind_in_order(&self, params: &[Value]) -> Result<(), Failure> {
-        bind_values(&self.prepared(), self.db, params)
-    }
-
-    /// Step to the end, collecting rows.
-    pub fn run(&self) -> Result<Outcome, Failure> {
-        let p = self.prepared();
-        let n = unsafe { (self.api.column_count)(self.stmt) };
-        let columns = if n > 0 {
-            column_names(&p, n)
-        } else {
-            Vec::new()
-        };
-        let mut rows = Vec::new();
-        loop {
-            match unsafe { (self.api.step)(self.stmt) } {
-                SQLITE_ROW => rows.push(read_row(&p, n)),
-                SQLITE_DONE => break,
-                _ => return Err(sqlite_failure(self.api, self.db)),
-            }
-        }
-        let rowcount = if self.dml {
-            unsafe { (self.api.changes64)(self.db) }
-        } else {
-            -1
-        };
-        Ok(Outcome {
-            columns,
-            rows,
-            rowcount,
-            lastrowid: unsafe { (self.api.last_insert_rowid)(self.db) },
-        })
-    }
-
-    /// One `executemany` round: reset, bind, step once; the changes it made.
-    pub fn run_once(&self, params: &[Value], named: bool) -> Result<i64, Failure> {
-        unsafe {
-            (self.api.reset)(self.stmt);
-            (self.api.clear_bindings)(self.stmt);
-        }
-        if named {
-            self.bind_in_order(params)?;
-        } else {
-            self.bind_positional(params)?;
-        }
-        match unsafe { (self.api.step)(self.stmt) } {
-            SQLITE_DONE => Ok(unsafe { (self.api.changes64)(self.db) }),
-            SQLITE_ROW => Err(Failure::Programming(
-                "executemany() can only execute DML statements.".into(),
-            )),
-            _ => Err(sqlite_failure(self.api, self.db)),
-        }
-    }
-
-    pub fn last_insert_rowid(&self) -> i64 {
-        unsafe { (self.api.last_insert_rowid)(self.db) }
-    }
+    // SAFETY: as in `Statement::prepare`; the borrow is dropped at once.
+    let conn = unsafe { Connection::from_handle(db as *mut ffi::sqlite3) }.ok()?;
+    conn.path().map(str::to_owned)
 }
 
 #[cfg(test)]
