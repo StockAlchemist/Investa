@@ -39,8 +39,8 @@ def user_credentials(conn: sqlite3.Connection, username: str) -> Optional[tuple]
     return investa_core.ss_user_credentials(conn, username)
 
 
-def user_record(conn: sqlite3.Connection, username: str) -> Optional[tuple]:
-    """(id, username, is_active, created_at, alias), or None."""
+def user_record(conn: sqlite3.Connection, username: Optional[str]) -> Optional[tuple]:
+    """(id, username, is_active, created_at, alias), or None (a None username matches no row)."""
     # Ported to Rust: rust/investa_core/src/ss.rs
     return investa_core.ss_user_record(conn, username)
 
