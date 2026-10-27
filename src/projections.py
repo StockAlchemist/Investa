@@ -220,8 +220,12 @@ def walk_forward_errors(
         return pd.DataFrame(columns=cols)
 
     is_dated = isinstance(wealth.index, pd.DatetimeIndex)
+    # Nanosecond ticks, which the Rust walk-forward converts to years; pandas 3
+    # indexes may count in s/ms/us.
     ticks = (
-        np.ascontiguousarray(wealth.index.asi8, dtype=np.int64) if is_dated else None
+        np.ascontiguousarray(wealth.index.as_unit("ns").asi8, dtype=np.int64)
+        if is_dated
+        else None
     )
     bench = None
     if benchmark_series is not None:

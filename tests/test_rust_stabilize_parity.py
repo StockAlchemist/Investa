@@ -55,7 +55,8 @@ def _index(rng, n):
         idx = pd.DatetimeIndex(start.value + offsets)
     else:
         idx = pd.date_range(start, periods=n, freq="D")  # keeps its freq
-    return idx.tz_localize("UTC")
+    unit = ["s", "ms", "us", "ns"][int(rng.integers(0, 4))]  # pandas 3 picks it from the input
+    return idx.tz_localize("UTC").as_unit(unit)
 
 
 def _frame(rng):
@@ -190,11 +191,17 @@ def test_declined_tables_match_pandas(seed):
             assert expected == got
 
 
-def test_real_shape_takes_the_fast_path():
-    v = pd.DataFrame({"price": [1.0, np.nan, 3.0], "Volume": [10.0, 20.0, np.nan]},
-                     index=pd.DatetimeIndex(["2024-01-02", "2024-01-03", "2024-01-05"], tz="UTC"))  # fmt: skip
+@pytest.mark.parametrize("unit", ["s", "ms", "us", "ns"])
+def test_real_shape_takes_the_fast_path(unit, monkeypatch):
+    v = pd.DataFrame({"price": [1.0, np.nan, 3.0], "Volume": [10, 20, 30]},
+                     index=pd.DatetimeIndex(["2024-01-02", "2024-01-03", "2024-01-05"], tz="UTC").as_unit(unit))  # fmt: skip
     ts = pd.Timestamp(dt.date(2023, 12, 1), tz="UTC")
+    expected = _pandas(v, ts)
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the fill fell back to pandas")
+
+    monkeypatch.setattr(pd.DataFrame, "interpolate", refuse)  # the fill must not need it
     out = investa_core.ph_stabilize(v, ts)
-    assert out._mgr.nblocks == 1 and out.index[0] == ts  # built by the fill, not by pandas
-    assert out["price"].tolist() == [1.0, 1.0, 1.0 + 2.0 * (1 / 3), 3.0]  # 3 Jan is a third of 2→5 Jan
-    _same(_pandas(v, ts), out)
+    monkeypatch.undo()
+    _same(expected, out)

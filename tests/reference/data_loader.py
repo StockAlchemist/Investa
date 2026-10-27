@@ -598,15 +598,24 @@ def load_and_clean_transactions(
                     # ignored_reasons[original_idx_val] = f"Invalid numeric value for {col}: {original_values_for_error.loc[idx]}" # Optional: add to reasons
                 has_warnings = True
 
+    # pandas 3 compatibility (a no-op under pandas 2): pandas 3 reads text into
+    # its `str` dtype with SQL NULLs as NaN, which astype(str) keeps missing;
+    # pandas 2 held them as None, stringified to "None" -- the value the
+    # cleaning below blanks or lowercases. Give such a column that "None".
+    def _text_input(col):
+        if int(pd.__version__.split(".")[0]) >= 3 and isinstance(col.dtype, pd.StringDtype):
+            return col.fillna("None")
+        return col
+
     # Text Column Cleaning (strip whitespace, ensure string type)
     text_cols = ["Symbol", "Account", "Note", "Local Currency"]
     for col in text_cols:
         if col in df.columns:
-            df[col] = df[col].astype(str).str.strip().replace("None", "", regex=False)
+            df[col] = _text_input(df[col]).astype(str).str.strip().replace("None", "", regex=False)
 
     # Standardize Type to Lowercase (e.g., 'Buy' -> 'buy')
     if "Type" in df.columns:
-        df["Type"] = df["Type"].astype(str).str.strip().str.lower()
+        df["Type"] = _text_input(df["Type"]).astype(str).str.strip().str.lower()
 
         # Canonicalize corporate-action spelling variants to the single key the
         # engine dispatches on. The three clients label spin-offs "Spin-off"
@@ -636,7 +645,7 @@ def load_and_clean_transactions(
     # --- Tags Cleaning ---
     if "Tags" in df.columns:
         # Ensure string, strip whitespace, remove 'nan' strings
-        df["Tags"] = df["Tags"].astype(str).str.strip()
+        df["Tags"] = _text_input(df["Tags"]).astype(str).str.strip()
         df.loc[df["Tags"].str.lower().isin(["nan", "none", "<na>"]), "Tags"] = ""
 
     # --- Normalize Cash Symbol ---
@@ -672,7 +681,7 @@ def load_and_clean_transactions(
         # This logic mirrors the robust check in _process_transactions_to_holdings.
         # 1. Strip whitespace and convert to uppercase for consistent comparison.
         # 2. Check for various null-like strings, non-3-char codes, or actual NaNs.
-        normalized_currency = df["Local Currency"].astype(str).str.strip().str.upper()
+        normalized_currency = _text_input(df["Local Currency"]).astype(str).str.strip().str.upper()
         invalid_currency_mask = (
             normalized_currency.isin(["", "<NA>", "NAN", "NONE", "N/A"])
             | (normalized_currency.str.len() != 3)

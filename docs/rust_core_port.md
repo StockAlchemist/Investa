@@ -1173,6 +1173,58 @@ End to end (best of two interleaved rounds of medians of 7, load average 3–5),
 
 Seen while profiling, not changed: each benchmarked history also spends about 75 ms in `mdb_upsert_ohlcv` and 25 ms in `mdb_upsert_fx`, storing fetched prices back into the archive. Under the benchmark's replayed tape every fetch "returns" data, so this may overstate what a live request pays when its data is fresh.
 
+## Dependency upgrade (27 Oct 2026): the latest Python packages
+
+Every pin in `requirements.txt` and `requirements-dev.txt` was raised to its latest release, on branch `chore/latest-deps`, in three stages.
+
+1. **Everything but NumPy and pandas** (`4e7f560c`, `3111edfd`).
+   - FastAPI 0.162 and pydantic 2.14 describe the same API differently, so the web types were regenerated.
+   - ruff 0.17 selects far more rules by default, so `pyproject.toml` names ruff 0.12's default set.
+2. **NumPy 2.0 → 2.5** (`2107e6e0`).
+   - NumPy 2.5 no longer buffers a contiguous float64 reduction: `np.add.reduce` is one pairwise sum over the whole array, where 2.0 summed 8,192-element buffers.
+   - `stats::np_sum` now follows the installed NumPy. At import it sums a fixed probe with `np.add.reduce` and keeps the scheme that reproduces it bit for bit (`investa_core.NUMPY_REDUCE_BUFFER`).
+3. **pandas 2.3 → 3.1, and pyarrow 26 added.**
+
+### What pandas 3 changed, and what follows it
+
+Each change below is exact under both pandas versions: under pandas 2.3 it changes nothing. Where a frozen reference (`tests/reference/`) contains the same code, it got the identical change, marked "pandas 3 compatibility (a no-op under pandas 2)", so the parity tests keep comparing like with like.
+
+- **Datetime units.** pandas 3 picks the unit from the input: seconds from a `date`, microseconds from a string or `datetime`. pandas 2 always used nanoseconds.
+  - Every stamp that becomes an integer now goes through `pyhelp::ns_ints` (`as_unit("ns")`, then `asi8`). Otherwise a grid and the transaction dates can differ by a factor of a million.
+  - This covers the daily and valuation kernels' ordinals, the single-date kernel wrapper and the projection ticks.
+  - `asi8` also avoids pandas 3.1's deprecation of `.values` on zone-aware stamps.
+- **Units built natively.** The price-archive reader builds its stamps in the unit `pd.to_datetime` gives date strings (`pyhelp::parsed_date_unit`, asked once per process). The stabilization fill and the grid alignment accept any unit:
+  - the fill works in the union's unit (the finer of the index's and `pd.Index([start])`'s, the latter nanoseconds in pandas 2);
+  - the alignment compares stamps as nanoseconds.
+- **Copy-on-write.** `.values` and `to_numpy()` hand out read-only arrays. The FX cross-rate fill and the analyzer's holdings arrays, written in place, take writable copies.
+- **The `str` dtype.** pandas 3 reads text into its `str` dtype, holding SQL NULLs as NaN, and `astype(str)` keeps them missing. pandas 2 read them as None, stringified to `"None"`.
+  - The loader (`pyhelp::text_input`) gives such a column `"None"` first, so its cleaning blanks them to `''` as before. Notes and tags would otherwise reach the API as `null`.
+- **`DataFrame(dict)` with evenly spaced integer keys** labels its columns with a RangeIndex. The grid alignment calls the same `maybe_sequence_to_range` where it exists.
+- **`pd.read_sql_query`** wraps only `sqlite3.Error` (other exceptions propagate without a rollback) and adds a hint for a bare table name. `rust_sql.read_frame` and `pyconn::read_frame` follow the installed version.
+- **The NYSE schedule.** pandas-market-calendars 5.5 under pandas 3 infers the index's freq. 4.4 gave a one-session range a CustomBusinessDay, and 4.6 none. The schedule cache works out the rule from four probe ranges at build and asks the calendar directly if none fits.
+
+### Checks
+
+- **Full suite:** passes under pandas 3.1, and under pandas 2.3 with NumPy 2.5 (1,861 tests).
+- **Real data:** each step on one frozen data snapshot with one replayed tape and the network refused. The comparison ran 35 read-only endpoints through the real FastAPI app for each of the three books.
+  - Every response is identical between pandas 2.3 and 3.1, except the endpoints that also differ between two pandas 2 runs (live quotes and index timestamps).
+  - A recalculated history (no daily cache) differs from pandas 2 only in rounding: Portfolio Value by at most 4 × 10⁻¹⁶ relative, derived gains and returns at most 6 × 10⁻¹¹ after cancellation.
+- **pyarrow** was never a declared dependency. Without it the Feather daily-results cache fails to read and every history recalculates; that was so in Docker and CI before this change too. pandas 3 also backs its `str` dtype with it.
+
+Interleaved, best of three:
+
+| Workload | pandas 3 vs pandas 2 |
+|---|---|
+| Summary | 10–16% slower (+15 to 20 ms) |
+| Daily history | unchanged (within 5%) |
+
+Most of the summary's extra time is `.tolist()` and row selection on pyarrow-backed text columns, in the MWR cash flows and the aggregate metrics.
+
+### Left as they are
+
+- **pandas 3.1 deprecations, which only break under pandas 4.** About 20 calls behind the `src/` wrappers pass `inplace=` (`sort_values`, `set_index`, `rename`, `drop`, `sort_index`). One `pd.concat` relies on the default sort of DatetimeIndexes. Replacing `inplace=` changes which frame a caller sees mutated, so it is its own change.
+- **Weekly history fetches its benchmarks with `interval="W"`**, which Yahoo does not accept under any yfinance version. The fetch normalizer maps only `"D"` to `"1d"`, so other non-Yahoo intervals likely behave the same (not checked). The benchmark series comes back empty; while the US market is open, four retries also cost about 4 s per request. This predates the upgrade.
+
 ## Found while porting
 
 - **IBKR staging's amount fallback read the unstripped type** (fixed 27 Oct 2026, at the user's request). When a synced row has no total, `stage_pending_transaction` computes `qty x price ± commission` and adds the commission only if the type is `BUY`. It tested the raw type, though, while the stored type is stripped and title-cased. So a type with stray spaces (`" buy "`) was stored as `Buy`, but its commission was subtracted: 2 x 10 − 1 = 19 instead of 21.

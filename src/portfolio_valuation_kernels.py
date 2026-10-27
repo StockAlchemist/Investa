@@ -857,10 +857,12 @@ def _calculate_portfolio_value_at_date_unadjusted_numba(
         )
         tx_types_np = tx_types_series.values.astype(np.int64)
 
+        # Nanoseconds, as target_date_ordinal (Timestamp.value) is: pandas 3
+        # parses to microseconds, so the units would otherwise differ.
         tx_dates_ordinal_np = np.array(
-            pd.to_datetime(transactions_til_date["Date"], utc=True).values.astype(
-                "int64"
-            ),
+            pd.to_datetime(transactions_til_date["Date"], utc=True)
+            .dt.as_unit("ns")
+            .array.asi8,
             dtype=np.int64,
         )
         tx_symbols_series = _normalize_series(transactions_til_date["Symbol"]).map(

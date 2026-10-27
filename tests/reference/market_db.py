@@ -126,6 +126,11 @@ def _read_daily_frames(
         return None
     names, offsets, dates_ns, columns = read
     stamps = dates_ns.view("M8[ns]")
+    # pandas 3 compatibility (a no-op under pandas 2): stamps in the unit
+    # pd.to_datetime gives the date strings, as the pandas path builds them.
+    unit = pd.to_datetime(pd.Series(["2000-01-03"])).dt.unit
+    if unit != "ns":
+        stamps = stamps.astype(f"M8[{unit}]")
     frames: Dict[str, pd.DataFrame] = {}
     for k, symbol in enumerate(names):
         a, b = int(offsets[k]), int(offsets[k + 1])
