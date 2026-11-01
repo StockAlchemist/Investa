@@ -46,6 +46,15 @@ Investa is a comprehensive portfolio management solution with a modern **Web Das
 
 ## Getting Started
 
+Optional Tiingo support can be enabled under **Settings → Advanced → API Keys**
+on the web, or **Settings → API Keys** on macOS and iOS. Save a Tiingo key there
+or set `TIINGO_API_KEY` in the backend's `.env`. Yahoo remains the primary feed;
+Tiingo supplies missing US daily price histories after Yahoo recovery fails.
+Fallback data is split-adjusted without reinvesting dividends, cached to limit
+API usage, and stored with Tiingo provenance during normal archive sync. This
+does not replace intraday quotes, FX, or international-market data. Existing
+corporate actions and independently repaired archive bars remain protected.
+
 For a step-by-step guide on setup, usage, and configuration, please see our detailed tutorial:
 
 ➡️ **[Investa User Tutorial](TUTORIAL.md)**

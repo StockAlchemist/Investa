@@ -430,7 +430,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
                         <label className={labelClassName}>Tiingo API Key</label>
                         <input
                             type={showApiKeys ? "text" : "password"}
-                            placeholder="Corporate actions & stock split verification"
+                            placeholder="US daily price fallback & split verification"
                             value={tiingoApiKey}
                             onChange={(e) => { setTiingoApiKey(e.target.value); markApiKeyEdited('tiingo_api_key'); }}
                             className={inputClassName}

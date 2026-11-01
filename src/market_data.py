@@ -23,7 +23,7 @@ import subprocess
 import tempfile
 import queue
 from collections import OrderedDict
-from market_db import ADJUST_SPLIT, MarketDatabase
+from market_db import ADJUST_NONE, ADJUST_SPLIT, BASIS_RAW, BASIS_SPLIT_ADJ, MarketDatabase
 
 
 # --- ADDED: Import line_profiler if available, otherwise create dummy decorator ---
@@ -3561,6 +3561,15 @@ class MarketDataProvider:
         if interval == "D":
             interval = "1d"
 
+        def fetch_tiingo(symbols):
+            if interval != "1d":
+                return {}
+            from tiingo_daily import daily_fallback
+
+            return daily_fallback.fetch(
+                symbols, pd.Timestamp(start_date).date(), pd.Timestamp(end_date).date()
+            )
+
         # NORMALIZATION HELPER
         def normalize_df(df_raw, sym):
             if df_raw is None or df_raw.empty:
@@ -3602,8 +3611,8 @@ class MarketDataProvider:
 
         _ensure_yfinance()
         if not YFINANCE_AVAILABLE:
-            logging.error("Error: yfinance not available for historical fetch.")
-            return {}
+            logging.info("Yahoo unavailable; trying the configured daily-price fallback.")
+            return fetch_tiingo(symbols_yf)
         historical_data: Dict[str, pd.DataFrame] = {}
         if not symbols_yf:
             logging.warning("Hist Fetch Helper: No symbols provided.")
@@ -3634,7 +3643,9 @@ class MarketDataProvider:
                         f"Hist Fetch Helper: Skipping cached invalid symbol: {s}"
                     )
                     filtered_count += 1
-                    continue  # Skip this symbol
+                    # This cache describes Yahoo failures, not Tiingo coverage.
+                    historical_data.update(fetch_tiingo([s]))
+                    continue  # Skip Yahoo for this symbol
                 else:
                     # Expired, retry fetching
                     del invalid_cache[s]
@@ -3671,6 +3682,18 @@ class MarketDataProvider:
         # But for intraday (1m, 5m), we NEED to fetch 'today' to see the chart update.
         today = get_est_today()
         is_intraday = interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+
+        def filter_date_range(frame):
+            index = frame.index
+            if is_intraday:
+                try:
+                    if index.tz is None:
+                        index = index.tz_localize("UTC")
+                    index = index.tz_convert("America/New_York")
+                except Exception as exc:
+                    logging.debug("Hist Fetch Helper: Timezone conversion skipped: %s", exc)
+            mask = (index.date >= start_date) & (index.date <= end_date)
+            return frame.loc[mask]
 
         # --- CACHE READ (After-Hours/Weekend) ---
         # If market is closed, try to load from local DB to avoid API latency
@@ -4105,31 +4128,10 @@ class MarketDataProvider:
                             missing_symbols_in_batch.append(symbol)
                             continue
 
-                        # 2. Filter for requested range after localizing to NY
-                        # This avoids the "UTC roll-over" bug where 8:00 PM EST
-                        # becomes the next day in UTC and gets filtered out incorrectly.
-                        df_norm_est = df_norm.copy()
-                        try:
-                            if df_norm_est.index.tz is None:
-                                # Assume naive is UTC if it's from YF (usually is) or logic suggests so
-                                df_norm_est.index = df_norm_est.index.tz_localize(
-                                    "UTC"
-                                ).tz_convert("America/New_York")
-                            else:
-                                df_norm_est.index = df_norm_est.index.tz_convert(
-                                    "America/New_York"
-                                )
-                        except Exception as e_tz:
-                            logging.debug(
-                                f"  Hist Fetch Helper: Timezone localization skipped for {symbol}: {e_tz}"
-                            )
-
-                        mask = (df_norm_est.index.date >= start_date) & (
-                            df_norm_est.index.date <= end_date
-                        )
-                        df_filtered = df_norm.loc[
-                            mask
-                        ].copy()  # Apply mask back to original or normalized version
+                        # Daily indexes label exchange sessions; converting midnight
+                        # to NY moves Asian/UTC daily bars to the previous date.
+                        # Intraday bars still use the portfolio's NY day boundary.
+                        df_filtered = filter_date_range(df_norm).copy()
 
                         # 3. Final cleanup (numeric, NaNs, zero-prices)
                         if not df_filtered.empty and "price" in df_filtered.columns:
@@ -4232,10 +4234,7 @@ class MarketDataProvider:
                                     df_rec.columns = ["Close"]
 
                                 if "Close" in df_rec.columns:
-                                    mask = (df_rec.index.date >= start_date) & (
-                                        df_rec.index.date <= end_date
-                                    )
-                                    df_filt = df_rec.loc[mask]
+                                    df_filt = filter_date_range(df_rec)
                                     if not df_filt.empty:
                                         df_cln = df_filt[["Close"]].copy()
                                         df_cln.rename(
@@ -4255,6 +4254,11 @@ class MarketDataProvider:
                     logging.warning(
                         f"  Hist Fetch Helper recovery failed for {rec_batch[0]}...: {e_rec}"
                     )
+
+            # Yahoo's normal fetch and isolated recovery have both run. Use
+            # Tiingo only for missing daily series; never replace Yahoo successes.
+            tiingo_missing = [s for s in all_missing_symbols if s not in historical_data]
+            historical_data.update(fetch_tiingo(tiingo_missing))
 
             # --- IDENTIFY STILL MISSING SYMBOLS & MARK INVALID ---
             final_missing = [s for s in all_missing_symbols if s not in historical_data]
@@ -4751,6 +4755,19 @@ class MarketDataProvider:
             deserialized_dict[expected_key] = df  # Store df (even if empty)
         return deserialized_dict
 
+    def _store_daily_history(self, symbol: str, frame: pd.DataFrame, interval: str):
+        source = frame.attrs.get("market_data_source", "yahoo")
+        if source == "tiingo" and self.db.get_price_basis([symbol]).get(symbol) == BASIS_RAW:
+            # Fallback readers receive split-only prices. In a converted archive
+            # store their inverse under its EXISTING actions, so a subsequent
+            # split-adjusted read reproduces the fallback exactly. Do not import
+            # a second provider's action dates into the archive automatically.
+            frame = self.db._adjust_frame(
+                frame.copy(), symbol, BASIS_SPLIT_ADJ, ADJUST_NONE,
+                self.db.get_actions([symbol]).get(symbol),
+            )
+        self.db.upsert_ohlcv(symbol, frame, interval=interval, source=source)
+
     @profile
     def _sync_to_db(
         self,
@@ -4903,11 +4920,9 @@ class MarketDataProvider:
                                 [s], inception, end_date, interval=interval
                             )
                             if s in full_df_map:
-                                self.db.upsert_ohlcv(
-                                    s, full_df_map[s], interval=interval
-                                )
+                                self._store_daily_history(s, full_df_map[s], interval)
                         else:
-                            self.db.upsert_ohlcv(s, df, interval=interval)
+                            self._store_daily_history(s, df, interval)
             else:
                 fetched_fx = self._fetch_yf_historical_data(
                     syms, start, end_date, interval=interval
