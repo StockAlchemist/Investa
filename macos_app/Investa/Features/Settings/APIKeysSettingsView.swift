@@ -107,7 +107,7 @@ struct APIKeysSettingsView: View {
 
                     keyField(
                         title: "Tiingo API Key",
-                        subtitle: "Used for historical stock split adjustments, dividend validation, and market data fallback.",
+                        subtitle: "Provides US daily price fallback when Yahoo is unavailable, plus stock split and dividend verification.",
                         placeholder: "Enter Tiingo API key",
                         icon: "arrow.triangle.swap",
                         text: $tiingoApiKey

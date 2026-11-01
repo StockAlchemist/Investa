@@ -49,8 +49,8 @@ SEC_TH_API_KEY = os.getenv("SEC_TH_API_KEY")
 BOT_API_KEY = os.getenv("BOT_API_KEY")
 
 # --- Tiingo ---
-# A second opinion on splits, used to adjudicate the findings
-# check_split_consistency.py reports. Free tier, token from https://www.tiingo.com.
+# US daily-price fallback for Yahoo and an independent split-verification feed.
+# Configure through Settings > API Keys or TIINGO_API_KEY in .env.
 TIINGO_API_KEY = os.getenv("TIINGO_API_KEY")
 
 # --- Authentication Configuration ---

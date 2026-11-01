@@ -586,6 +586,9 @@ async def get_projected_income(
             iter_date = (pd.Timestamp(iter_date) + pd.DateOffset(months=1)).date()
 
         return results
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Error getting projected income: {e}", exc_info=True)
         raise HTTPException(
@@ -789,6 +792,9 @@ async def get_projection(
             )
         return clean_nans(result)
 
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Error calculating projection: {e}", exc_info=True)
         return {"available": False, "error": "Failed to calculate projection"}
@@ -1061,6 +1067,9 @@ async def get_attribution(
                 "total_gain": total_gain,
             }
         )
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Error calculating attribution: {e}")
         return {"error": str(e)}
@@ -1192,6 +1201,9 @@ async def get_dividend_calendar(
 
         return clean_nans(events)
 
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Error getting dividend calendar: {e}", exc_info=True)
         return []
@@ -1282,6 +1294,9 @@ async def get_earnings_calendar(
         events.sort(key=lambda e: (e["earnings_date"], e["symbol"]))
         return clean_nans(events)
 
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Error getting earnings calendar: {e}", exc_info=True)
         return []
