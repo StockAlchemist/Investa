@@ -367,18 +367,21 @@ def _process_transactions_to_holdings(
         .values
     )
 
+    # pandas 3 compatibility (a no-op under pandas 2): qtys, raw_prices and
+    # split_ratios are written in place below, and copy-on-write makes
+    # `.values` read-only, so each is a writable copy.
     qtys = (
         pd.to_numeric(df["Quantity"], errors="coerce")
         .fillna(0.0)
         .astype(np.float64)
-        .values
+        .to_numpy(copy=True)
     )
 
     raw_prices = (
         pd.to_numeric(df["Price/Share"], errors="coerce")
         .fillna(0.0)
         .astype(np.float64)
-        .values
+        .to_numpy(copy=True)
     )
     raw_totals = (
         pd.to_numeric(df["Total Amount"], errors="coerce")
@@ -452,7 +455,7 @@ def _process_transactions_to_holdings(
         pd.to_numeric(df["Split Ratio"], errors="coerce")
         .fillna(0.0)
         .astype(np.float64)
-        .values
+        .to_numpy(copy=True)
     )
 
     # --- Fallback: Use Quantity as Split Ratio if Split Ratio is 0 ---

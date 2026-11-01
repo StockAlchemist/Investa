@@ -35,6 +35,11 @@ def _pandas(series_by_id, date_range):
 
 
 def _grid(rng):
+    unit = ["s", "ms", "us", "ns"][int(rng.integers(0, 4))]  # pandas 3 picks it from the input
+    return _grid_ns(rng).as_unit(unit)
+
+
+def _grid_ns(rng):
     start = pd.Timestamp("2018-01-01", tz="UTC") + pd.Timedelta(days=int(rng.integers(0, 900)))
     n = int(rng.integers(1, 500))
     kind = int(rng.integers(0, 5))
@@ -47,7 +52,7 @@ def _grid(rng):
     if kind == 3:
         return pd.date_range(start + pd.Timedelta(hours=14, minutes=30), periods=n, freq="30min")
     g = pd.date_range(start, periods=n, freq="D")
-    return pd.DatetimeIndex(g.asi8, tz="UTC", name="Date")  # no freq, a name
+    return pd.DatetimeIndex(g.as_unit("ns").asi8, tz="UTC", name="Date")  # no freq, a name
 
 
 def _series(rng, grid):
@@ -69,6 +74,7 @@ def _series(rng, grid):
         values[:] = np.nan
     elif r < 0.5:
         values[int(rng.integers(0, len(values)))] = -np.inf
+    idx = idx.as_unit(["s", "ms", "us", "ns"][int(rng.integers(0, 4))])  # units may differ from the grid's
     return pd.Series(values, index=idx, name=["price", None, "Close"][int(rng.integers(0, 3))])
 
 
@@ -142,10 +148,18 @@ def test_declined_inputs_match_pandas(seed):
             assert a == b
 
 
-def test_real_shape_takes_the_sweep():
-    grid = pd.date_range("2024-01-01", periods=5, freq="D", tz="UTC")
-    s = pd.Series([1.0, np.nan, 3.0], index=pd.DatetimeIndex(["2024-01-02 21:00", "2024-01-03 21:00", "2024-01-08"], tz="UTC"), name="price")
+@pytest.mark.parametrize("grid_unit,series_unit", [("ns", "ns"), ("s", "us"), ("us", "s"), ("ms", "ns")])
+def test_real_shape_takes_the_sweep(grid_unit, series_unit, monkeypatch):
+    grid = pd.date_range("2024-01-01", periods=5, freq="D", tz="UTC").as_unit(grid_unit)
+    s = pd.Series([1.0, np.nan, 3.0], index=pd.DatetimeIndex(["2024-01-02 21:00", "2024-01-03 21:00", "2024-01-08"], tz="UTC").as_unit(series_unit), name="price")
+    expected = _pandas({7: s}, grid)
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the alignment fell back to pandas")
+
+    monkeypatch.setattr(pd.DataFrame, "ffill", refuse)  # only the pandas path fills
     out = investa_core.ph_align_prices_to_grid({7: s}, grid)
-    assert out._mgr.nblocks == 1 and out.index is grid
+    monkeypatch.undo()
+    assert out.index is grid
     assert out[7].tolist() == [1.0, 1.0, 1.0, 1.0, 1.0]  # Jan 3's NaN carries Jan 2's close; Jan 8 is past the grid
-    _same(_pandas({7: s}, grid), out)
+    _same(expected, out)

@@ -91,10 +91,24 @@ def canon(x):
     return (type(x).__name__, repr(x))
 
 
+# Deprecations raised inside third-party libraries, not by either side's code.
+# They fire only when a process-wide cache misses, so which side sees them
+# depends on test order, not on the port. Both are reached through
+# pandas-market-calendars when the NYSE schedule cache is first built: pandas
+# 2.3's Timedelta constructor under NumPy 2.5, and the calendar's own
+# `Series.dt.weekday` under pandas 3.1.
+LIBRARY_WARNINGS = [
+    r"The 'generic' unit for NumPy timedelta is deprecated",
+    r"Series\.dt\.weekday is deprecated",
+]
+
+
 def call(fn, caplog):
     caplog.clear()
     with caplog.at_level(logging.DEBUG), warnings.catch_warnings(record=True) as warned:
         warnings.simplefilter("always")
+        for text in LIBRARY_WARNINGS:
+            warnings.filterwarnings("ignore", message=text, category=DeprecationWarning)
         try:
             out = ("ok", canon(fn()))
         except Exception as exc:

@@ -1,10 +1,11 @@
 //! NumPy/pandas reductions reproduced exactly, and `risk_metrics` built on them.
 //!
 //! Exactness rests on two facts measured against the installed stack
-//! (NumPy 2.0, pandas 2.3, no bottleneck/numexpr):
+//! (NumPy 2.0 and 2.5, pandas 2.3, no bottleneck/numexpr):
 //!
 //! * `np.add.reduce` over a contiguous float64 array starts from +0.0 and adds
-//!   NumPy's pairwise sum of each 8192-element buffer in turn ([`np_sum`]);
+//!   NumPy's pairwise sum of each buffer in turn ([`np_sum`]): 8192 elements in
+//!   NumPy 2.0, the whole array in 2.5, measured at import;
 //!   pandas' `mean`/`var`/`std` call it on a copy with NaN replaced by 0, then
 //!   divide by the non-NaN count.
 //! * `np.minimum` returns -0.0 for a {0.0, -0.0} pair in either order.
@@ -13,20 +14,54 @@
 //! OpenBLAS on Linux: the summation order is theirs), so `calculate_beta`
 //! keeps pandas' covariance and only its variance comes from here.
 
-/// NumPy's reduction buffer: `np.add.reduce` hands the inner loop at most
-/// this many elements at a time.
-const REDUCE_BUFFER: usize = 8192;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// How many elements `np.add.reduce` hands its inner loop at a time over a
+/// contiguous float64 array. NumPy 2.0 buffers 8192; NumPy 2.5 does not buffer
+/// a contiguous array at all (`usize::MAX`: one pairwise sum over the whole of
+/// it). [`calibrate_reduce_buffer`] measures the installed NumPy at import.
+static REDUCE_BUFFER: AtomicUsize = AtomicUsize::new(8192);
 
 /// `np.add.reduce` over a contiguous float64 array — what `ndarray.sum()`,
 /// `ndarray.mean()` and pandas' reductions add with. The reduction starts
 /// from the identity +0.0 (so negative zeros sum to +0.0) and adds the
-/// [`pairwise_sum`] of each 8192-element buffer in turn.
+/// [`pairwise_sum`] of each buffer in turn.
 pub fn np_sum(a: &[f64]) -> f64 {
+    np_sum_buffered(a, REDUCE_BUFFER.load(Ordering::Relaxed))
+}
+
+fn np_sum_buffered(a: &[f64], buffer: usize) -> f64 {
     let mut acc = 0.0_f64;
-    for block in a.chunks(REDUCE_BUFFER) {
+    for block in a.chunks(buffer) {
         acc += pairwise_sum(block);
     }
     acc
+}
+
+/// Matches [`np_sum`] to the installed NumPy: sums a fixed 20,000-element
+/// probe (past one 8192 buffer, values spread over seven decades so the
+/// grouping shows in the last bits) with `np.add.reduce`, and keeps whichever
+/// buffering reproduces it. Returns the buffer chosen. Should neither match (a
+/// NumPy that reduces some third way), the 8192 default stays and the parity
+/// tests will say so.
+pub fn calibrate_reduce_buffer(py: pyo3::Python<'_>) -> pyo3::PyResult<usize> {
+    use pyo3::prelude::*;
+    let probe: Vec<f64> = (0..20_000_i32)
+        .map(|i| ((i as f64) * 0.618_033_988_749_895).sin() * 10f64.powi(i % 7))
+        .collect();
+    let np = py.import("numpy")?;
+    let array = np.call_method1("array", (probe.clone(),))?;
+    let numpy_sum: f64 = np
+        .getattr("add")?
+        .call_method1("reduce", (array,))?
+        .extract()?;
+    for buffer in [usize::MAX, 8192] {
+        if np_sum_buffered(&probe, buffer).to_bits() == numpy_sum.to_bits() {
+            REDUCE_BUFFER.store(buffer, Ordering::Relaxed);
+            return Ok(buffer);
+        }
+    }
+    Ok(REDUCE_BUFFER.load(Ordering::Relaxed))
 }
 
 /// NumPy's `pairwise_sum` inner loop for one buffer of float64.

@@ -85,7 +85,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install ruff
-        run: pip install ruff==0.12.2
+        run: pip install ruff==0.17.3
 
       # The repo carries pre-existing ruff debt in legacy modules, so we lint
       # only the Python files touched by this push/PR. New and modified code

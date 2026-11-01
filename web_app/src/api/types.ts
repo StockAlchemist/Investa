@@ -3323,10 +3323,7 @@ export interface components {
         };
         /** Body_parse_document_api_transactions_parse_document_post */
         Body_parse_document_api_transactions_parse_document_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Cash Mode */
             cash_mode?: string | null;
@@ -3335,10 +3332,7 @@ export interface components {
         };
         /** Body_parse_document_transactions_parse_document_post */
         Body_parse_document_transactions_parse_document_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Cash Mode */
             cash_mode?: string | null;
@@ -3423,7 +3417,9 @@ export interface components {
             /** Account */
             Account?: string | null;
             /** Lots */
-            lots?: Record<string, never>[];
+            lots?: {
+                [key: string]: unknown;
+            }[];
         } & {
             [key: string]: unknown;
         };
@@ -3498,7 +3494,9 @@ export interface components {
         /** SettingsUpdate */
         SettingsUpdate: {
             /** Manual Price Overrides */
-            manual_price_overrides?: Record<string, never> | null;
+            manual_price_overrides?: {
+                [key: string]: unknown;
+            } | null;
             /** User Symbol Map */
             user_symbol_map?: {
                 [key: string]: string;
@@ -3534,7 +3532,9 @@ export interface components {
                 [key: string]: number;
             } | null;
             /** Valuation Overrides */
-            valuation_overrides?: Record<string, never> | null;
+            valuation_overrides?: {
+                [key: string]: unknown;
+            } | null;
             /** Visible Items */
             visible_items?: string[] | null;
             /** Benchmarks */
@@ -3573,11 +3573,17 @@ export interface components {
             metrics?: components["schemas"]["PortfolioMetrics"] | null;
             freshness?: components["schemas"]["Freshness"] | null;
             /** Account Metrics */
-            account_metrics?: Record<string, never> | null;
+            account_metrics?: {
+                [key: string]: unknown;
+            } | null;
             /** Summary Df */
-            summary_df?: Record<string, never>[];
+            summary_df?: {
+                [key: string]: unknown;
+            }[];
             /** Holdings Dict */
-            holdings_dict?: Record<string, never>;
+            holdings_dict?: {
+                [key: string]: unknown;
+            };
         };
         /** Token */
         Token: {
@@ -3682,6 +3688,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /** WatchlistAdd */
         WatchlistAdd: {

@@ -254,6 +254,86 @@ pub fn numeric_passthrough(v: &Bound<'_, PyAny>) -> bool {
     v.is_instance_of::<pyo3::types::PyFloat>() || v.is_instance_of::<pyo3::types::PyInt>()
 }
 
+/// `v.as_unit("ns")` for a DatetimeIndex, `v.dt.as_unit("ns")` for a datetime
+/// Series: the same instants counted in nanoseconds. Wherever stamps become
+/// integers to compare, every side must count in one unit, and pandas 3 picks
+/// the unit from the input (seconds from a `date`, microseconds from a string),
+/// where pandas 2 always used nanoseconds; under pandas 2 this changes nothing.
+pub fn as_ns<'py>(v: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let pd = v.py().import("pandas")?;
+    if v.is_instance(&pd.getattr("Series")?)? {
+        v.getattr("dt")?.call_method1("as_unit", ("ns",))
+    } else {
+        v.call_method1("as_unit", ("ns",))
+    }
+}
+
+/// The stamps of a DatetimeIndex or datetime Series as nanosecond `int64`s
+/// (UTC for zone-aware stamps, NaT as the int64 minimum): `as_ns(v).asi8`,
+/// through `.array` for a Series. The same integers `.values.astype("int64")`
+/// gave, without pandas 3.1's deprecation of `.values` on zone-aware stamps.
+pub fn ns_ints<'py>(v: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let pd = v.py().import("pandas")?;
+    let ns = as_ns(v)?;
+    if v.is_instance(&pd.getattr("Series")?)? {
+        ns.getattr("array")?.getattr("asi8")
+    } else {
+        ns.getattr("asi8")
+    }
+}
+
+/// The installed pandas' major version, read from `pandas.__version__`.
+pub fn pandas_major(pd: &Bound<'_, PyModule>) -> PyResult<u32> {
+    let version: String = pd.getattr("__version__")?.extract()?;
+    Ok(version
+        .split('.')
+        .next()
+        .and_then(|m| m.parse().ok())
+        .unwrap_or(0))
+}
+
+/// A text column as pandas 2's `astype(str)` received it. pandas 3 reads
+/// text into its `str` dtype, holding SQL NULLs as NaN, and `astype(str)`
+/// keeps them missing; pandas 2 read them into an object column as None,
+/// which `astype(str)` stringified to "None", the value the loader's cleaning
+/// then blanks or lowercases. So under pandas 3 a `str` column's missing
+/// values become "None" first; anything else is `col` itself.
+pub fn text_input<'py>(col: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let pd = col.py().import("pandas")?;
+    if pandas_major(&pd)? >= 3
+        && col
+            .getattr("dtype")?
+            .is_instance(&pd.getattr("StringDtype")?)?
+    {
+        return col.call_method1("fillna", ("None",));
+    }
+    Ok(col.clone())
+}
+
+/// The datetime unit `pd.to_datetime` gives a Series of `YYYY-MM-DD` strings:
+/// "ns" in pandas 2, "us" in pandas 3. Where the Rust builds stamps natively
+/// in place of that call, it builds them in this unit. Asked once per process.
+pub fn parsed_date_unit(py: Python<'_>) -> PyResult<&'static str> {
+    static UNIT: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    if let Some(unit) = UNIT.get() {
+        return Ok(unit);
+    }
+    let pd = py.import("pandas")?;
+    let probe = pd.getattr("Series")?.call1((vec!["2000-01-03"],))?;
+    let unit: String = pd
+        .call_method1("to_datetime", (probe,))?
+        .getattr("dt")?
+        .getattr("unit")?
+        .extract()?;
+    let unit: &'static str = match unit.as_str() {
+        "s" => "s",
+        "ms" => "ms",
+        "us" => "us",
+        _ => "ns",
+    };
+    Ok(UNIT.get_or_init(|| unit))
+}
+
 /// `df.iterrows()`, without building a Series per row.
 ///
 /// `iterrows` yields `(label, Series(df.values[i], index=df.columns))`. The

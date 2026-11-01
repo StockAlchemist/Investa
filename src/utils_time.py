@@ -41,7 +41,48 @@ def _cached_schedule(cal, start_date, end_date):
 # frame never goes stale; only the window's end moves with the clock.
 _FULL_SCHEDULE_START = date(1970, 1, 1)
 _FULL_SCHEDULE_YEARS_AHEAD = 5
-_FULL_SCHEDULE = None  # (frame, first day, last day, empty frame)
+_FULL_SCHEDULE = None  # (frame, first day, last day, empty frame, freq rule)
+
+# Ranges the cache checks its freq rule against: one session, two plain weeks,
+# two weeks across a holiday (MLK day), three sessions.
+_FREQ_PROBES = [
+    (date(2025, 1, 2), date(2025, 1, 2)),
+    (date(2025, 3, 3), date(2025, 3, 14)),
+    (date(2025, 1, 13), date(2025, 1, 24)),
+    (date(2025, 6, 2), date(2025, 6, 4)),
+]
+
+
+def _with_freq(rows: pd.DataFrame, rule) -> pd.DataFrame:
+    """A slice of the window with the freq the calendar's `schedule` gives."""
+    kind, one_day_freq = rule
+    if kind == "one_day" and len(rows) == 1 and one_day_freq is not None:
+        rows.index = pd.DatetimeIndex(rows.index, freq=one_day_freq)
+    elif kind == "inferred" and len(rows):
+        rows.index = pd.DatetimeIndex(rows.index, freq="infer")
+    return rows
+
+
+def _freq_rule(cal, frame):
+    """
+    How this calendar version sets the schedule index's freq, which a slice of
+    the window does not carry: pandas-market-calendars 4.4 gives a one-session
+    range its CustomBusinessDay and longer ones none, 4.6 never sets one, and
+    5.5 under pandas 3 infers it (B for a run of plain weekdays). The first
+    rule that reproduces every probe is kept; None (no rule fits) sends every
+    call to the calendar.
+    """
+    one_day_freq = cal.schedule(start_date=date(2025, 1, 2), end_date=date(2025, 1, 2)).index.freq
+    expected = [cal.schedule(start_date=a, end_date=b).index.freq for a, b in _FREQ_PROBES]
+    for kind in ("one_day", "inferred", "none"):
+        rule = (kind, one_day_freq)
+        got = [
+            _with_freq(frame.loc[pd.Timestamp(a) : pd.Timestamp(b)].copy(), rule).index.freq
+            for a, b in _FREQ_PROBES
+        ]
+        if got == expected:
+            return rule
+    return None
 
 
 def _full_schedule():
@@ -54,11 +95,7 @@ def _full_schedule():
         # A range with no session comes back with object columns, not the
         # UTC stamps a slice would carry; keep the calendar's own empty frame.
         empty = cal.schedule(start_date=date(2025, 12, 25), end_date=date(2025, 12, 25))
-        # A one-session range comes back with the freq its version gives a
-        # single day (CustomBusinessDay in pandas-market-calendars 4.4, none in
-        # 4.6); a longer one never has one, as a slice of the window has not.
-        one_day_freq = cal.schedule(start_date=date(2025, 1, 2), end_date=date(2025, 1, 2)).index.freq
-        _FULL_SCHEDULE = (frame, _FULL_SCHEDULE_START, end, empty, one_day_freq)
+        _FULL_SCHEDULE = (frame, _FULL_SCHEDULE_START, end, empty, _freq_rule(cal, frame))
     return _FULL_SCHEDULE
 
 
@@ -71,13 +108,12 @@ def nyse_schedule(start_date, end_date) -> pd.DataFrame:
     window) goes to the calendar itself.
     """
     if type(start_date) is date and type(end_date) is date and start_date <= end_date:
-        frame, first, last, empty, one_day_freq = _full_schedule()
-        if first <= start_date and end_date <= last:
+        frame, first, last, empty, rule = _full_schedule()
+        if rule is not None and first <= start_date and end_date <= last:
             rows = frame.loc[pd.Timestamp(start_date) : pd.Timestamp(end_date)]
-            rows = (rows if len(rows) else empty).copy()
-            if len(rows) == 1 and one_day_freq is not None:
-                rows.index = pd.DatetimeIndex(rows.index, freq=one_day_freq)
-            return rows
+            if not len(rows):
+                return empty.copy()
+            return _with_freq(rows.copy(), rule)
     return get_nyse_calendar().schedule(start_date=start_date, end_date=end_date)
 
 

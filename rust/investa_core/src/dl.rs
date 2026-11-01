@@ -614,8 +614,7 @@ pub fn dl_load_and_clean<'py>(
     let builtins_str = py.import("builtins")?.getattr("str")?;
     for col in ["Symbol", "Account", "Note", "Local Currency"] {
         if df.getattr("columns")?.contains(col)? {
-            let cleaned = df
-                .get_item(col)?
+            let cleaned = crate::pyhelp::text_input(&df.get_item(col)?)?
                 .call_method1("astype", (&builtins_str,))?
                 .getattr("str")?
                 .call_method0("strip")?
@@ -629,8 +628,7 @@ pub fn dl_load_and_clean<'py>(
     }
 
     if df.getattr("columns")?.contains("Type")? {
-        let t = df
-            .get_item("Type")?
+        let t = crate::pyhelp::text_input(&df.get_item("Type")?)?
             .call_method1("astype", (&builtins_str,))?
             .getattr("str")?
             .call_method0("strip")?
@@ -671,8 +669,7 @@ pub fn dl_load_and_clean<'py>(
     }
 
     if df.getattr("columns")?.contains("Tags")? {
-        let tags = df
-            .get_item("Tags")?
+        let tags = crate::pyhelp::text_input(&df.get_item("Tags")?)?
             .call_method1("astype", (&builtins_str,))?
             .getattr("str")?
             .call_method0("strip")?;
@@ -737,8 +734,7 @@ pub fn dl_load_and_clean<'py>(
         setitem(&df, "Local Currency", filled)?;
         has_warnings = true;
     } else {
-        let normalized = df
-            .get_item("Local Currency")?
+        let normalized = crate::pyhelp::text_input(&df.get_item("Local Currency")?)?
             .call_method1("astype", (&builtins_str,))?
             .getattr("str")?
             .call_method0("strip")?

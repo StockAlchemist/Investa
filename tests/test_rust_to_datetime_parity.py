@@ -113,7 +113,11 @@ def _same(a, b, arg):
         assert x.freq == y.freq and repr(x.dtype) == repr(y.dtype) and x.name == y.name
     elif isinstance(x, pd.Series):
         pd.testing.assert_series_equal(x, y, check_freq=True, check_index_type=True)
-        assert repr(x.dtype) == repr(y.dtype) and x.index.equals(y.index) and x.index is y.index
+        # Under copy-on-write (pandas 3) each new Series holds its own view of
+        # the index, so the two answers share the input's index alike, not one
+        # object.
+        assert repr(x.dtype) == repr(y.dtype) and x.index.equals(y.index)
+        assert (x.index is arg.index) == (y.index is arg.index)
     elif x is None or isinstance(x, (pd.Timestamp, type(pd.NaT))):
         assert x == y or (x is y)
     else:

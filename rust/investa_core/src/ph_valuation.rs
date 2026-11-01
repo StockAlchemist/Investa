@@ -906,11 +906,17 @@ pub fn ph_value_daily_holdings<'py>(
                         .call_method0("any")?
                         .is_truthy()?
                     {
+                        // A writable copy: the NaN fill below writes into it,
+                        // and pandas 3 hands out `.values` read-only.
                         cross = series
                             .call1((&cross,))?
                             .call_method0("bfill")?
                             .call_method0("ffill")?
-                            .getattr("values")?;
+                            .call_method(
+                                "to_numpy",
+                                (),
+                                Some(&kwargs(py, &[("copy", &tru(py))])?),
+                            )?;
                     }
                     Ok(cross)
                 })?
@@ -1149,12 +1155,9 @@ pub fn ph_all_daily_holdings<'py>(
     let int64 = np.getattr("int64")?;
     let float64 = np.getattr("float64")?;
     let i64_kw = kwargs(py, &[("dtype", &int64)])?;
+    // Grid and transaction stamps as nanosecond integers (see `ns_ints`).
     let as_i64 = |v: Bound<'py, PyAny>| -> PyResult<Bound<'py, PyAny>> {
-        np.call_method(
-            "array",
-            (v.getattr("values")?.call_method1("astype", ("int64",))?,),
-            Some(&i64_kw),
-        )
+        np.call_method("array", (crate::pyhelp::ns_ints(&v)?,), Some(&i64_kw))
     };
     let date_ordinals = as_i64(grid.clone())?;
     let tx_dates = as_i64(crate::pyhelp::to_datetime(

@@ -74,6 +74,13 @@ pub const SOURCE_HASH: &str = env!("INVESTA_CORE_SOURCE_HASH");
 fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("SOURCE_HASH", SOURCE_HASH)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    // The buffering np.add.reduce uses in the installed NumPy (0 = none: one
+    // pairwise sum over the whole array), which np_sum follows.
+    let buffer = stats::calibrate_reduce_buffer(m.py())?;
+    m.add(
+        "NUMPY_REDUCE_BUFFER",
+        if buffer == usize::MAX { 0 } else { buffer },
+    )?;
 
     m.add_function(wrap_pyfunction!(py::calculate_holdings, m)?)?;
     m.add_function(wrap_pyfunction!(

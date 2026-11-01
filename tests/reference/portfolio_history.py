@@ -1331,7 +1331,9 @@ def _value_daily_holdings_vectorized(
                 # Final safety: If any cross rate is STILL NaN, it means one of the series was all NaN
                 # or had persistent gaps. Try to bfill again to be sure.
                 if pd.Series(cross_rates).isna().any():
-                    cross_rates = pd.Series(cross_rates).bfill().ffill().values
+                    # pandas 3 compatibility (a no-op under pandas 2): a
+                    # writable copy, as the NaN fill below writes into it.
+                    cross_rates = pd.Series(cross_rates).bfill().ffill().to_numpy(copy=True)
 
             rates = cross_rates
             # Check for NaNs and ONLY fill with 1.0 as a catastrophic last resort
@@ -1853,12 +1855,14 @@ def _load_or_calculate_daily_results(
                 # Prepare inputs for chronological Numba function
                 # Use nanosecond timestamps (np.int64) for sub-daily precision support
                 # date_range_for_calc is already UTC-aware Timestamps
+                # pandas 3 compatibility (a no-op under pandas 2): both sides
+                # in nanoseconds, as the Rust port's `ns_ints` counts them.
                 date_ordinals_np = np.array(
-                    date_range_for_calc.values.astype("int64"), dtype=np.int64
+                    date_range_for_calc.as_unit("ns").asi8, dtype=np.int64
                 )
 
                 tx_dates_ordinal_np = np.array(
-                    pd.to_datetime(sorted_df["Date"], utc=True).values.astype("int64"),
+                    pd.to_datetime(sorted_df["Date"], utc=True).dt.as_unit("ns").array.asi8,
                     dtype=np.int64,
                 )
                 tx_symbols_np = (
@@ -2709,12 +2713,14 @@ def _get_or_calculate_all_daily_holdings(
     # Standardize range to UTC
     if date_range_for_calc.tz is None:
         date_range_for_calc = date_range_for_calc.tz_localize("UTC")
+    # pandas 3 compatibility (a no-op under pandas 2): both sides in
+    # nanoseconds, as the Rust port's `ns_ints` counts them.
     date_ordinals_np = np.array(
-        date_range_for_calc.values.astype("int64"), dtype=np.int64
+        date_range_for_calc.as_unit("ns").asi8, dtype=np.int64
     )
 
     tx_dates_ordinal_np = np.array(
-        pd.to_datetime(sorted_tx_df["Date"], utc=True).values.astype("int64"),
+        pd.to_datetime(sorted_tx_df["Date"], utc=True).dt.as_unit("ns").array.asi8,
         dtype=np.int64,
     )
     tx_symbols_np = (

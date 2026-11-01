@@ -276,7 +276,9 @@ def _value_daily_holdings_vectorized(
                 # Final safety: If any cross rate is STILL NaN, it means one of the series was all NaN
                 # or had persistent gaps. Try to bfill again to be sure.
                 if pd.Series(cross_rates).isna().any():
-                    cross_rates = pd.Series(cross_rates).bfill().ffill().values
+                    # pandas 3 compatibility (a no-op under pandas 2): a
+                    # writable copy, as the NaN fill below writes into it.
+                    cross_rates = pd.Series(cross_rates).bfill().ffill().to_numpy(copy=True)
 
             rates = cross_rates
             # Check for NaNs and ONLY fill with 1.0 as a catastrophic last resort

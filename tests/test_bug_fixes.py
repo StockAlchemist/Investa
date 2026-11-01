@@ -77,7 +77,8 @@ class TestAutoCashDeltaAlignment:
         tx_date = pd.Timestamp("2024-01-01", tz="UTC")
 
         date_range = pd.DatetimeIndex([base_date, base_date + timedelta(days=1)])
-        date_ordinals = np.array(date_range.values.astype("int64"), dtype=np.int64)
+        # Nanoseconds, as tx_date.value is (pandas 3 builds this index in us).
+        date_ordinals = np.array(date_range.as_unit("ns").asi8, dtype=np.int64)
         tx_dates = np.array([tx_date.value], dtype=np.int64)
         tx_symbols = np.array([s2id["AAPL"]], dtype=np.int64)
         tx_accounts = np.array([a2id["TESTACCOUNT"]], dtype=np.int64)
@@ -553,7 +554,8 @@ class TestAutoCashParity:
         date_range = pd.DatetimeIndex(
             [base_date, base_date + timedelta(days=1), base_date + timedelta(days=2)]
         )
-        date_ordinals = np.array(date_range.values.astype("int64"), dtype=np.int64)
+        # Nanoseconds, as Timestamp.value is (pandas 3 builds this index in us).
+        date_ordinals = np.array(date_range.as_unit("ns").asi8, dtype=np.int64)
         tx_dates = np.array(
             [base_date.value, (base_date + timedelta(days=1)).value], dtype=np.int64
         )
