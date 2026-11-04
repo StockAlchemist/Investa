@@ -72,6 +72,9 @@ async def run_screener(
             fast_mode=request.fast_mode or False,
         )
         return clean_nans(results)
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Screener error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to run screener query")

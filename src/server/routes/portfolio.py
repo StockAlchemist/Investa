@@ -524,6 +524,9 @@ async def get_portfolio_ai_review(
 
         return review
 
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Portfolio AI Review Error: {e}", exc_info=True)
         raise HTTPException(
@@ -1193,6 +1196,9 @@ async def get_stock_position(
 
         return clean_nans(res)
 
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Error getting stock position for {symbol}: {e}", exc_info=True)
         raise HTTPException(
@@ -1854,6 +1860,9 @@ async def get_portfolio_health(
 
         return health
 
+    except HTTPException:
+        # Preserve retryable pending-calculation responses and Retry-After.
+        raise
     except Exception as e:
         logging.error(f"Error calculating portfolio health: {e}", exc_info=True)
         # Return a safe default instead of crashing, but include error for debugging

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/start-standalone.cjs",
     "lint": "eslint",
     "generate:api": "npx openapi-typescript@7.13.0 http://localhost:8000/openapi.json -o src/api/types.ts",
     "generate:api:offline": "python3 ../scripts/export_openapi.py --out /tmp/investa-openapi.json && npx openapi-typescript@7.13.0 /tmp/investa-openapi.json -o src/api/types.ts && rm /tmp/investa-openapi.json",
@@ -49,7 +49,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.2",
-    "baseline-browser-mapping": "^2.9.19",
+    "baseline-browser-mapping": "^2.11.34",
     "eslint": "^9",
     "eslint-config-next": "16.0.6",
     "jsdom": "^29.1.1",
