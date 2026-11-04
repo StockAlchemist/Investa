@@ -616,15 +616,23 @@ struct UpcomingEventsCard: View {
                                     Text(ev.symbol).appFont(.callout.weight(.bold)).lineLimit(1).fixedSize()
                                     badge(ev)
                                 }
-                                if let name = ev.name, !name.isEmpty {
-                                    Text(name).appFont(.caption2).foregroundStyle(.secondary)
-                                        .lineLimit(1).truncationMode(.tail)
+                                // On a phone the day leads the name's line: beside the
+                                // ticker, badge and figure it pushed a row with a
+                                // reported quarter past a 402 pt screen, and with it
+                                // the whole dashboard. The name is the one part that
+                                // may truncate, so it gives way.
+                                HStack(spacing: 4) {
+                                    if compact {
+                                        dayLabel(ev, font: .caption2.weight(.semibold))
+                                    }
+                                    if let name = ev.name, !name.isEmpty {
+                                        Text(name).appFont(.caption2).foregroundStyle(.secondary)
+                                            .lineLimit(1).truncationMode(.tail)
+                                    }
                                 }
                             }
                             Spacer(minLength: 6)
-                            Text(relativeDay(ev.date, ev.marketTimezone)).appFont(.caption).textCase(.uppercase)
-                                .foregroundStyle(isSoon(ev) ? Color.up : .secondary)
-                                .lineLimit(1).fixedSize()
+                            if !compact { dayLabel(ev, font: .caption) }
                             trailing(ev)
                                 .lineLimit(1).minimumScaleFactor(0.7)
                                 .frame(minWidth: 80, alignment: .trailing)
@@ -698,6 +706,12 @@ struct UpcomingEventsCard: View {
             Text(e.epsEstimate.map { String(format: "%.2f EPS", $0) } ?? "Report")
                 .appFont(.callout.weight(.bold)).foregroundStyle(Theme.earnings)
         }
+    }
+
+    private func dayLabel(_ ev: TimelineEvent, font: AppFont) -> some View {
+        Text(relativeDay(ev.date, ev.marketTimezone)).appFont(font).textCase(.uppercase)
+            .foregroundStyle(isSoon(ev) ? Color.up : .secondary)
+            .lineLimit(1).fixedSize()
     }
 
     private func isSoon(_ ev: TimelineEvent) -> Bool {
