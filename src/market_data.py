@@ -3342,8 +3342,10 @@ class MarketDataProvider:
             try:
                 # Use isolated fetch for index info. Short timeout: this can run
                 # on a latency-sensitive path, so fail fast rather than hang.
+                # minimal: indices have no fund data, estimates or earnings,
+                # and fetching them anyway cost 10-13 s per index, past the timeout.
                 index_info_batch = _run_isolated_fetch(
-                    yf_tickers_to_fetch, task="info", timeout=30
+                    yf_tickers_to_fetch, task="info", timeout=30, minimal=True
                 )
 
                 # Fetch 7 days of history for sparklines
