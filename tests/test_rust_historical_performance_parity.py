@@ -149,3 +149,31 @@ def test_unbound_variable_quirks_match(caplog, monkeypatch, tmp_path, case):
     assert outs[0] == outs[1]
     if case != "stale_benchmark":
         assert outs[1][0][0] == "raised" and outs[1][0][1] == "UnboundLocalError", outs[1][0]
+
+
+@pytest.mark.parametrize(
+    "interval, expected",
+    [("W", "1d"), ("M", "1d"), ("ME", "1d"), ("D", "1d"), ("1d", "1d"), ("5m", "5m"), ("1h", "1h")],
+)
+def test_benchmarks_are_fetched_daily_unless_intraday(monkeypatch, tmp_path, interval, expected):
+    """A weekly or monthly history resamples daily prices; Yahoo rejects "W"
+    and "M", so asking for them returned no benchmark at all."""
+    seen = []
+
+    class Recording(FakeProvider):
+        def get_historical_data(self, symbols_yf, *args, **kwargs):
+            if list(symbols_yf) == ["SPY"]:
+                seen.append(kwargs.get("interval"))
+            return super().get_historical_data(symbols_yf, *args, **kwargs)
+
+    txs, *_ = _inputs(np.random.default_rng(15600))
+    start, end = (date(2024, 6, 10), date(2024, 6, 14)) if expected != "1d" else (date(2024, 2, 1), date(2024, 6, 14))
+    monkeypatch.setattr(config, "get_app_cache_dir", lambda: str(tmp_path))
+    for mod in (ref, new):
+        seen.clear()
+        monkeypatch.setattr(mod, "get_shared_mdp", lambda **kw: Recording(1, "plain"))
+        mod.calculate_historical_performance(
+            txs.copy(), None, set(), {}, start, end, interval, ["SPY"], "USD", {"SCBS": "THB"}, "USD",
+            use_daily_results_cache=False, num_processes=1,
+        )  # fmt: skip
+        assert seen == [expected], (mod.__name__, seen)

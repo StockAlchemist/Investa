@@ -42,6 +42,8 @@ from typing import Any, Dict, List, Optional
 import investa_core
 import numpy as np
 
+from utils_time import get_est_today
+
 # Years of history a band spans. The filed record reaches ~19, but the earliest
 # years are thin enough across the universe that the extra observations mostly
 # add noise.
@@ -122,13 +124,25 @@ def _load_prices(symbol: str, start: date, end: date):
         return None
 
 
+def _years_before(day: date, years: int) -> date:
+    """`day` moved back `years` whole years; 29 February lands on the 28th.
+
+    Fixed 9 Nov 2026, in the port and here together: a bare replace(year=...)
+    raised on a leap day, which emptied every company's bands that day.
+    """
+    try:
+        return day.replace(year=day.year - years)
+    except ValueError:
+        return day.replace(year=day.year - years, day=28)
+
+
 def _observations(
     cik: str, prices, shares: Dict[str, float], today: date
 ) -> Dict[str, List[float]]:
     """One multiple per fiscal year, each priced as it could have been seen."""
     import edgar_provider
 
-    earliest = today.replace(year=today.year - BAND_YEARS)
+    earliest = _years_before(today, BAND_YEARS)
     history: Dict[str, List[float]] = {"earnings": [], "free_cash_flow": []}
 
     for period_end in sorted(shares):
@@ -174,7 +188,7 @@ def bands(symbol: str, cik: str, today: Optional[date] = None) -> List[Dict[str,
     a company with no price history in the store, a loss-maker with no positive
     denominator to divide by.
     """
-    today = today or date.today()
+    today = today or get_est_today()  # the market's day (fixed 9 Nov 2026)
     try:
         import edgar_provider
 
@@ -190,7 +204,7 @@ def bands(symbol: str, cik: str, today: Optional[date] = None) -> List[Dict[str,
             return []
 
         prices = _load_prices(
-            symbol, today.replace(year=today.year - BAND_YEARS - 1), today
+            symbol, _years_before(today, BAND_YEARS + 1), today
         )
         if prices is None:
             return []

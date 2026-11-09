@@ -1322,7 +1322,10 @@ class MarketDatabase:
         query = f"SELECT symbol, shares, as_of FROM share_count WHERE symbol IN ({', '.join(['?'] * len(symbols))})"
         cutoff = None
         if max_age_days is not None:
-            cutoff = (date.today() - timedelta(days=max_age_days)).isoformat()
+            # The market's day (fixed 9 Nov 2026, in the port and here together).
+            from utils_time import get_est_today
+
+            cutoff = (get_est_today() - timedelta(days=max_age_days)).isoformat()
 
         out: Dict[str, float] = {}
         try:

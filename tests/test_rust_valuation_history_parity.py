@@ -117,3 +117,39 @@ def test_helpers_match():
     for when in (date(2019, 1, 1), date(2020, 2, 15), date(2021, 1, 1)):
         assert new._price_on_or_before(prices, when) == ref._price_on_or_before(prices, when)
     assert new._price_on_or_before(None, date(2020, 1, 1)) == ref._price_on_or_before(None, date(2020, 1, 1))
+
+
+class _SteadyEdgar(FakeEdgar):
+    """Positive earnings and cash flow every year, whatever the as-of date."""
+
+    def __init__(self):
+        super().__init__(np.random.default_rng(1))
+        self.mode = 3
+
+    def get_concept_values(self, cik, concepts):
+        return {c: {p: (2e8 if c == "capex" else 6e9) for p in self.periods} for c in concepts}
+
+
+@pytest.mark.parametrize("mod", [new, ref], ids=["port", "reference"])
+def test_bands_survive_a_leap_day(monkeypatch, mod):
+    """Fifteen years back from 29 February 2024 has no 29th; that raised and
+    emptied every company's bands for the day."""
+    monkeypatch.setattr(market_db, "MarketDatabase", FakePrices)
+    FakePrices.mode = "ok"
+    fake = _SteadyEdgar()
+    for name in ("as_of", "split_consistent_series", "get_concept_values"):
+        monkeypatch.setattr(edgar_provider, name, getattr(fake, name))
+    leap = mod.bands("AAPL", "0000320193", date(2024, 2, 29))
+    assert leap, "no bands on a leap day"
+    assert [b["metric"] for b in leap] == [b["metric"] for b in mod.bands("AAPL", "0000320193", date(2024, 2, 28))]
+
+
+@pytest.mark.parametrize("mod", [new, ref], ids=["port", "reference"])
+def test_bands_default_to_the_market_day(monkeypatch, mod):
+    monkeypatch.setattr(market_db, "MarketDatabase", FakePrices)
+    FakePrices.mode = "ok"
+    fake = _SteadyEdgar()
+    for name in ("as_of", "split_consistent_series", "get_concept_values"):
+        monkeypatch.setattr(edgar_provider, name, getattr(fake, name))
+    monkeypatch.setattr(mod, "get_est_today", lambda: date(2024, 6, 13))
+    assert mod.bands("AAPL", "0000320193") == mod.bands("AAPL", "0000320193", date(2024, 6, 13))

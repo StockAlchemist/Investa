@@ -11,6 +11,7 @@ real universe is compared in the real-data check (it needs the fact store).
 
 import os
 import sys
+from datetime import date
 from types import SimpleNamespace
 
 import numpy as np
@@ -81,3 +82,13 @@ def test_market_data_and_gates_match(caplog, monkeypatch, seed):
             excl = call(lambda: mod._exclusion_records(companies), caplog)
             outs.append((got, upserts, gated, excl))
         assert outs[0] == outs[1], (seed, trial, mode, fail_every)
+
+
+@pytest.mark.parametrize("mod", [new, ref], ids=["port", "reference"])
+def test_fetched_share_counts_carry_the_market_day(monkeypatch, mod):
+    upserts = []
+    monkeypatch.setattr(market_db, "MarketDatabase", lambda: FakeDb(None, upserts, "ok"))
+    monkeypatch.setattr(market_data, "get_shared_mdp", lambda: FakeProvider(0))
+    monkeypatch.setattr(mod, "get_est_today", lambda: date(2024, 6, 13))
+    mod.fetch_market_data([f"S{i:04d}" for i in range(40)])
+    assert upserts and {when for _, when in upserts} == {date(2024, 6, 13)}

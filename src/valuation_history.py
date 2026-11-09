@@ -38,6 +38,8 @@ from typing import Any, Dict, List, Optional
 
 import investa_core
 
+from utils_time import get_est_today  # noqa: F401 -- read by the Rust port at call time
+
 # Years of history a band spans. The filed record reaches ~19, but the earliest
 # years are thin enough across the universe that the extra observations mostly
 # add noise.

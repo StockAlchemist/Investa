@@ -254,7 +254,8 @@ pub fn bp_fetch_market_data<'py>(
         if fetched.is_truthy()? {
             db.call_method1(
                 "upsert_share_counts",
-                (&fetched, m.getattr("date")?.call_method0("today")?),
+                // The market's day, not the server's (fixed 9 Nov 2026).
+                (&fetched, m.getattr("get_est_today")?.call0()?),
             )?;
             cached.call_method1("update", (&fetched,))?;
         }

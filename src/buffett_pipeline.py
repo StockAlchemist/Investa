@@ -31,7 +31,6 @@ store: re-running after a failure re-reads the database rather than the SEC.
 from __future__ import annotations
 
 import time  # noqa: F401 -- read by the Rust port at call time
-from datetime import date  # noqa: F401 -- read by the Rust port at call time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -44,6 +43,7 @@ import edgar_sic  # noqa: F401 -- read by the Rust port at call time
 import universe  # noqa: F401 -- read by the Rust port at call time
 from buffett_metrics import CompanyMetrics, compute_metrics  # noqa: F401 -- read by the Rust port at call time
 from buffett_store import get_store  # noqa: F401 -- read by the Rust port at call time
+from utils_time import get_est_today  # noqa: F401 -- read by the Rust port at call time
 
 # Market-data batch size. Large enough to amortise call overhead, small enough
 # that one failure does not lose a long run's worth of work.

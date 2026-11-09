@@ -464,11 +464,9 @@ pub fn pa_cash_interest_events<'py>(
             s(&builtin(py, "dict")?.call1((&balances,))?)?
         ),
     )?;
-    // `date.today()`, as the original has it (not the market's day).
-    let today = py
-        .import("datetime")?
-        .getattr("date")?
-        .call_method0("today")?;
+    // The market's day: a Bangkok date already in the next month would start
+    // the projection a month late (fixed 9 Nov 2026).
+    let today = py.import("utils_time")?.getattr("get_est_today")?.call0()?;
     let pd = py.import("pandas")?;
     let format = builtin(py, "format")?;
     for item in balances.call_method0("items")?.try_iter()? {
