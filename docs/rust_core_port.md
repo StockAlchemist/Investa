@@ -1223,7 +1223,10 @@ Most of the summary's extra time is `.tolist()` and row selection on pyarrow-bac
 ### Left as they are
 
 - **pandas 3.1 deprecations, which only break under pandas 4.** About 20 calls behind the `src/` wrappers pass `inplace=` (`sort_values`, `set_index`, `rename`, `drop`, `sort_index`). One `pd.concat` relies on the default sort of DatetimeIndexes. Replacing `inplace=` changes which frame a caller sees mutated, so it is its own change.
-- **Weekly history fetches its benchmarks with `interval="W"`**, which Yahoo does not accept under any yfinance version. The fetch normalizer maps only `"D"` to `"1d"`, so other non-Yahoo intervals likely behave the same (not checked). The benchmark series comes back empty; while the US market is open, four retries also cost about 4 s per request. This predates the upgrade.
+- **Weekly history fetched its benchmarks with `interval="W"`** (fixed 9 Nov 2026). Yahoo does not accept it under any yfinance version, and `"M"` and `"ME"` failed the same way. The benchmark series came back empty, and while the US market was open, four retries also cost about 4 s per request. This predates the upgrade.
+  - These histories resample daily prices, so the benchmark is now fetched at `"1d"` unless the view is intraday. The fix is in `ph_performance.rs` and the frozen oracle together.
+  - No client sends these intervals today: the dashboard asks `/history` for `1d` or an intraday interval, and the Returns chart resamples daily data itself. `/history` still accepts them.
+  - `test_benchmarks_are_fetched_daily_unless_intraday` pins it.
 
 ## The per-date history path removed (9 Nov 2026)
 
@@ -1292,9 +1295,12 @@ A scan of every function in `src/` for code that does not call `investa_core` or
   - A sync is all or nothing, as before: the rows staged ahead of the failing one were never committed.
   - The behaviour test now stages a good row before the bad one. It checks that neither remains and that a writer with `timeout=0` gets the lock at once; the old code fails that check with `database is locked`.
 
-- **Fetched share counts are stamped with the server's date** (not changed). `buffett_pipeline.fetch_market_data` passes `date.today()` to `upsert_share_counts`, the same server-clock reading `market_db.get_share_counts` ages them by. Both are a day ahead of the US market on the Bangkok host.
-- **The ranking's age is counted on the server's clock** (not changed). `strategies.ranking_age_days` defaults `today` to `date.today()`, while the same allocation's `as_of` uses the market clock. On the Bangkok host a run finished late on a US day can read a day older than it is.
-- **Valuation bands use the server's clock and vanish on a leap day** (not changed). `valuation_history.bands` defaults `today` to `date.today()`, against the market-local-time rule. On 29 February, `today.replace(year=today.year - 15)` raises, the error is caught, and every company shows no bands that day.
+- **Fetched share counts were stamped with the server's date** (fixed 9 Nov 2026). `buffett_pipeline.fetch_market_data` passed `date.today()` to `upsert_share_counts`, and `market_db.get_share_counts` aged them by the same server-clock reading. Both were a day ahead of the US market on the Bangkok host. Both now use `utils_time.get_est_today()`.
+- **The ranking's age was counted on the server's clock** (fixed 9 Nov 2026). `strategies.ranking_age_days` defaulted `today` to `date.today()`, while the same allocation's `as_of` used the market clock. On the Bangkok host a run finished late on a US day could read a day older than it was. It now defaults to the market day.
+- **Valuation bands used the server's clock and vanished on a leap day** (fixed 9 Nov 2026).
+  - `valuation_history.bands` defaulted `today` to `date.today()`, against the market-local-time rule.
+  - On 29 February, `today.replace(year=today.year - 15)` in `_observations` raised; the error was caught, and every company showed no bands that day.
+  - It now defaults to the market day. Stepping back whole years lands on 28 February when the target year has no 29th. The parity test had always included 29 Feb 2024; port and oracle agreed there only because both returned nothing.
 - **Two unbound variables in `calculate_historical_performance`** (not changed).
   - An account filter that leaves no transactions makes the date-range `try` fail before `full_end_date_tx` is set. A few lines later `max(..., full_end_date_tx + 1 day)` reads it, and the request raises `UnboundLocalError` instead of returning an empty history.
   - A benchmark frame with no `price`/`Adj Close`/`Close` column reuses the previous benchmark's `bm_series`, so it draws the wrong benchmark. If it is the first benchmark, the request raises.
@@ -1307,8 +1313,17 @@ A scan of every function in `src/` for code that does not call `investa_core` or
   - An account name with parentheses, like `IBKR (1)`, is a regex group: pandas warns about it, and `(1)` matches a bare `1`.
   - The ledger keeps the original's expression, so the behaviour is unchanged. Fixing it needs `regex=False`, a deliberate change with its own before-and-after check.
 - **Fixed 25 Oct 2026: the summary's account rows came out in a different order in every server process.** Account ids were assigned in the iteration order of a set of account names, and Python seeds string hashing per process, so two runs of the same book disagreed on row order and on the holdings dict's order; the values were the same. `_process_transactions_to_holdings` now sorts the accounts by name, the order the account picker already uses. All three books' summaries are identical under different seeds and, once aligned, identical to before. `tests/test_account_order.py` runs four seeds in separate interpreters and fails without the fix.
-- **`portfolio_analyzer.generate_cash_interest_events` anchors its projection on `date.today()`** (not changed), so on the Bangkok host it can start a month ahead of the US market's.
-- **`market_db` reads dates off the server's clock in two places** (not changed). `get_share_counts` ages entries with `date.today()`, and `check_integrity` falls back to it if `utils_time` fails. Both predate the market-time rule. The share-count cutoff can therefore be a day ahead of the US market on the Bangkok host.
+- **`portfolio_analyzer.generate_cash_interest_events` anchored its projection on `date.today()`** (fixed 9 Nov 2026). On the Bangkok host it could start a month ahead of the US market's, dropping that month's payment. It now starts in the market's month.
+- **`market_db` read dates off the server's clock in two places.**
+  - `get_share_counts` aged entries with `date.today()` (fixed 9 Nov 2026; see the share-count entry above).
+  - `check_integrity` still falls back to the server's date, but only when `utils_time` itself fails to import.
+- **Server-clock reads left as they are** (scan of 9 Nov 2026):
+  - **On the Thai clock by design:** the Bank of Thailand FX fetch (`bot_fx_provider`) and the Thai fund NAV sync (`fund_nav_sync`), because Bangkok is their own market.
+  - **Fetch-window ends:** `routes/market.py`'s 25-year price window ends on `date.today()`, which only reaches into a day with no data yet.
+  - **Instants, not dates:** the `datetime.now()` calls in Rust are durations or record timestamps.
+  - **Two still to fix:**
+    - `display_config`'s default graph dates are computed once, at import, on the server's clock. Only `config_manager`'s default settings read them.
+    - `edgar_sic.recent_quarters` picks SEC filing quarters by `date.today()`. It is a quarter off only on the first day of a quarter, before New York reaches it.
 - **Known type corner, not reached by real data:** in an MWR transfer into the scope, `-(abs(qty) * price)` stays a NumPy *integer* when both cells were text holding integers, such as "3" and "5". The port makes it a NumPy float with the same value. The loader never produces text-typed numeric columns.
 - **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.
 
