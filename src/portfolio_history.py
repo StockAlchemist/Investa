@@ -23,7 +23,6 @@ from config import (
     CASH_SYMBOL_CSV,  # noqa: F401 -- read by the Rust port at call time
     DAILY_RESULTS_CACHE_PATH_PREFIX,
     HISTORICAL_CALC_METHOD,
-    HISTORICAL_COMPARE_METHODS,  # noqa: F401 -- read by the Rust port at call time
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     LOGGING_LEVEL,  # noqa: F401 -- read by the Rust port at call time
     SHORTABLE_SYMBOLS,  # noqa: F401 -- read by the Rust port at call time
@@ -44,8 +43,6 @@ from portfolio_cashflows import (
 )
 from portfolio_valuation_kernels import (
     _calculate_daily_holdings_chronological_numba,  # noqa: F401 -- read by the Rust port at call time
-    _calculate_portfolio_value_at_date_unadjusted,  # noqa: F401 -- read by the Rust port at call time
-    _calculate_portfolio_value_at_date_unadjusted_python,  # noqa: F401 -- read by the Rust port at call time
     _normalize_series,  # noqa: F401 -- read by the Rust port at call time
 )
 from portfolio_version import CURRENT_HIST_VERSION  # noqa: F401 -- read by the Rust port at call time
@@ -99,91 +96,6 @@ def _unadjust_prices(
     # Ported to Rust: rust/investa_core/src/ph_small.rs
     return investa_core.ph_unadjust_prices(
         adjusted_prices_yf, yf_to_internal_map, splits_by_internal_symbol, processed_warnings
-    )
-
-
-@profile
-def _calculate_daily_metrics_worker(
-    eval_date: date,
-    transactions_df: pd.DataFrame,
-    historical_prices_yf_unadjusted: Dict[str, pd.DataFrame],
-    historical_prices_yf_adjusted: Dict[str, pd.DataFrame],
-    historical_fx_yf: Dict[str, pd.DataFrame],
-    target_currency: str,
-    internal_to_yf_map: Dict[str, str],
-    account_currency_map: Dict[str, str],
-    default_currency: str,
-    manual_overrides_dict: Optional[Dict[str, Dict[str, Any]]],  # ADDED
-    # benchmark_symbols_yf removed
-    # --- ADD MAPPINGS and METHOD --- # type: ignore
-    symbol_to_id: Dict[str, int],
-    id_to_symbol: Dict[int, str],
-    account_to_id: Dict[str, int],
-    id_to_account: Dict[int, str],
-    type_to_id: Dict[str, int],
-    currency_to_id: Dict[str, int],
-    id_to_currency: Dict[int, str],  # type: ignore
-    calc_method: str = HISTORICAL_CALC_METHOD,  # Use config default
-    included_accounts: Optional[List[str]] = None,  # ADDED
-    account_cash_mode_map: Optional[Dict[str, str]] = None,  # AUTO CASH
-) -> Optional[Dict]:
-    """
-    Worker function (for multiprocessing) to calculate key metrics for a single date.
-
-    Calls `_calculate_portfolio_value_at_date_unadjusted` to get the portfolio market value
-    and `_calculate_daily_net_cash_flow` to get external cash flows for the `eval_date`.
-    Also retrieves the closing prices for specified benchmark symbols using *adjusted*
-    historical prices for accurate benchmark comparison. Returns results in a dictionary.
-    Handles exceptions internally and returns a specific structure on failure.
-
-    Args:
-        eval_date (date): The date for which metrics are calculated.
-        transactions_df (pd.DataFrame): DataFrame of all cleaned transactions.
-        historical_prices_yf_unadjusted (Dict): Unadjusted stock prices for portfolio value calc.
-        historical_prices_yf_adjusted (Dict): Adjusted stock/benchmark prices for benchmark lookup.
-        historical_fx_yf (Dict): Historical FX rates vs USD.
-        target_currency (str): The currency for portfolio value and cash flow results.
-        internal_to_yf_map (Dict): Mapping from internal symbols to YF tickers.
-        account_currency_map (Dict): Mapping of accounts to their local currencies.
-        default_currency (str): Default currency.
-        manual_overrides_dict (Optional[Dict[str, Dict[str, Any]]]): Manual overrides for price, etc.
-        benchmark_symbols_yf (List[str]): List of YF tickers for benchmark symbols.
-        symbol_to_id (Dict): Map internal symbol string to int ID.
-        account_to_id (Dict): Map account string to int ID.
-        type_to_id (Dict): Map transaction type string to int ID.
-        currency_to_id (Dict): Map currency string to int ID.
-        calc_method (str): The calculation method to use ('python' or 'numba').
-
-    Returns:
-        Optional[Dict]: A dictionary containing calculated metrics for the date:
-            {'Date': date, 'value': float|np.nan, 'net_flow': float|np.nan,
-             'value_lookup_failed': bool, 'flow_lookup_failed': bool,
-             'bench_lookup_failed': bool, '{bm_symbol} Price': float|np.nan, ...}
-            Returns a dictionary with error flags set on critical failure within the worker.
-            Returns None only if the function entry itself fails unexpectedly.
-    """
-    # Ported to Rust: rust/investa_core/src/ph_small.rs
-    return investa_core.ph_daily_metrics_worker(
-        eval_date,
-        transactions_df,
-        historical_prices_yf_unadjusted,
-        historical_prices_yf_adjusted,
-        historical_fx_yf,
-        target_currency,
-        internal_to_yf_map,
-        account_currency_map,
-        default_currency,
-        manual_overrides_dict,
-        symbol_to_id,
-        id_to_symbol,
-        account_to_id,
-        id_to_account,
-        type_to_id,
-        currency_to_id,
-        id_to_currency,
-        calc_method,
-        included_accounts,
-        account_cash_mode_map,
     )
 
 
@@ -394,11 +306,10 @@ def _load_or_calculate_daily_results(
 
     Checks if a valid daily results cache file exists based on the provided key.
     If valid, loads the pre-calculated DataFrame.
-    If not valid or caching is disabled, it determines the relevant market days within
-    the date range, distributes the calculation of daily portfolio value (using unadjusted prices),
-    net cash flow, and benchmark prices (using adjusted prices) across multiple processes
-    using `_calculate_daily_metrics_worker`. It then aggregates the results, calculates
-    daily gain and daily return (TWR), and saves the results to cache if enabled.
+    If not valid or caching is disabled, it replays the holdings chronologically over
+    the date grid, values them (using unadjusted prices) and computes each day's net
+    cash flow. It then calculates daily gain and daily return (TWR), and saves the
+    results to cache if enabled.
 
     Args:
         use_daily_results_cache (bool): Whether to use the daily results cache.
@@ -421,7 +332,8 @@ def _load_or_calculate_daily_results(
         num_processes (Optional[int]): Number of parallel processes to use. Defaults to CPU count - 1.
         current_hist_version (str): Version string used in cache key generation.
         filter_desc (str): Description of the account scope for logging.
-        calc_method (str): The calculation method to use ('python', 'numba', 'numba_chrono').
+        calc_method (str): Accepted and ignored: the holdings are always replayed
+            chronologically (the per-date path was removed on 9 Nov 2026).
         symbol_to_id (Dict): Map internal symbol string to int ID.
         account_to_id (Dict): Map account string to int ID.
         type_to_id (Dict): Map transaction type string to int ID.

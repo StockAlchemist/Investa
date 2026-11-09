@@ -17,52 +17,41 @@ src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
+import portfolio_history  # noqa: E402
+from history_value import all_daily_holdings  # noqa: E402
 from portfolio_history import manual_prices_by_symbol_id  # noqa: E402
 from portfolio_valuation_kernels import (  # noqa: E402
     _calculate_daily_holdings_chronological_numba,
-    _manual_override_price,
 )
 
 
 def _resolve_cash_modes(account_cash_mode_map, account_to_id):
-    """The cash modes the real builder hands the kernel for these settings.
+    """The cash modes the history's replay hands the kernel for these settings.
 
-    The settings file keeps the case the user typed and the engine's account ids
-    may or may not be normalized; a mismatch used to mean a silent Manual.
+    The settings file keeps the case the user typed, while the engine's account
+    ids arrive upper-cased from generate_mappings; a mismatch used to mean a
+    silent Manual.
     """
-    import portfolio_valuation_kernels as k
-
     captured = {}
-    real = k._calculate_holdings_numba
+    real = portfolio_history._calculate_daily_holdings_chronological_numba
 
     def spy(*args, **kwargs):
         captured["modes"] = args[-1]
         return real(*args, **kwargs)
 
-    k._calculate_holdings_numba = spy
+    portfolio_history._calculate_daily_holdings_chronological_numba = spy
     try:
-        k._calculate_portfolio_value_at_date_unadjusted_numba(
-            target_date=pd.Timestamp("2026-08-10").date(),
-            transactions_df=_empty_tx(account_to_id),
-            historical_prices_yf_unadjusted={},
-            historical_fx_yf={},
-            target_currency="USD",
-            internal_to_yf_map={},
-            account_currency_map={a: "USD" for a in account_to_id},
-            default_currency="USD",
-            manual_overrides_dict=None,
-            processed_warnings=set(),
-            symbol_to_id={"$CASH": 0},
-            id_to_symbol={0: "$CASH"},
-            account_to_id=account_to_id,
-            id_to_account={i: a for a, i in account_to_id.items()},
-            type_to_id={"deposit": 0},
-            currency_to_id={"USD": 0},
-            id_to_currency={0: "USD"},
-            account_cash_mode_map=account_cash_mode_map,
+        all_daily_holdings(
+            _empty_tx(account_to_id),
+            pd.Timestamp("2026-01-02").date(),
+            pd.Timestamp("2026-08-10").date(),
+            {"$CASH": 0},
+            account_to_id,
+            {"deposit": 0},
+            account_cash_mode_map,
         )
     finally:
-        k._calculate_holdings_numba = real
+        portfolio_history._calculate_daily_holdings_chronological_numba = real
     return list(captured["modes"])
 
 
@@ -101,11 +90,6 @@ def test_cash_mode_resolves_regardless_of_the_case_the_user_typed():
     assert _resolve_cash_modes(settings, account_to_id) == [1, 1, 1, 1]
 
 
-def test_cash_mode_resolves_when_ids_keep_the_original_case():
-    account_to_id = {"IBKR Dhee": 0, "Webull": 1}
-    assert _resolve_cash_modes({"IBKR Dhee": "Auto", "Webull": "Auto"}, account_to_id)
-
-
 def test_manual_and_unknown_accounts_stay_manual():
     account_to_id = {"IBKR DHEE": 0, "SET": 1}
     settings = {"IBKR Dhee": "Manual", "Retired Account": "Auto"}
@@ -116,18 +100,16 @@ def test_manual_and_unknown_accounts_stay_manual():
 # --- Manual price overrides (holdings with no market feed) ---
 
 
-def test_manual_override_price_reads_the_declared_nav():
-    overrides = {"SCBRMS&P500": {"price": 22.4124, "asset_type": "ETF"}}
-    assert _manual_override_price(overrides, "SCBRMS&P500") == 22.4124
-    # The engine normalizes symbols; the override file keeps the user's casing.
-    assert _manual_override_price(overrides, "scbrms&p500") == 22.4124
-    assert _manual_override_price(overrides, "AAPL") is None
+def test_manual_price_matches_whatever_case_the_user_typed():
+    overrides = {"scbrms&p500": {"price": 22.4124, "asset_type": "ETF"}}
+    id_to_symbol = {0: "SCBRMS&P500", 1: "AAPL"}
+    assert manual_prices_by_symbol_id(overrides, id_to_symbol) == {0: 22.4124}
 
 
-def test_manual_override_price_rejects_unusable_values():
+def test_manual_price_rejects_unusable_values():
     for bad in ({"price": 0}, {"price": -3}, {"price": None}, {"price": "n/a"}, {}):
-        assert _manual_override_price({"FUND": bad}, "FUND") is None
-    assert _manual_override_price(None, "FUND") is None
+        assert manual_prices_by_symbol_id({"FUND": bad}, {0: "FUND"}) == {}
+    assert manual_prices_by_symbol_id(None, {0: "FUND"}) == {}
 
 
 def test_manual_prices_resolve_to_symbol_ids():

@@ -133,11 +133,15 @@ except ImportError:
 from portfolio_version import CURRENT_HIST_VERSION, _get_self_hash  # noqa: F401
 from portfolio_valuation_kernels import (  # noqa: F401
     _calculate_daily_holdings_chronological_numba,
+    _normalize_series,
+)
+# The per-date history path was removed on 9 Nov 2026; see reference/removed_paths.py.
+from reference.removed_paths import (  # noqa: F401
+    _calculate_daily_metrics_worker,
     _calculate_holdings_numba,
     _calculate_portfolio_value_at_date_unadjusted,
     _calculate_portfolio_value_at_date_unadjusted_numba,
     _calculate_portfolio_value_at_date_unadjusted_python,
-    _normalize_series,
 )
 from portfolio_cashflows import (  # noqa: F401
     _calculate_daily_net_cash_flow,
@@ -145,7 +149,6 @@ from portfolio_cashflows import (  # noqa: F401
 )
 from portfolio_history import (  # noqa: F401
     _calculate_accumulated_gains_and_resample,
-    _calculate_daily_metrics_worker,
     _get_or_calculate_all_daily_holdings,
     _load_or_calculate_daily_results,
     _prepare_historical_inputs,

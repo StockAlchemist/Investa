@@ -5,9 +5,6 @@ ph_small.rs) against the originals frozen in tests/reference/portfolio_history.p
   column, empty frames, naive and UTC date indexes, and splits dated by
   date, datetime, text or nothing, with good, zero, negative, text and
   missing ratios (the warnings set it fills is compared too).
-- The per-date worker with the valuation and flow functions stubbed, in
-  both comparison modes, failing and not; its `logging.basicConfig(force=True)`
-  would remove the test's log capture, so it is recorded and compared.
 - Manual prices, published NAV series (through a fake fund store that
   raises, answers None, or answers frames with and without prices), the
   price grid, the L1-cache pruning over a real directory, the intraday
@@ -85,48 +82,6 @@ def test_unadjust_prices_match(caplog, seed):
             outs.append((call(lambda: mod._unadjust_prices(p, yf_map, splits, warned[i]), caplog), canon(p)))
         assert outs[0] == outs[1], (seed, trial)
         assert sorted(warned[0]) == sorted(warned[1])
-
-
-@pytest.mark.parametrize("compare", [False, True])
-def test_daily_metrics_worker_matches(caplog, monkeypatch, compare):
-    rng = np.random.default_rng(14400 + compare)
-    configured = []
-    monkeypatch.setattr(logging, "basicConfig", lambda **kw: configured.append(sorted(kw.items())))
-    for trial in range(40):
-        value = [12345.5, np.nan, np.float64(10.0), None][int(rng.integers(0, 4))]
-        py_value = [12345.5, 12000.0, np.nan][int(rng.integers(0, 3))]
-        fail_mode = int(rng.integers(0, 6))
-
-        def valuer(*a, **k):
-            if fail_mode == 0:
-                raise RuntimeError("valuation exploded")
-            return value, bool(fail_mode == 1)
-
-        def py_valuer(*a, **k):
-            if fail_mode == 2:
-                raise ValueError("python valuer broke")
-            return py_value, False
-
-        def flows(*a, **k):
-            if fail_mode == 3:
-                raise KeyError("Date")
-            return 25.0, False
-
-        for mod in (new, ref):
-            monkeypatch.setattr(mod, "_calculate_portfolio_value_at_date_unadjusted", valuer)
-            monkeypatch.setattr(mod, "_calculate_portfolio_value_at_date_unadjusted_python", py_valuer)
-            monkeypatch.setattr(mod, "_calculate_daily_net_cash_flow", flows)
-            monkeypatch.setattr(mod, "HISTORICAL_COMPARE_METHODS", compare)
-        day = [date(2024, 3, 1), date(2024, 3, 5)][trial % 2]
-        method = ["numba", "python"][int(rng.integers(0, 2))]
-        outs = []
-        for mod in (ref, new):
-            configured.clear()
-            args = (day, pd.DataFrame(), {}, {}, {}, "USD", {}, {}, "USD", None, {}, {}, {}, {}, {}, {}, {})
-            out = call(lambda: mod._calculate_daily_metrics_worker(*args, calc_method=method, included_accounts=["IBKR"]), caplog)
-            masked = [(lv, msg if "COMPARE" not in msg else msg.split("(")[0]) for lv, msg in out[1]]
-            outs.append((out[0], masked, list(configured)))
-        assert outs[0] == outs[1], (compare, trial)
 
 
 def test_manual_prices_by_symbol_id_match():

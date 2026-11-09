@@ -27,7 +27,6 @@ from config import (
     CASH_SYMBOL_CSV,
     DAILY_RESULTS_CACHE_PATH_PREFIX,
     HISTORICAL_CALC_METHOD,
-    HISTORICAL_COMPARE_METHODS,
     HISTORICAL_RAW_ADJUSTED_CACHE_PATH_PREFIX,
     LOGGING_LEVEL,
     SHORTABLE_SYMBOLS,
@@ -48,9 +47,13 @@ from portfolio_cashflows import (
 )
 from portfolio_valuation_kernels import (
     _calculate_daily_holdings_chronological_numba,
+    _normalize_series,
+)
+# The per-date history path was removed on 9 Nov 2026; see reference/removed_paths.py.
+from reference.removed_paths import (
+    HISTORICAL_COMPARE_METHODS,
     _calculate_portfolio_value_at_date_unadjusted,
     _calculate_portfolio_value_at_date_unadjusted_python,
-    _normalize_series,
 )
 from portfolio_version import CURRENT_HIST_VERSION
 from utils_time import get_est_today, get_latest_trading_date, nyse_schedule

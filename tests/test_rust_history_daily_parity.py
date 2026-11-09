@@ -10,10 +10,9 @@ tests/reference/portfolio_history.py.
 - The daily results: the chronological pass with and without the L1
   holdings, daily and intraday (past dates only, so the "now" clip is not a
   race between the two runs), with an account filter, splits to re-adjust,
-  and flows; the single-process worker pass; and the feather cache written by
-  one run and read back by the next, each side in its own directory, with a
-  stale key and a CSV mtime check. `logging.basicConfig(force=True)` in the
-  worker would remove the test's log capture, so it is stubbed out.
+  and flows; and the feather cache written by one run and read back by the
+  next, each side in its own directory, with a stale key and a CSV mtime
+  check. (The per-date worker pass was removed on 9 Nov 2026.)
 """
 
 import logging
@@ -148,7 +147,8 @@ def test_daily_results_match(caplog, monkeypatch, tmp_path, seed):
         if intraday:
             start, end = date(2024, 6, 10), date(2024, 6, 14)
         included = [] if rng.random() < 0.6 else ["IBKR", "scbs"]
-        method = "numba_chrono" if rng.random() < 0.75 else "numba"
+        rng.random()  # chose the per-date method (removed 9 Nov 2026); drawn so the trials stay the same
+        method = "numba_chrono"
         l1 = None
         if rng.random() < 0.5:
             l1 = new._get_or_calculate_all_daily_holdings(txs, txs["Date"].min().date(), end, s2i, a2i, t2i, None)

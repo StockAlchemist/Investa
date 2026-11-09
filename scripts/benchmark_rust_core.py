@@ -43,7 +43,6 @@ import market_data  # noqa: E402
 import portfolio_analyzer as PA  # noqa: E402
 import portfolio_history as H  # noqa: E402
 import portfolio_logic as PL  # noqa: E402
-import portfolio_valuation_kernels as K  # noqa: E402
 from portfolio_logic import calculate_portfolio_summary  # noqa: E402
 from reference import numba_kernels as ref  # noqa: E402
 from reference import finance as ref_finance  # noqa: E402
@@ -73,16 +72,14 @@ def _taped_fetch(*args, **kwargs):
 
 
 market_data._run_isolated_fetch = _taped_fetch
-KERNELS = ("holdings", "daily", "core")
+KERNELS = ("daily", "core")  # the single-date kernel was removed on 9 Nov 2026
 
 RUST = {
-    "holdings": K._calculate_holdings_numba,
     "daily": H._calculate_daily_holdings_chronological_numba,
     "core": PA._process_numba_core,
     "irr": PA.calculate_irr,
 }
 PLAIN = {
-    "holdings": ref._calculate_holdings_numba,
     "daily": ref._calculate_daily_holdings_chronological_numba,
     "core": ref._process_numba_core,
 }
@@ -104,7 +101,6 @@ def jit_reference():
     fast = numba.jit(nopython=True, fastmath=True, cache=False)
     mod._dividend_amount = fast(mod._dividend_amount)
     return {
-        "holdings": fast(mod._calculate_holdings_numba),
         "daily": fast(mod._calculate_daily_holdings_chronological_numba),
         "core": numba.jit(nopython=True, cache=False)(mod._process_numba_core),
         "irr": ref_finance.calculate_irr,
@@ -112,7 +108,6 @@ def jit_reference():
 
 
 def install(impl):
-    K._calculate_holdings_numba = impl["holdings"]
     H._calculate_daily_holdings_chronological_numba = impl["daily"]
     PL._calculate_daily_holdings_chronological_numba = impl["daily"]
     PA._process_numba_core = impl["core"]
@@ -184,7 +179,6 @@ def capture(data):
 
     install(
         {
-            "holdings": recorder("holdings", RUST["holdings"], lambda a: len(a[1])),
             "daily": recorder("daily", RUST["daily"], lambda a: len(a[0]) * len(a[1])),
             "core": recorder("core", RUST["core"], lambda a: len(a[0])),
             "irr": irr_recorder,
@@ -194,19 +188,6 @@ def capture(data):
     seen["history"] = run_history(data)
     install(RUST)
     return seen
-
-
-def holdings_args_from_daily(d):
-    """Single-date kernel arguments for the ledger a chronological call saw."""
-    (days, dates, syms, to_accs, accs, types, qty, comms, splits, price, totals,
-     ns, na, split, ssplit, buy, dep, sell, wd, ss, btc, tr, so, div, intr, fees,
-     tax, cash, tol, shortable, modes) = d  # fmt: skip
-    import numpy as np
-
-    ccys = np.zeros(len(dates), dtype=np.int64)
-    return (int(days[-1]), dates, syms, accs, to_accs, types, qty, price, totals,
-            comms, splits, ccys, ns, na, 1, split, ssplit, buy, dep, sell, wd, ss,
-            btc, tr, so, fees, div, intr, tax, cash, tol, shortable, modes)  # fmt: skip
 
 
 def timed(fn, args, repeats):
@@ -219,8 +200,6 @@ def timed(fn, args, repeats):
 
 
 def shape_note(name, args):
-    if name == "holdings":
-        return f"{len(args[1]):,} tx, {args[12]} symbols x {args[13]} accounts"
     if name == "daily":
         return f"{len(args[0]):,} days x {len(args[1]):,} tx, {args[11]} x {args[12]}"
     return f"{len(args[0]):,} tx, {args[15]} symbols x {args[16]} accounts"
@@ -234,16 +213,14 @@ args = pickle.load(open({pkl!r}, "rb"))
 t0 = time.perf_counter()
 if {which!r} == "rust":
     import investa_core
-    fns = dict(holdings=investa_core.calculate_holdings,
-               daily=investa_core.calculate_daily_holdings_chronological,
+    fns = dict(daily=investa_core.calculate_daily_holdings_chronological,
                core=investa_core.process_core)
 else:
     import numba
     from reference import numba_kernels as ref
     fast = numba.jit(nopython=True, fastmath=True, cache=True)
     ref._dividend_amount = fast(ref._dividend_amount)
-    fns = dict(holdings=fast(ref._calculate_holdings_numba),
-               daily=fast(ref._calculate_daily_holdings_chronological_numba),
+    fns = dict(daily=fast(ref._calculate_daily_holdings_chronological_numba),
                core=numba.jit(nopython=True, cache=True)(ref._process_numba_core))
 out = {{}}
 for name in args:
@@ -291,11 +268,6 @@ def main():
     for username in USERS:
         data = user_data(username)
         args = capture(data)
-        if "holdings" not in args and "daily" in args:
-            # The single-date kernel is not on the summary/history path (they
-            # use the chronological one), so run it on the same real ledger,
-            # valued as of its last day.
-            args["holdings"] = holdings_args_from_daily(args["daily"])
         missing = [k for k in KERNELS if k not in args]
         if missing:
             print(f"{username}: kernels never called: {missing}")

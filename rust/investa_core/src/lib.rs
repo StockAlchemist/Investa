@@ -82,7 +82,6 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         if buffer == usize::MAX { 0 } else { buffer },
     )?;
 
-    m.add_function(wrap_pyfunction!(py::calculate_holdings, m)?)?;
     m.add_function(wrap_pyfunction!(
         py::calculate_daily_holdings_chronological,
         m
@@ -376,7 +375,6 @@ fn investa_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(pc_flows::pc_daily_net_cash_flow, m)?)?;
     m.add_function(wrap_pyfunction!(ph_small::ph_unadjust_prices, m)?)?;
-    m.add_function(wrap_pyfunction!(ph_small::ph_daily_metrics_worker, m)?)?;
     m.add_function(wrap_pyfunction!(
         ph_small::ph_manual_prices_by_symbol_id,
         m

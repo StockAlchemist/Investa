@@ -129,10 +129,6 @@ except ImportError:
 from portfolio_version import CURRENT_HIST_VERSION, _get_self_hash  # noqa: F401
 from portfolio_valuation_kernels import (  # noqa: F401
     _calculate_daily_holdings_chronological_numba,
-    _calculate_holdings_numba,
-    _calculate_portfolio_value_at_date_unadjusted,
-    _calculate_portfolio_value_at_date_unadjusted_numba,
-    _calculate_portfolio_value_at_date_unadjusted_python,
     _normalize_series,
 )
 from portfolio_cashflows import (  # noqa: F401
@@ -141,7 +137,6 @@ from portfolio_cashflows import (  # noqa: F401
 )
 from portfolio_history import (  # noqa: F401
     _calculate_accumulated_gains_and_resample,
-    _calculate_daily_metrics_worker,
     _get_or_calculate_all_daily_holdings,
     _load_or_calculate_daily_results,
     _prepare_historical_inputs,
@@ -368,8 +363,6 @@ def calculate_portfolio_summary(
 
 # --- Helper Functions for Point-in-Time Historical Calculation (Keep as is) ---
 # _calculate_daily_net_cash_flow
-# _calculate_portfolio_value_at_date_unadjusted
-# _calculate_daily_metrics_worker
 # (Implementations remain the same as provided previously)
 
 
@@ -531,135 +524,6 @@ if __name__ == "__main__":
             logging.info("Test 'All Accounts' Hist Result: Empty DataFrame")
 
     logging.info("Finished portfolio_logic.py tests.")
-
-    # --- Profiling Section (remains largely the same, uses preloaded data) ---
-    logging.info("\n--- Preparing for Single Date Profiling Run (with DataFrame) ---")
-    profile_target_date = date(2024, 4, 1)
-    profile_display_currency = "USD"
-
-    if loaded_tx_df is None:
-        logging.error("Cannot profile: Transaction data failed to load initially.")
-    else:
-        logging.info(f"Profiling target date: {profile_target_date}")
-        prep_result_profile = _prepare_historical_inputs(
-            preloaded_transactions_df=loaded_tx_df.copy(),  # Use preloaded
-            original_transactions_df_for_ignored=(
-                loaded_orig_df.copy() if loaded_orig_df is not None else None
-            ),
-            ignored_indices_from_load=loaded_ignored_indices,
-            ignored_reasons_from_load=loaded_ignored_reasons,
-            account_currency_map=test_account_currency_map_main,
-            default_currency=test_default_currency_main,
-            include_accounts=None,
-            exclude_accounts=None,
-            start_date=date(2010, 1, 1),
-            end_date=profile_target_date,
-            benchmark_symbols_yf=[],
-            display_currency=profile_display_currency,
-            user_symbol_map={},
-            user_excluded_symbols=set(),
-            original_csv_file_path=test_csv_file_main,  # Pass original path
-        )
-        (
-            profile_tx_df_effective,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
-            profile_symbols_yf,
-            profile_fx_pairs_yf,
-            profile_internal_to_yf,
-            profile_yf_to_internal,
-            profile_splits,
-            profile_raw_cache_file,
-            profile_raw_cache_key,
-            _,
-            _,
-            _,
-        ) = prep_result_profile
-
-        if profile_tx_df_effective is not None and not profile_tx_df_effective.empty:
-            profile_market_provider = get_shared_mdp()
-            # ... (rest of data fetching and unadjustment as before) ...
-            profile_prices_adj, _ = profile_market_provider.get_historical_data(
-                symbols_yf=profile_symbols_yf,
-                start_date=date(2010, 1, 1),
-                end_date=profile_target_date,
-                use_cache=True,
-                cache_key=profile_raw_cache_key,
-            )
-            profile_fx, _ = profile_market_provider.get_historical_fx_rates(
-                fx_pairs_yf=profile_fx_pairs_yf,
-                start_date=date(2010, 1, 1),
-                end_date=profile_target_date,
-                use_cache=True,
-                cache_key=profile_raw_cache_key,
-            )
-            profile_prices_unadj = _unadjust_prices(
-                profile_prices_adj, profile_yf_to_internal, profile_splits, set()
-            )
-            (
-                prof_sym_id,
-                prof_id_sym,
-                prof_acc_id,
-                prof_id_acc,
-                prof_type_id,
-                prof_curr_id,
-                prof_id_curr,
-            ) = generate_mappings(profile_tx_df_effective)
-
-            logging.info(
-                f"Calling _calculate_portfolio_value_at_date_unadjusted_numba (WARM-UP) for {profile_target_date}..."
-            )
-            _calculate_portfolio_value_at_date_unadjusted_numba(
-                target_date=profile_target_date,
-                transactions_df=profile_tx_df_effective,  # Pass effective df
-                historical_prices_yf_unadjusted=profile_prices_unadj,
-                historical_fx_yf=profile_fx,
-                target_currency=profile_display_currency,
-                internal_to_yf_map=profile_internal_to_yf,
-                account_currency_map=test_account_currency_map_main,
-                default_currency=test_default_currency_main,
-                manual_overrides_dict=None,
-                processed_warnings=set(),
-                symbol_to_id=prof_sym_id,
-                id_to_symbol=prof_id_sym,
-                account_to_id=prof_acc_id,
-                id_to_account=prof_id_acc,
-                type_to_id=prof_type_id,
-                currency_to_id=prof_curr_id,
-                id_to_currency=prof_id_curr,
-            )
-            logging.info("Warm-up call finished.")
-            logging.info(
-                f"Calling _calculate_portfolio_value_at_date_unadjusted_numba (PROFILED) for {profile_target_date}..."
-            )
-            _calculate_portfolio_value_at_date_unadjusted_numba(
-                target_date=profile_target_date,
-                transactions_df=profile_tx_df_effective,  # Pass effective df
-                historical_prices_yf_unadjusted=profile_prices_unadj,
-                historical_fx_yf=profile_fx,
-                target_currency=profile_display_currency,
-                internal_to_yf_map=profile_internal_to_yf,
-                account_currency_map=test_account_currency_map_main,
-                default_currency=test_default_currency_main,
-                manual_overrides_dict=None,
-                processed_warnings=set(),
-                symbol_to_id=prof_sym_id,
-                id_to_symbol=prof_id_sym,
-                account_to_id=prof_acc_id,
-                id_to_account=prof_id_acc,
-                type_to_id=prof_type_id,
-                currency_to_id=prof_curr_id,
-                id_to_currency=prof_id_curr,
-            )
-            logging.info("Profiling call finished.")
-        else:
-            logging.error(
-                "Could not prepare data for profiling run (effective transactions empty)."
-            )
 
 
 # --- END OF MODIFIED portfolio_logic.py ---

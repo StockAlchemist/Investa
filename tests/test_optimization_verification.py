@@ -104,11 +104,11 @@ class MockMarketData:
         raise NotImplementedError("Not used in this test path directly if pre-fetched")
 
 
-def test_numba_chrono_vs_python_accuracy_and_speed():
-    """
-    Benchmarks the optimized 'numba_chrono' method against 'python' method
-    (or validates 'numba_chrono' exactness if python is too slow/deprecated).
-    Here we focus on checking if 'numba_chrono' produces valid results faster.
+def test_numba_chrono_is_valid_and_fast():
+    """The chronological replay produces a valid history quickly.
+
+    It used to be timed against the per-date 'python' method, which was removed
+    on 9 Nov 2026; the history has one method now.
     """
     # 1. Setup Data
     start_date = date(2023, 1, 1)
@@ -294,23 +294,8 @@ def test_numba_chrono_vs_python_accuracy_and_speed():
 
     print(f"Final Value: {df_chrono['value'].iloc[-1]:,.2f}")
 
-    # 7. Run Python Parallel (Original)
-    print("\n--- Running Python Parallel (Original) ---")
-    start_t_py = time.time()
-    df_py, valid_py, status_py = call_calc("python")
-    end_t_py = time.time()
-    time_py = end_t_py - start_t_py
-    print(f"Time Taken (Python): {time_py:.4f}s")
-
-    print(f"\nSpeedup: {time_py / time_chrono:.2f}x")
-
-    # Assert Chrono is faster (or at least comparable given compiled overhead on small data)
-    # On very small data, Python might be fast. But typically Python parallel has overhead.
-    # Numba compilation adds overhead on first run.
-    # Let's just print comparison for User information.
-
     assert time_chrono < 4.0, "Calculation should be very fast for small dataset"
 
 
 if __name__ == "__main__":
-    test_numba_chrono_vs_python_accuracy_and_speed()
+    test_numba_chrono_is_valid_and_fast()
