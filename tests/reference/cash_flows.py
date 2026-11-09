@@ -63,8 +63,9 @@ def get_cash_flows_for_symbol_account(
         )
         # --- ADDED: Check Note for account name (handles legacy transfers where Account col is misaligned) ---
         if "Note" in transactions_df.columns:
+            # Plain text since 9 Nov 2026, in the port and here together.
             account_mask |= transactions_df["Note"].str.contains(
-                account, case=False, na=False
+                account, case=False, na=False, regex=False
             ) & (transactions_df["Type"].str.lower() == "transfer")
 
         symbol_account_tx_filtered = transactions_df[
@@ -74,8 +75,9 @@ def get_cash_flows_for_symbol_account(
         # If 'To Account' is missing, fallback to filtering only by 'Account'
         account_mask = transactions_df["Account"] == account
         if "Note" in transactions_df.columns:
+            # Plain text since 9 Nov 2026, in the port and here together.
             account_mask |= transactions_df["Note"].str.contains(
-                account, case=False, na=False
+                account, case=False, na=False, regex=False
             ) & (transactions_df["Type"].str.lower() == "transfer")
 
         symbol_account_tx_filtered = transactions_df[
