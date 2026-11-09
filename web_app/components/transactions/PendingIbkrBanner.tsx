@@ -43,12 +43,24 @@ export const PendingIbkrBanner: React.FC<{ availableAccounts?: string[]; currenc
         staleTime: 5 * 60 * 1000,
         enabled: !!user && pendingTransactions.length > 0,
     });
-    const accountOptions = [...new Set([
-        ...availableAccounts,
-        ...(allAccountsSummary?.metrics?._available_accounts as string[] | undefined ?? []),
-        ...Object.keys(allAccountsSummary?.account_metrics ?? {}),
-        ...pendingTransactions.map(tx => tx.Account),
-    ])].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    // One entry per account, compared case-insensitively. account_metrics is
+    // keyed by the engine's upper-cased ids ("E*TRADE"), which listed every
+    // account a second time beside the name as typed ("E*Trade"). A pending
+    // row's own spelling comes first, so its select always shows its value;
+    // the engine's ids come last, so they only add accounts nothing else names.
+    const accountOptions = (() => {
+        const byKey = new Map<string, string>();
+        for (const account of [
+            ...pendingTransactions.map(tx => tx.Account),
+            ...availableAccounts,
+            ...(allAccountsSummary?.metrics?._available_accounts as string[] | undefined ?? []),
+            ...Object.keys(allAccountsSummary?.account_metrics ?? {}),
+        ]) {
+            const key = account?.trim().toUpperCase();
+            if (key && !byKey.has(key)) byKey.set(key, account);
+        }
+        return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+    })();
 
     useEffect(() => {
         // Retain unsaved choices across a refetch, and drop rows no longer pending.

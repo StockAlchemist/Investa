@@ -676,8 +676,16 @@ struct TransactionsView: View {
 
     private func pendingAccountPicker(_ transaction: Transaction) -> some View {
         let selected = viewModel.pendingAccount(for: transaction)
-        let options = Array(Set(appState.allAccounts + viewModel.pendingIbkr.map(\.account) + [selected]))
-            .filter { !$0.isEmpty }.sorted()
+        // One entry per account, compared case-insensitively, so a differently
+        // cased spelling ("E*TRADE") never sits beside the name as typed. The
+        // selection comes first so the picker always contains its own value.
+        var seen = Set<String>()
+        let options = ([selected] + viewModel.pendingIbkr.map(\.account) + appState.allAccounts)
+            .filter { account in
+                let key = account.trimmingCharacters(in: .whitespaces).uppercased()
+                return !key.isEmpty && seen.insert(key).inserted
+            }
+            .sorted()
         return Picker("Account", selection: Binding(
             get: { viewModel.pendingAccount(for: transaction) },
             set: { account in
