@@ -85,10 +85,6 @@ pvk._calculate_daily_holdings_chronological_numba = _timed_wrapper(
     "Kernel: _calculate_daily_holdings_chronological_numba",
     pvk._calculate_daily_holdings_chronological_numba,
 )
-pvk._calculate_holdings_numba = _timed_wrapper(
-    "Kernel: _calculate_holdings_numba",
-    pvk._calculate_holdings_numba,
-)
 # Price unadjustment (often large loop)
 ph._unadjust_prices = _timed_wrapper("Phase 2: _unadjust_prices", ph._unadjust_prices)
 

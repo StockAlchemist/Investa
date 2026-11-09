@@ -1,7 +1,7 @@
 # Rust Calculation Core: Port Plan and Status
 
-**Status:** Phases 1–18 done (calculations, storage and import in Rust; all SQL through `rusqlite`; pandas overhead cut). The merge to `main` waits on the user. See "Benchmark after Phase 17" for the port against the Python app.
-**Branch:** `feat/rust-core`. One long-lived branch, merged to `main` when the whole port is verified.
+**Status:** Complete. Phases 1–18 are done (calculations, storage and import in Rust; all SQL through `rusqlite`; pandas overhead cut), and the per-date history path was removed on 9 Nov 2026. See "Benchmark after Phase 17" for the port against the Python app, and "What stays in Python (review, 9 Nov 2026)" for what the port leaves behind.
+**Branch:** developed on `feat/rust-core` and merged to `main` on 27 Oct 2026 (PR #51, `bf60e1a8`). Later work goes to `main` through ordinary PRs.
 **Started:** 24 Oct 2026
 **Scope:** every calculation module in `src/` moves into one Rust crate, `rust/investa_core`. Python calls it through PyO3. These stay Python:
 
@@ -41,7 +41,7 @@ The crate builds in four places:
 
 | Phase | Modules | Status |
 |---|---|---|
-| 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. | **Done** |
+| 1 | Replay kernels: `portfolio_valuation_kernels` (single-date and chronological holdings), `portfolio_analyzer._process_numba_core`. Numba removed. The single-date kernel was later deleted with the per-date history path (9 Nov 2026). | **Done** |
 | 2 | Financial math: `finutils` NPV/IRR (with SciPy's secant and Brent solvers), `risk_metrics` | **Done** |
 | 3 | Intrinsic-value models in `financial_ratios`: (a) the twelve Monte Carlo models and their statistics; (b) WACC, the growth blend, FCF normalization, the projection models, EPV and the model blend | **Done** |
 | 4 | Buffett ranking: `buffett_metrics`; the scoring in `buffett_rank` and `buffett_value` | **Done** |
@@ -1225,6 +1225,60 @@ Most of the summary's extra time is `.tolist()` and row selection on pyarrow-bac
 - **pandas 3.1 deprecations, which only break under pandas 4.** About 20 calls behind the `src/` wrappers pass `inplace=` (`sort_values`, `set_index`, `rename`, `drop`, `sort_index`). One `pd.concat` relies on the default sort of DatetimeIndexes. Replacing `inplace=` changes which frame a caller sees mutated, so it is its own change.
 - **Weekly history fetches its benchmarks with `interval="W"`**, which Yahoo does not accept under any yfinance version. The fetch normalizer maps only `"D"` to `"1d"`, so other non-Yahoo intervals likely behave the same (not checked). The benchmark series comes back empty; while the US market is open, four retries also cost about 4 s per request. This predates the upgrade.
 
+## The per-date history path removed (9 Nov 2026)
+
+The history had two ways to value a portfolio over time. The chronological replay (`numba_chrono`, the default) runs one pass over the ledger and is what every request uses. The per-date path valued each day on its own, in a "python" form or a "numba" form wrapped around a single-date Rust kernel. It ran only when the config chose it, or as a fallback when the replay came back empty. It was the largest block of calculation code still in Python, so it was deleted rather than ported.
+
+**What went:**
+
+- **Python, `portfolio_valuation_kernels.py` (1,293 → 121 lines):**
+  - `_calculate_portfolio_value_at_date_unadjusted` and its `_python` and `_numba` variants;
+  - `_calculate_holdings_numba` and `_manual_override_price`.
+- **Python, elsewhere:**
+  - `portfolio_history._calculate_daily_metrics_worker`;
+  - the single-date profiling block in `portfolio_logic`'s `__main__`;
+  - the `HISTORICAL_COMPARE_METHODS` flag.
+- **Rust (about 1,140 lines net):**
+  - the worker pass in `ph_daily.rs` and the per-date worker in `ph_small.rs`;
+  - the single-date kernel `calculate_holdings` (in `holdings.rs` and its `py.rs` wrapper).
+
+**What stays:**
+
+- `HISTORICAL_CALC_METHOD = "numba_chrono"` stays, as a constant: it is part of the daily-results cache key. The `calc_method` arguments are still accepted, so callers and the parity tests keep their signatures, but they are ignored.
+
+**Behaviour:**
+
+- **Every request is unchanged.** All of them already took the chronological replay. The fallback ran only when the replay's date grid was empty, for a daily history when the first transaction falls after the end date. The worker pass then found no dates either and returned "No calculation dates found." The history now returns that directly.
+- **Cached histories are recomputed once.** The crate's source hash is part of the history version, so caches built before the change are invalidated, as with any kernel change.
+
+**Tests:**
+
+- **Removed:** the tests that compared the removed functions with their oracles. These were the single-date kernel parity, the per-date worker parity, the python-vs-numba comparison and the per-date method in the daily-results parity.
+- **Moved onto the history's own path** (`tests/history_value.py`: the chronological replay plus the vectorised valuation), since they checked behaviour, not the removed code:
+  - Auto and Manual cash giving the same value;
+  - a spin-off child being valued, and the spin-off legs being cash-neutral;
+  - the case-insensitive cash-mode and manual-price rules.
+- **Dropped with the path:**
+  - the single-date kernel's cost-basis assertions; the summary and FIFO spin-off tests still cover the basis split;
+  - one cash-mode case, for account ids that keep their original case. The history's ids always arrive upper-cased from `generate_mappings`, and only the removed path matched them case-insensitively.
+- **Oracles:** the frozen ones in `tests/reference/` still import the removed names. Those resolve to stubs in `tests/reference/removed_paths.py`, which raise if anything reaches them.
+
+## What stays in Python (review, 9 Nov 2026)
+
+A scan of every function in `src/` for code that does not call `investa_core` or `rust_sql` found the following.
+
+- **Ported modules:** every module the phases name is a thin shim. The exceptions are deliberate:
+  - `market_db`'s two NumPy factor helpers, which the Rust code hands back only unsorted or NaN dates;
+  - `rust_sql.read_frame`, which builds the pandas frame;
+  - the market calendar in `utils_time`.
+- **Two pieces of calculation remain in Python:**
+  - **The projection backtest:** `backtest_projection` and `_build_replay` in `projections.py`, about 200 lines. Phase 5a kept them in Python as date arithmetic and orchestration, before the scope widened, and no later phase revisited them. Their loop already runs in Rust.
+  - **`tiingo_daily.price_frame`:** 33 lines of split adjustment for the Tiingo fallback, added on 1 Nov 2026, after the merge.
+- **Everything else is outside the scope:**
+  - routes, services and caches: the large handlers hold 1–7 lines of arithmetic each;
+  - network fetchers, PDF parsing and Gemini;
+  - `factor_analyzer`'s statsmodels regression (BLAS/LAPACK, which cannot be reproduced bit for bit).
+
 ## Found while porting
 
 - **IBKR staging's amount fallback read the unstripped type** (fixed 27 Oct 2026, at the user's request). When a synced row has no total, `stage_pending_transaction` computes `qty x price ± commission` and adds the commission only if the type is `BUY`. It tested the raw type, though, while the stored type is stripped and title-cased. So a type with stray spaces (`" buy "`) was stored as `Buy`, but its commission was subtracted: 2 x 10 − 1 = 19 instead of 21.
@@ -1267,5 +1321,5 @@ Most of the summary's extra time is `.tolist()` and row selection on pyarrow-bac
     - dheematan: taxes −2 USD.
     - kitmatan: unchanged.
   - **Test:** `test_a_tax_row_is_booked_once` fails on three of its four cases without the fix.
-- **The single-date holdings kernel is off the request path.** It sits behind `HISTORICAL_CALC_METHOD = "numba"`, while the default is `numba_chrono`.
+- **The single-date holdings kernel was off the request path.** It sat behind `HISTORICAL_CALC_METHOD = "numba"`, while the default was `numba_chrono`. It was deleted on 9 Nov 2026; see "The per-date history path removed".
 - **The kernel functions keep their `_numba` names** because callers import them by those names. Renaming is a later cleanup.

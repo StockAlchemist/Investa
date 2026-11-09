@@ -11,6 +11,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -21,7 +22,7 @@ from corporate_actions import (
     SUPPORTED_TYPES,
     RESERVED_CORPORATE_ACTION_TYPES,
 )  # noqa: E402
-from portfolio_valuation_kernels import _calculate_holdings_numba  # noqa: E402
+from portfolio_valuation_kernels import _calculate_daily_holdings_chronological_numba  # noqa: E402
 from server.pdf_parser import _ibkr_corporate_action_txns, _ibkr_open_positions_basis  # noqa: E402
 
 
@@ -64,15 +65,15 @@ def test_spin_off_is_supported_not_reserved():
     assert "spin off" not in RESERVED_CORPORATE_ACTION_TYPES
 
 
-# ---------- JIT dispatcher ----------
+# ---------- The history's holdings replay ----------
 
 
-def _run_holdings(txns, symbol_to_id, type_to_id):
-    """Drive _calculate_holdings_numba over a tiny ledger and return
-    (holdings_qty, holdings_cost) at the last date. Each txn is a dict."""
+def _run_holdings(txns, symbol_to_id, type_to_id, cash_mode=0):
+    """Replay a tiny one-account ledger through the chronological kernel the
+    history uses; return (holdings_qty[symbol, account], cash[account]) at the
+    end of the last day. Each txn is a dict, one per day."""
     n = len(txns)
-    base = np.int64(1_700_000_000_000_000_000)
-    tx_dates = np.array([base + i for i in range(n)], dtype=np.int64)
+    tx_dates = np.arange(738000, 738000 + n, dtype=np.int64)
     tx_symbols = np.array([symbol_to_id[t["sym"]] for t in txns], dtype=np.int64)
     tx_accounts = np.zeros(n, dtype=np.int64)
     tx_to_accounts = np.full(n, -1, dtype=np.int64)
@@ -82,23 +83,20 @@ def _run_holdings(txns, symbol_to_id, type_to_id):
     tx_totals = np.array([t.get("total", 0.0) for t in txns], dtype=np.float64)
     tx_comm = np.zeros(n, dtype=np.float64)
     tx_splits = np.zeros(n, dtype=np.float64)
-    tx_curr = np.zeros(n, dtype=np.int64)
 
-    qty, cost, *_ = _calculate_holdings_numba(
-        base + n,  # target date after all txns
+    qty, cash, _ = _calculate_daily_holdings_chronological_numba(
+        np.array([738000 + n], dtype=np.int64),  # one day, after all txns
         tx_dates,
         tx_symbols,
-        tx_accounts,
         tx_to_accounts,
+        tx_accounts,
         tx_types,
         tx_qty,
-        tx_prices,
-        tx_totals,
         tx_comm,
         tx_splits,
-        tx_curr,
+        tx_prices,
+        tx_totals,
         len(symbol_to_id),
-        1,
         1,
         type_to_id["split"],
         type_to_id["stock split"],
@@ -110,16 +108,16 @@ def _run_holdings(txns, symbol_to_id, type_to_id):
         type_to_id["buy to cover"],
         type_to_id["transfer"],
         type_to_id["spin off"],
-        type_to_id["fees"],
         type_to_id["dividend"],
         type_to_id["interest"],
+        type_to_id["fees"],
         type_to_id["tax"],
         symbol_to_id["$CASH"],
         1e-6,
         np.array([], dtype=np.int64),
-        np.zeros(1, dtype=np.int64),
+        np.array([cash_mode], dtype=np.int64),
     )
-    return qty, cost
+    return qty[-1], cash[-1]
 
 
 _TYPES = {
@@ -140,59 +138,30 @@ _TYPES = {
 }
 
 
-def test_spin_off_reallocates_basis_in_engine():
-    symbols = {"SPGI": 0, "MBGL": 1, "$CASH": 2}
-    txns = [
-        {
-            "sym": "SPGI",
-            "type": "buy",
-            "qty": 105.0,
-            "price": 50466.21 / 105.0,
-            "total": 50466.21,
-        },
-        {
-            "sym": "MBGL",
-            "type": "spin off",
-            "qty": 105.0,
-            "price": 2451.80 / 105.0,
-            "total": 2451.80,
-        },
-        {"sym": "SPGI", "type": "spin off", "qty": 0.0, "price": 0.0, "total": 2451.80},
-    ]
-    qty, cost = _run_holdings(txns, symbols, _TYPES)
+_SPIN_OFF = [
+    {"sym": "SPGI", "type": "buy", "qty": 105.0, "price": 480.63, "total": 50466.21},
+    {"sym": "MBGL", "type": "spin off", "qty": 105.0, "price": 23.3505, "total": 2451.80},
+    {"sym": "SPGI", "type": "spin off", "qty": 0.0, "price": 0.0, "total": 2451.80},
+]
 
-    # Parent: share count unchanged, basis reduced by the allocated amount.
+
+def test_spin_off_creates_the_child_in_engine():
+    # The basis split is the summary's and the FIFO lots' (tested below); the
+    # history's replay carries quantities, so it must create the child's shares
+    # and leave the parent's alone.
+    symbols = {"SPGI": 0, "MBGL": 1, "$CASH": 2}
+    qty, _ = _run_holdings(_SPIN_OFF, symbols, _TYPES)
     assert round(qty[symbols["SPGI"], 0], 6) == 105.0
-    assert round(cost[symbols["SPGI"], 0], 2) == 48014.41
-    # Child: created with the allocated basis.
     assert round(qty[symbols["MBGL"], 0], 6) == 105.0
-    assert round(cost[symbols["MBGL"], 0], 2) == 2451.80
-    # Total basis preserved (cash-neutral reallocation).
-    assert round(cost[symbols["SPGI"], 0] + cost[symbols["MBGL"], 0], 2) == 50466.21
 
 
-def test_spin_off_is_cash_neutral_in_engine():
+@pytest.mark.parametrize("cash_mode, cash_after", [(0, 0.0), (1, -50466.21)])
+def test_spin_off_is_cash_neutral_in_engine(cash_mode, cash_after):
+    # The spin-off legs must not create or destroy cash. In Auto mode only the
+    # buy moves it; in Manual nothing does.
     symbols = {"SPGI": 0, "MBGL": 1, "$CASH": 2}
-    txns = [
-        {
-            "sym": "SPGI",
-            "type": "buy",
-            "qty": 105.0,
-            "price": 480.63,
-            "total": 50466.21,
-        },
-        {
-            "sym": "MBGL",
-            "type": "spin off",
-            "qty": 105.0,
-            "price": 23.3505,
-            "total": 2451.80,
-        },
-        {"sym": "SPGI", "type": "spin off", "qty": 0.0, "price": 0.0, "total": 2451.80},
-    ]
-    qty, cost = _run_holdings(txns, symbols, _TYPES)
-    # The spin-off legs must not create or destroy $CASH.
-    assert round(qty[symbols["$CASH"], 0], 6) == 0.0
+    _, cash = _run_holdings(_SPIN_OFF, symbols, _TYPES, cash_mode=cash_mode)
+    assert round(cash[0], 2) == cash_after
 
 
 # ---------- IBKR importer ----------
@@ -391,12 +360,13 @@ def test_spin_off_reallocates_cost_basis_in_fifo_lots():
 # ---------- pure-Python valuation fallback ----------
 
 
-def test_spin_off_child_valued_in_python_fallback():
+def test_spin_off_child_valued_in_history():
     import pandas as pd
     from datetime import date
-    from portfolio_valuation_kernels import (
-        _calculate_portfolio_value_at_date_unadjusted_python,
-    )
+    from history_value import value_on
+
+    # Rows as the loader hands them on: it lower-cases types and spells both
+    # "Spin-Off" and "spinoff" as "spin off".
 
     rows = [
         {
@@ -408,7 +378,7 @@ def test_spin_off_child_valued_in_python_fallback():
             "Date": "2025-01-02",
         },
         {
-            "Type": "Spin-off",
+            "Type": "spin off",
             "Symbol": "MBGL",
             "Quantity": 105.0,
             "Price/Share": 23.35,
@@ -416,7 +386,7 @@ def test_spin_off_child_valued_in_python_fallback():
             "Date": "2026-06-30",
         },
         {
-            "Type": "Spin-off",
+            "Type": "spin off",
             "Symbol": "SPGI",
             "Quantity": 0.0,
             "Price/Share": 0.0,
@@ -444,20 +414,14 @@ def test_spin_off_child_valued_in_python_fallback():
         "MBGL": pd.DataFrame({"price": [21.19]}, index=idx),  # 105 ->  2,224.95
     }
 
-    value, had_nan = _calculate_portfolio_value_at_date_unadjusted_python(
-        target_date=date(2026, 7, 1),
-        transactions_df=df,
-        historical_prices_yf_unadjusted=prices,
-        historical_fx_yf={},
-        target_currency="USD",
-        internal_to_yf_map={"SPGI": "SPGI", "MBGL": "MBGL"},
+    value = value_on(
+        df,
+        date(2026, 7, 1),
+        prices,
+        internal_to_yf={"SPGI": "SPGI", "MBGL": "MBGL"},
         account_currency_map={"IBKR": "USD"},
-        default_currency="USD",
-        manual_overrides_dict=None,
-        processed_warnings=set(),
     )
 
-    assert not had_nan
     # Without the spin-off branch MBGL's 105 shares are dropped and the total is
     # only SPGI's 43,571.85; the child must contribute its 2,224.95.
     assert round(value, 2) == 45796.80

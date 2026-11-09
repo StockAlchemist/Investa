@@ -88,20 +88,6 @@ def _ledger(rng):
     )
 
 
-def _holdings_args(rng, L):
-    (split, ssplit, buy, dep, sell, wd, ss, btc, tr, so, fees, div, intr, tax) = L[
-        "type_ids"
-    ]
-    return (
-        int(rng.integers(737990, 738070)),
-        L["dates"], L["syms"], L["accs"], L["to_accs"], L["types"],
-        L["qty"], L["price"], L["totals"], L["comms"], L["splits"], L["ccys"],
-        L["ns"], L["na"], 3,
-        split, ssplit, buy, dep, sell, wd, ss, btc, tr, so, fees, div, intr, tax,
-        L["cash"], L["tol"], L["shortable"], L["modes"],
-    )  # fmt: skip
-
-
 def _daily_args(rng, L):
     (split, ssplit, buy, dep, sell, wd, ss, btc, tr, so, fees, div, intr, tax) = L[
         "type_ids"
@@ -122,18 +108,6 @@ def _core_args(L):
         L["totals"], L["splits"], L["to_accs"], L["lcur"], L["fx"],
         L["shortable"], L["tol"], L["cash"], L["n"], L["ns"], L["na"], L["modes"],
     )  # fmt: skip
-
-
-@pytest.mark.parametrize("seed", range(4))
-def test_single_date_holdings_match_reference(seed):
-    rng = np.random.default_rng(1000 + seed)
-    for _ in range(CASES // 4):
-        args = _holdings_args(rng, _ledger(rng))
-        for got, want in zip(
-            kernels._calculate_holdings_numba(*args),
-            ref._calculate_holdings_numba(*args),
-        ):
-            _same(got, want)
 
 
 @pytest.mark.parametrize("seed", range(4))
@@ -197,10 +171,10 @@ def test_mismatched_column_lengths_are_refused():
     L = _ledger(rng)
     while L["n"] == 0:
         L = _ledger(rng)
-    args = list(_holdings_args(rng, L))
+    args = list(_daily_args(rng, L))
     args[6] = args[6][:-1]  # tx_quantities one short
     with pytest.raises(ValueError):
-        kernels._calculate_holdings_numba(*args)
+        kernels._calculate_daily_holdings_chronological_numba(*args)
 
 
 def test_negative_indices_wrap_like_numpy():

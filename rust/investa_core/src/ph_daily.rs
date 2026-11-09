@@ -15,7 +15,7 @@
 //! a frame for this function, which is no longer Python.
 
 use pyo3::basic::CompareOp;
-use pyo3::exceptions::{PyException, PyNotImplementedError, PyOSError, PyValueError};
+use pyo3::exceptions::{PyException, PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PySet, PyTuple};
 
@@ -31,13 +31,6 @@ fn tru(py: Python<'_>) -> Bound<'_, PyAny> {
 
 fn fals(py: Python<'_>) -> Bound<'_, PyAny> {
     PyBool::new(py, false).to_owned().into_any()
-}
-
-/// `traceback.print_exc()` inside the original's `except`.
-fn print_exc(py: Python<'_>, e: &PyErr) -> PyResult<()> {
-    py.import("traceback")?
-        .call_method1("print_exception", (e.value(py),))?;
-    Ok(())
 }
 
 /// `slice(a, b)`, for `.loc[a:b]` on labels.
@@ -659,13 +652,11 @@ struct Daily<'a, 'py> {
     np: &'a Bound<'py, PyModule>,
     fd: String,
     interval: &'a Bound<'py, PyAny>,
-    worker_signals: &'a Bound<'py, PyAny>,
     csv_file: &'a Bound<'py, PyAny>,
     start_date: &'a Bound<'py, PyAny>,
     end_date: &'a Bound<'py, PyAny>,
     txs: &'a Bound<'py, PyAny>,
     prices_unadjusted: &'a Bound<'py, PyAny>,
-    prices_adjusted: &'a Bound<'py, PyAny>,
     fx: &'a Bound<'py, PyAny>,
     display_currency: &'a Bound<'py, PyAny>,
     internal_to_yf: &'a Bound<'py, PyAny>,
@@ -677,14 +668,11 @@ struct Daily<'a, 'py> {
     id_to_account: &'a Bound<'py, PyAny>,
     manual_overrides: &'a Bound<'py, PyAny>,
     type_to_id: &'a Bound<'py, PyAny>,
-    currency_to_id: &'a Bound<'py, PyAny>,
-    id_to_currency: &'a Bound<'py, PyAny>,
     all_holdings_qty: &'a Bound<'py, PyAny>,
     all_cash_balances: &'a Bound<'py, PyAny>,
     all_last_prices: &'a Bound<'py, PyAny>,
     all_holdings_start_date: &'a Bound<'py, PyAny>,
     included_accounts: &'a Bound<'py, PyAny>,
-    num_processes: &'a Bound<'py, PyAny>,
     account_cash_mode_map: &'a Bound<'py, PyAny>,
 }
 
@@ -1509,480 +1497,6 @@ impl<'py> Daily<'_, 'py> {
             .call((data,), Some(&self.kw(&[("index", &grid)])?))
     }
 
-    /// The per-date worker pass (the fallback path): the dates, the pool and
-    /// the results frame; `Err(status)` for the original's early returns.
-    fn workers(&self, status: &mut String) -> PyResult<Result<Bound<'py, PyAny>, String>> {
-        let (py, m, o, pd, fd) = (self.py, self.m, self.o, self.pd, &self.fd);
-        *status = " Calculating daily values...".into();
-        let txs = self.txs;
-        let calc_start = if !txs.getattr("empty")?.is_truthy()? {
-            txs.get_item("Date")?
-                .call_method0("min")?
-                .call_method0("date")?
-        } else {
-            self.start_date.clone()
-        };
-        let calc_end = self.end_date.clone();
-        let adjusted = self.prices_adjusted;
-        let mut source = Some(pystr(py, "SPY"));
-        if !adjusted.contains("SPY")? {
-            source = if adjusted.is_truthy()? {
-                Some(
-                    adjusted
-                        .call_method0("keys")?
-                        .try_iter()?
-                        .next()
-                        .transpose()?
-                        .expect("non-empty"),
-                )
-            } else {
-                None
-            };
-        }
-        let source_text = match &source {
-            Some(s) => o.fmt(s)?,
-            None => "None".into(),
-        };
-        let mut market_days = pd.getattr("Index")?.call(
-            (PyList::empty(py),),
-            Some(&self.kw(&[("dtype", &pystr(py, "object"))])?),
-        )?;
-        log(
-            py,
-            "debug",
-            format!(
-                "[_load_or_calculate_daily_results] Attempting to use '{source_text}' for market days."
-            ),
-        )?;
-        if let Some(src) = source
-            .as_ref()
-            .filter(|s| adjusted.contains(*s).unwrap_or(false))
-        {
-            let bench = adjusted.get_item(src)?;
-            let index = bench.getattr("index")?;
-            if !bench.getattr("empty")?.is_truthy()?
-                && (index.is_instance(&pd.getattr("DatetimeIndex")?)?
-                    || index.is_instance(&pd.getattr("Index")?)?)
-            {
-                let r = (|| -> PyResult<()> {
-                    let dt = crate::pyhelp::to_datetime(
-                        pd,
-                        &index,
-                        Some(&self.kw(&[("errors", &pystr(py, "coerce")), ("utc", &tru(py))])?),
-                    )?;
-                    let valid = dt.call_method0("dropna")?;
-                    if !valid.getattr("empty")?.is_truthy()? {
-                        let mut intraday = false;
-                        for i in ["1m", "5m", "15m", "30m", "60m", "1h", "90m"] {
-                            if self.interval.eq(i)? {
-                                intraday = true;
-                                break;
-                            }
-                        }
-                        market_days = if intraday {
-                            valid.call_method0("unique")?
-                        } else {
-                            pd.getattr("Index")?
-                                .call1((valid.getattr("date")?,))?
-                                .call_method0("unique")?
-                        };
-                        log(
-                            py,
-                            "info",
-                            format!(
-                                "  Successfully created market_days_index from '{source_text}' ({} points).",
-                                market_days.len()?
-                            ),
-                        )?;
-                    } else {
-                        log(
-                            py,
-                            "warning",
-                            format!(
-                                "  Benchmark '{source_text}' index could not be converted to valid datetimes."
-                            ),
-                        )?;
-                    }
-                    Ok(())
-                })();
-                match r {
-                    Ok(()) => {}
-                    Err(e) if e.is_instance_of::<PyException>(py) => log(
-                        py,
-                        "warning",
-                        format!(
-                            "WARN: Failed converting benchmark index for market days: {}",
-                            es(py, &e)
-                        ),
-                    )?,
-                    Err(e) => return Err(e),
-                }
-            } else {
-                log(
-                    py,
-                    "warning",
-                    format!("  Benchmark df '{source_text}' is empty or has invalid index type."),
-                )?;
-            }
-        }
-        let dates = if market_days.getattr("empty")?.is_truthy()? {
-            log(
-                py,
-                "warning",
-                format!("Hist WARN (Scope: {fd}): No market days found. Using business day range."),
-            )?;
-            pd.call_method(
-                "date_range",
-                (),
-                Some(&self.kw(&[
-                    ("start", &calc_start),
-                    ("end", &calc_end),
-                    ("freq", &pystr(py, "B")),
-                ])?),
-            )?
-            .getattr("date")?
-            .call_method0("tolist")?
-        } else {
-            let r = market_days
-                .get_item(
-                    market_days
-                        .rich_compare(&calc_start, CompareOp::Ge)?
-                        .bitand(market_days.rich_compare(&calc_end, CompareOp::Le)?)?,
-                )?
-                .call_method0("tolist")?;
-            log(
-                py,
-                "debug",
-                format!(
-                    "  Filtered market days index to range {} - {}. Found {} dates.",
-                    o.fmt(&calc_start)?,
-                    o.fmt(&calc_end)?,
-                    r.len()?
-                ),
-            )?;
-            r
-        };
-        if !dates.is_truthy()? {
-            log(
-                py,
-                "error",
-                format!(
-                    "Hist ERROR (Scope: {fd}): No calculation dates found in range {} to {}.",
-                    o.fmt(&calc_start)?,
-                    o.fmt(&calc_end)?
-                ),
-            )?;
-            return Ok(Err(format!("{status} No calculation dates found.")));
-        }
-        let b = py.import("builtins")?;
-        let n_dates = dates.len()?;
-        log(
-            py,
-            "info",
-            format!(
-                "Hist Daily (Scope: {fd}): Determined {n_dates} calculation dates from {} to {}",
-                o.fmt(&b.getattr("min")?.call1((&dates,))?)?,
-                o.fmt(&b.getattr("max")?.call1((&dates,))?)?
-            ),
-        )?;
-        let head = dates.get_item(b.getattr("slice")?.call1((py.None(), 5))?)?;
-        let tail = dates.get_item(b.getattr("slice")?.call1((-5, py.None()))?)?;
-        log(
-            py,
-            "debug",
-            format!(
-                "  First 5 calc dates: {}, Last 5 calc dates: {}",
-                o.fmt(&head)?,
-                o.fmt(&tail)?
-            ),
-        )?;
-        log(
-            py,
-            "info",
-            format!("Hist Daily (Scope: {fd}): Calculating {n_dates} daily metrics parallel..."),
-        )?;
-
-        let worker = m.getattr("partial")?.call(
-            (m.getattr("_calculate_daily_metrics_worker")?,),
-            Some(&self.kw(&[
-                ("transactions_df", txs),
-                ("historical_prices_yf_unadjusted", self.prices_unadjusted),
-                ("historical_prices_yf_adjusted", self.prices_adjusted),
-                ("historical_fx_yf", self.fx),
-                ("target_currency", self.display_currency),
-                ("internal_to_yf_map", self.internal_to_yf),
-                ("account_currency_map", self.account_currency_map),
-                ("default_currency", self.default_currency),
-                ("manual_overrides_dict", self.manual_overrides),
-                ("symbol_to_id", self.symbol_to_id),
-                ("id_to_symbol", self.id_to_symbol),
-                ("account_to_id", self.account_to_id),
-                ("id_to_account", self.id_to_account),
-                ("type_to_id", self.type_to_id),
-                ("currency_to_id", self.currency_to_id),
-                ("id_to_currency", self.id_to_currency),
-                ("calc_method", &m.getattr("HISTORICAL_CALC_METHOD")?),
-                ("included_accounts", self.included_accounts),
-                ("account_cash_mode_map", self.account_cash_mode_map),
-            ])?),
-        )?;
-        let results = PyList::empty(py);
-        let time = m.getattr("time")?;
-        let pool_start = time.call_method0("time")?;
-        let mut processes = self.num_processes.clone();
-        if processes.is_none() {
-            match m
-                .getattr("os")?
-                .call_method0("cpu_count")
-                .and_then(|c| c.sub(1))
-            {
-                Ok(n) => processes = b.getattr("max")?.call1((1, n))?,
-                Err(e) if e.is_instance_of::<PyNotImplementedError>(py) => {
-                    processes = 1i64.into_pyobject(py)?.into_any()
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        processes = b.getattr("max")?.call1((1, &processes))?;
-
-        let pooled = (|| -> PyResult<()> {
-            let chunksize = b.getattr("max")?.call1((
-                1,
-                (n_dates as i64)
-                    .into_pyobject(py)?
-                    .floor_div(processes.mul(4)?)?,
-            ))?;
-            let mut last_percent: i64 = -1;
-            let consume = |iterator: Bound<'py, PyAny>, last_percent: &mut i64| -> PyResult<()> {
-                for (i, result) in iterator.try_iter()?.enumerate() {
-                    let result = result?;
-                    if i % 100 == 0 && i > 0 {
-                        log(py, "info", format!("  Processed {i}/{n_dates} days..."))?;
-                    }
-                    if result.is_truthy()? {
-                        results.append(&result)?;
-                    }
-                    if self.worker_signals.is_truthy()?
-                        && self.worker_signals.hasattr("progress")?
-                    {
-                        let r = (|| -> PyResult<()> {
-                            let percent = (((i + 1) as f64 / n_dates as f64) * 100.0) as i64;
-                            if percent > *last_percent {
-                                self.worker_signals
-                                    .getattr("progress")?
-                                    .call_method1("emit", (percent,))?;
-                                *last_percent = percent;
-                            }
-                            Ok(())
-                        })();
-                        match r {
-                            Ok(()) => {}
-                            Err(e) if e.is_instance_of::<PyException>(py) => log(
-                                py,
-                                "warning",
-                                format!("Warning: Failed to emit progress: {}", es(py, &e)),
-                            )?,
-                            Err(e) => return Err(e),
-                        }
-                    }
-                }
-                log(
-                    py,
-                    "info",
-                    format!("  Finished processing all {n_dates} days."),
-                )?;
-                Ok(())
-            };
-            if processes.eq(1)? {
-                consume(
-                    b.getattr("map")?.call1((&worker, &dates))?,
-                    &mut last_percent,
-                )?;
-            } else {
-                let pool = m.getattr("multiprocessing")?.call_method(
-                    "Pool",
-                    (),
-                    Some(&self.kw(&[
-                        ("processes", &processes),
-                        ("maxtasksperchild", &50i64.into_pyobject(py)?.into_any()),
-                    ])?),
-                );
-                let pool = pool?;
-                let r = (|| {
-                    let it = pool.call_method(
-                        "imap_unordered",
-                        (&worker, &dates),
-                        Some(&self.kw(&[("chunksize", &chunksize)])?),
-                    )?;
-                    consume(it, &mut last_percent)
-                })();
-                // Graceful shutdown, so terminate() never cuts a result pipe.
-                let shutdown = pool
-                    .call_method0("close")
-                    .and_then(|_| pool.call_method0("join"));
-                match shutdown {
-                    Ok(_) => {}
-                    Err(e) if e.is_instance_of::<PyException>(py) => {
-                        log(
-                            py,
-                            "warning",
-                            format!("Pool shutdown warning: {}", es(py, &e)),
-                        )?;
-                        match pool.call_method0("terminate") {
-                            Ok(_) => {}
-                            Err(e) if e.is_instance_of::<PyException>(py) => {}
-                            Err(e) => return Err(e),
-                        }
-                    }
-                    Err(e) => return Err(e),
-                }
-                r?;
-            }
-            Ok(())
-        })();
-        let pool_failed = match pooled {
-            Ok(()) => None,
-            Err(e) if e.is_instance_of::<PyException>(py) => {
-                log(
-                    py,
-                    "error",
-                    format!("Hist CRITICAL (Scope: {fd}): Pool failed: {}", es(py, &e)),
-                )?;
-                print_exc(py, &e)?;
-                Some(None)
-            }
-            Err(e) => Some(Some(e)),
-        };
-        // finally:
-        let pool_end = time.call_method0("time")?;
-        log(
-            py,
-            "info",
-            format!(
-                "Hist Daily (Scope: {fd}): Pool finished. Received {} results total.",
-                results.len()
-            ),
-        )?;
-        if results.is_truthy()? {
-            log(
-                py,
-                "debug",
-                format!("  Sample result [0]: {}", o.fmt(&results.get_item(0)?)?),
-            )?;
-            if results.len() > 1 {
-                log(
-                    py,
-                    "debug",
-                    format!(
-                        "  Sample result [-1]: {}",
-                        o.fmt(&results.as_any().get_item(-1)?)?
-                    ),
-                )?;
-            }
-        }
-        log(
-            py,
-            "info",
-            format!(
-                "Hist Daily (Scope: {fd}): Pool finished in {}s.",
-                o.fmt_spec(&pool_end.sub(&pool_start)?, ".2f")?
-            ),
-        )?;
-        match pool_failed {
-            None => {}
-            Some(None) => return Ok(Err(format!("{status} Multiprocessing failed."))),
-            Some(Some(e)) => return Err(e),
-        }
-
-        let successful = PyList::empty(py);
-        for r in results.iter() {
-            if !r
-                .call_method1("get", ("worker_error", false))?
-                .is_truthy()?
-            {
-                successful.append(r)?;
-            }
-        }
-        let failed_count = n_dates as i64 - successful.len() as i64;
-        if failed_count > 0 {
-            *status += &format!(" ({failed_count} dates failed in worker).");
-            for r in results.iter() {
-                if r.call_method1("get", ("worker_error", false))?
-                    .is_truthy()?
-                {
-                    log(
-                        py,
-                        "error",
-                        format!(
-                            "Worker Error Sample: {}",
-                            o.fmt(&r.call_method1("get", ("error_message", "Unknown Error"))?)?
-                        ),
-                    )?;
-                    break;
-                }
-            }
-        }
-        if !successful.is_truthy()? {
-            log(
-                py,
-                "error",
-                format!(
-                    "Hist ERROR (Scope: {fd}): No successful results from workers. daily_results_list size: {}",
-                    results.len()
-                ),
-            )?;
-            return Ok(Err(format!(
-                "{status} All daily calculations failed in worker."
-            )));
-        }
-
-        let built = (|| -> PyResult<Result<Bound<'py, PyAny>, String>> {
-            let df = pd.getattr("DataFrame")?.call1((&successful,))?;
-            setitem(
-                &df,
-                "Date",
-                crate::pyhelp::to_datetime(
-                    pd,
-                    &df.get_item("Date")?,
-                    Some(&self.kw(&[("utc", &tru(py))])?),
-                )?,
-            )?;
-            let inplace = self.kw(&[("inplace", &tru(py))])?;
-            df.call_method("set_index", ("Date",), Some(&inplace))?;
-            df.call_method("sort_index", (), Some(&inplace))?;
-            let coerce = self.kw(&[("errors", &pystr(py, "coerce"))])?;
-            for c in ["value", "net_flow"] {
-                setitem(
-                    &df,
-                    c,
-                    pd.call_method("to_numeric", (df.get_item(c)?,), Some(&coerce))?,
-                )?;
-            }
-            if df.getattr("empty")?.is_truthy()? {
-                return Ok(Err(format!(
-                    "{status} All rows dropped due to NaN portfolio value."
-                )));
-            }
-            Ok(Ok(df))
-        })();
-        match built {
-            Ok(v) => Ok(v),
-            Err(e) if e.is_instance_of::<PyException>(py) => {
-                log(
-                    py,
-                    "error",
-                    format!(
-                        "Hist ERROR (Scope: {fd}): Post-processing failed: {}",
-                        es(py, &e)
-                    ),
-                )?;
-                print_exc(py, &e)?;
-                Ok(Err(format!("{status} Error processing results.")))
-            }
-            Err(e) => Err(e),
-        }
-    }
-
     /// The daily gain and TWR return, with flow-driven spikes and transfer
     /// artifacts healed.
     fn derive(&self, df: &Bound<'py, PyAny>) -> PyResult<()> {
@@ -2340,7 +1854,15 @@ pub fn ph_load_or_calculate_daily_results<'py>(
     calc_method: &Bound<'py, PyAny>,
     account_cash_mode_map: &Bound<'py, PyAny>,
 ) -> PyResult<(Bound<'py, PyAny>, bool, String)> {
-    let _ = current_hist_version;
+    // The per-date worker pass read these; the chronological replay does not.
+    let _ = (
+        current_hist_version,
+        worker_signals,
+        historical_prices_yf_adjusted,
+        currency_to_id,
+        id_to_currency,
+        num_processes,
+    );
     let m = ph(py)?;
     let o = Ops::new(py)?;
     let pd = py.import("pandas")?;
@@ -2353,13 +1875,11 @@ pub fn ph_load_or_calculate_daily_results<'py>(
         np: &np,
         fd: o.fmt(filter_desc)?,
         interval,
-        worker_signals,
         csv_file: transactions_csv_file,
         start_date,
         end_date,
         txs: transactions_df_effective,
         prices_unadjusted: historical_prices_yf_unadjusted,
-        prices_adjusted: historical_prices_yf_adjusted,
         fx: historical_fx_yf,
         display_currency,
         internal_to_yf: internal_to_yf_map,
@@ -2371,14 +1891,11 @@ pub fn ph_load_or_calculate_daily_results<'py>(
         id_to_account,
         manual_overrides: manual_overrides_dict,
         type_to_id,
-        currency_to_id,
-        id_to_currency,
         all_holdings_qty,
         all_cash_balances,
         all_last_prices,
         all_holdings_start_date,
         included_accounts: included_accounts_list,
-        num_processes,
         account_cash_mode_map,
     };
     let fd = d.fd.clone();
@@ -2442,14 +1959,27 @@ pub fn ph_load_or_calculate_daily_results<'py>(
     }
 
     if !from_cache {
-        if calc_method.eq("numba_chrono")? {
-            daily_df = d.chrono(&mut status)?;
-        }
+        // One method: the chronological replay. The per-date worker pass it
+        // used to fall back to was removed on 9 Nov 2026; it ran only when the
+        // replay's grid was empty, and then found no dates either.
+        let _ = calc_method;
+        daily_df = d.chrono(&mut status)?;
         if daily_df.getattr("empty")?.is_truthy()? {
-            match d.workers(&mut status)? {
-                Ok(df) => daily_df = df,
-                Err(early) => return Ok((d.empty_frame()?, false, early)),
-            }
+            log(
+                py,
+                "error",
+                format!(
+                    "Hist ERROR (Scope: {}): No calculation dates found in range {} to {}.",
+                    d.fd,
+                    d.o.fmt(d.start_date)?,
+                    d.o.fmt(d.end_date)?
+                ),
+            )?;
+            return Ok((
+                d.empty_frame()?,
+                false,
+                format!("{status} No calculation dates found."),
+            ));
         }
     }
 

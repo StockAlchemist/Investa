@@ -291,10 +291,10 @@ SHORTABLE_SYMBOLS = {"AAPL", "MSFT", "GOOG", "AMZN", "META", "TSLA", "NVDA"}
 DEFAULT_CSV = "my_transactions.csv"
 
 # --- Calculation Method Configuration ---
-HISTORICAL_CALC_METHOD = "numba_chrono"  # Options: 'python', 'numba', 'numba_chrono'
-HISTORICAL_COMPARE_METHODS = (
-    False  # If true, historical calc will run both methods and log diffs
-)
+# The history replays holdings chronologically; this is the only method (the
+# per-date 'python' and 'numba' paths were removed on 9 Nov 2026). It stays a
+# named constant because it is part of the daily-results cache key.
+HISTORICAL_CALC_METHOD = "numba_chrono"
 
 # --- Position Closing Tolerance ---
 STOCK_QUANTITY_CLOSE_TOLERANCE = (

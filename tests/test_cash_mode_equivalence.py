@@ -46,8 +46,8 @@ if SRC not in sys.path:
 from portfolio_logic import (
     CASH_SYMBOL_CSV,
     _calculate_daily_net_cash_flow,
-    _calculate_portfolio_value_at_date_unadjusted_numba,
 )
+from history_value import value_on
 from portfolio_analyzer import calculate_fifo_lots_and_gains
 
 # ── constants ─────────────────────────────────────────────────────────────────
@@ -106,36 +106,6 @@ def _build_df(rows: list) -> pd.DataFrame:
     df = df.reset_index(drop=True)
     df["original_index"] = df.index
     return df
-
-
-def _mappings(df: pd.DataFrame):
-    """Build string→id maps required by Numba valuation functions."""
-    all_syms = sorted(df["Symbol"].unique().tolist())
-    if CASH_SYMBOL_CSV not in all_syms:
-        all_syms.append(CASH_SYMBOL_CSV)
-    symbol_to_id = {s: i for i, s in enumerate(all_syms)}
-    id_to_symbol = {i: s for s, i in symbol_to_id.items()}
-
-    all_accs = sorted(df["Account"].unique().tolist())
-    account_to_id = {a: i for i, a in enumerate(all_accs)}
-    id_to_account = {i: a for a, i in account_to_id.items()}
-
-    all_types = sorted(df["Type"].str.lower().str.strip().unique().tolist())
-    type_to_id = {t: i for i, t in enumerate(all_types)}
-
-    all_curs = sorted(df["Local Currency"].unique().tolist())
-    currency_to_id = {c: i for i, c in enumerate(all_curs)}
-    id_to_currency = {i: c for c, i in currency_to_id.items()}
-
-    return (
-        symbol_to_id,
-        id_to_symbol,
-        account_to_id,
-        id_to_account,
-        type_to_id,
-        currency_to_id,
-        id_to_currency,
-    )
 
 
 # ── transaction sets ──────────────────────────────────────────────────────────
@@ -235,47 +205,21 @@ def _net_flow(df: pd.DataFrame, target: date) -> float:
 
 
 def _portfolio_value(df: pd.DataFrame, cash_mode: str) -> float:
-    """Run the Numba valuation at TARGET_DATE using a fixed TESTX price."""
-    maps = _mappings(df)
-    (
-        symbol_to_id,
-        id_to_symbol,
-        account_to_id,
-        id_to_account,
-        type_to_id,
-        currency_to_id,
-        id_to_currency,
-    ) = maps
-
+    """The history's value at TARGET_DATE using a fixed TESTX price."""
     unadjusted = {
         "TESTX": pd.DataFrame(
             {"price": [TESTX_PRICE]},
             index=pd.to_datetime([TARGET_DATE], utc=True),
         )
     }
-
-    value, _ = _calculate_portfolio_value_at_date_unadjusted_numba(
-        target_date=TARGET_DATE,
-        transactions_df=df,
-        historical_prices_yf_unadjusted=unadjusted,
-        historical_fx_yf={},
-        target_currency=USD,
-        internal_to_yf_map={"TESTX": "TESTX"},
+    return value_on(
+        df,
+        TARGET_DATE,
+        unadjusted,
+        internal_to_yf={"TESTX": "TESTX"},
         account_currency_map={ACCOUNT: USD},
-        default_currency=USD,
-        manual_overrides_dict=None,
-        processed_warnings=set(),
-        symbol_to_id=symbol_to_id,
-        id_to_symbol=id_to_symbol,
-        account_to_id=account_to_id,
-        id_to_account=id_to_account,
-        type_to_id=type_to_id,
-        currency_to_id=currency_to_id,
-        id_to_currency=id_to_currency,
-        included_accounts=None,
-        account_cash_mode_map={ACCOUNT: cash_mode},
+        cash_mode_map={ACCOUNT: cash_mode},
     )
-    return float(value)
 
 
 # ── realized gains helper ─────────────────────────────────────────────────────
