@@ -96,7 +96,8 @@ def _copy(d):
 
 @pytest.fixture
 def scratch_writes(monkeypatch):
-    """The original appends to another tool's scratch file; capture it."""
+    """Any write to the scratch file the original used to append to (in another
+    tool's folder; replaced by a debug log on 9 Nov 2026) is caught here."""
     writes = []
     real_open = builtins.open
 
@@ -144,6 +145,7 @@ def test_vectorized_flows_match(caplog, scratch_writes, seed):
             )
             sides.append((out, list(scratch_writes), canon(a), canon(f), canon(p)))
         assert sides[0] == sides[1], (seed, trial)
+        assert sides[0][1] == [], "nothing may write to the old scratch file"
 
 
 @pytest.mark.parametrize("seed", range(6))

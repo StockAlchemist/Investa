@@ -11,7 +11,7 @@
 //! `portfolio_cashflows` at call time.
 
 use pyo3::basic::CompareOp;
-use pyo3::exceptions::{PyException, PyIndexError, PyKeyError, PyOSError, PyValueError};
+use pyo3::exceptions::{PyException, PyIndexError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyCFunction, PyDict, PyList, PySet, PyTuple};
 
@@ -19,10 +19,6 @@ use crate::mdb::with1;
 use crate::pa_rows::Ops;
 use crate::pl_helpers::kwargs;
 use crate::pyhelp::{es, log, pystr, setitem, unpack};
-
-/// Where the original appends a line for a transfer it could not price (a
-/// scratch file of another tool; kept, see the port doc).
-const MISSING_PRICE_LOG: &str = "/Users/kmatan/.gemini/antigravity/brain/19ed956f-9dc7-40d0-85b1-1aa49c84c1d9/scratch/missing_transfer_prices.txt";
 
 fn pc(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
     py.import("portfolio_cashflows")
@@ -428,23 +424,14 @@ pub fn pc_daily_net_cash_flow_vectorized<'py>(
                         if price_found.gt(1e-9)? {
                             price.getattr("loc")?.set_item(&sym_mask, &price_found)?;
                         } else {
-                            let line = format!("Missing price for transfer: {}\n", o.fmt(&sym)?);
-                            let r = (|| -> PyResult<()> {
-                                let f = py
-                                    .import("builtins")?
-                                    .getattr("open")?
-                                    .call1((MISSING_PRICE_LOG, "a"))?;
-                                with1(py, &f, |f| {
-                                    f.call_method1("write", (&line,))?;
-                                    Ok(())
-                                })?;
-                                Ok(())
-                            })();
-                            match r {
-                                Ok(()) => {}
-                                Err(e) if e.is_instance_of::<PyOSError>(py) => {}
-                                Err(e) => return Err(e),
-                            }
+                            // Logged at debug level. It used to be appended to a
+                            // scratch file in another tool's folder, a leftover of a
+                            // debugging session (removed 9 Nov 2026).
+                            log(
+                                py,
+                                "debug",
+                                format!("Missing price for transfer: {}", o.fmt(&sym)?),
+                            )?;
                         }
                     }
                 }

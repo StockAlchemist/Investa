@@ -9,12 +9,22 @@ utils.py, which re-exports the names defined here for backwards compatibility.
 """
 
 from datetime import date, timedelta
+from typing import Tuple
 
 from config import DEFAULT_GRAPH_DAYS_AGO
+from utils_time import get_est_today
+
 
 # --- Graph Defaults ---
-DEFAULT_GRAPH_START_DATE = date.today() - timedelta(days=DEFAULT_GRAPH_DAYS_AGO)
-DEFAULT_GRAPH_END_DATE = date.today()  # Default end today
+def default_graph_dates() -> Tuple[date, date]:
+    """The default graph window, ending on the market's day.
+
+    A function, not import-time constants: those read the server's date (a day
+    ahead of New York on the Bangkok host) and then stayed fixed for the life of
+    the process (fixed 9 Nov 2026).
+    """
+    end = get_est_today()
+    return end - timedelta(days=DEFAULT_GRAPH_DAYS_AGO), end
 
 
 def get_column_definitions(display_currency="USD"):
