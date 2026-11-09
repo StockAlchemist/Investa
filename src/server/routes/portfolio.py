@@ -154,7 +154,7 @@ async def get_asset_change(
                     p_df_reset["Date"] = p_df_reset["Date"].astype(str)
                 elif "index" in p_df_reset.columns:
                     # Fallback rename if for some reason it's still called 'index'
-                    p_df_reset.rename(columns={"index": "Date"}, inplace=True)
+                    p_df_reset = p_df_reset.rename(columns={"index": "Date"})
                     p_df_reset["Date"] = p_df_reset["Date"].astype(str)
 
                 result[period] = clean_nans(p_df_reset.to_dict(orient="records"))
@@ -885,7 +885,7 @@ async def get_stock_position(
             df_gains, open_lots_dict = cached_fifo
         else:
             tx_to_process = df.copy()
-            tx_to_process.sort_values(by=["Date", "original_index"], inplace=True)
+            tx_to_process = tx_to_process.sort_values(by=["Date", "original_index"])
             df_gains, open_lots_dict = calculate_fifo_lots_and_gains(
                 transactions_df=tx_to_process,
                 display_currency=currency,

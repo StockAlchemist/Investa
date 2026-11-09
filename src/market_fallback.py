@@ -65,7 +65,7 @@ def fetch_data_fallback(
         df.index = pd.to_datetime(df.index)
 
         # Rename columns to match yfinance format (Open, High, Low, Close, Volume)
-        df.rename(
+        df = df.rename(
             columns={
                 "1. open": "Open",
                 "2. high": "High",
@@ -74,7 +74,6 @@ def fetch_data_fallback(
                 "5. volume": "Volume",
                 "5. adjusted close": "Adj Close",  # Might be present in daily adjusted
             },
-            inplace=True,
             errors="ignore",
         )
 

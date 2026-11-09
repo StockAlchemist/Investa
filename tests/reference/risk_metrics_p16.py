@@ -161,7 +161,14 @@ def calculate_beta(returns_series: pd.Series, benchmark_returns: pd.Series) -> f
         return 1.0
 
     # Align the series by date
-    aligned = pd.concat([returns_series, benchmark_returns], axis=1).dropna()
+    # sort= as pandas defaulted for two date indexes; pandas 4 drops that default
+    # (made explicit 9 Nov 2026, in the port and here together).
+    both_dates = isinstance(returns_series.index, pd.DatetimeIndex) and isinstance(
+        benchmark_returns.index, pd.DatetimeIndex
+    )
+    aligned = pd.concat(
+        [returns_series, benchmark_returns], axis=1, sort=both_dates
+    ).dropna()
     if len(aligned) < 2:
         return 1.0
     # The covariance stays pandas' (np.cov): its BLAS dot product sums in the

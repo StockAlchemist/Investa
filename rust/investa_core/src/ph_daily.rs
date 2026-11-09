@@ -50,25 +50,25 @@ fn debug_enabled(py: Python<'_>) -> PyResult<bool> {
         .is_truthy()
 }
 
-/// `df.rename(columns={old: new}, inplace=True)`
-fn rename_inplace<'py>(df: &Bound<'py, PyAny>, old: &str, new: &str) -> PyResult<()> {
+/// `df.rename(columns={old: new})`: a new frame. (The original renamed in
+/// place, which pandas 4 removes; every frame renamed here is local.)
+fn renamed<'py>(df: &Bound<'py, PyAny>, old: &str, new: &str) -> PyResult<Bound<'py, PyAny>> {
     let py = df.py();
     let map = PyDict::new(py);
     map.set_item(old, new)?;
     df.call_method(
         "rename",
         (),
-        Some(&kwargs(
-            py,
-            &[("columns", map.as_any()), ("inplace", &tru(py))],
-        )?),
-    )?;
-    Ok(())
+        Some(&kwargs(py, &[("columns", map.as_any())])?),
+    )
 }
 
 /// The daily accumulated-gain columns renamed to their final names.
-fn rename_accumulated<'py>(df: &Bound<'py, PyAny>, benchmarks: &Bound<'py, PyAny>) -> PyResult<()> {
-    rename_inplace(
+fn rename_accumulated<'py>(
+    df: &Bound<'py, PyAny>,
+    benchmarks: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut df = renamed(
         df,
         "Portfolio Accumulated Gain Daily",
         "Portfolio Accumulated Gain",
@@ -77,10 +77,10 @@ fn rename_accumulated<'py>(df: &Bound<'py, PyAny>, benchmarks: &Bound<'py, PyAny
         let bm = Ops::new(df.py())?.fmt(&bm?)?;
         let daily = format!("{bm} Accumulated Gain Daily");
         if df.getattr("columns")?.contains(&daily)? {
-            rename_inplace(df, &daily, &format!("{bm} Accumulated Gain"))?;
+            df = renamed(&df, &daily, &format!("{bm} Accumulated Gain"))?;
         }
     }
-    Ok(())
+    Ok(df)
 }
 
 /// `_calculate_accumulated_gains_and_resample`: (the output frame, the TWR
@@ -245,8 +245,7 @@ pub fn ph_accumulated_gains_and_resample<'py>(
         };
         let resampled;
         if in_list(&["D", "1d"])? {
-            resampled = results.clone();
-            rename_accumulated(&resampled, benchmark_symbols_yf)?;
+            resampled = rename_accumulated(&results, benchmark_symbols_yf)?;
             // Daily points at 16:00 New York, so they land on their trading day.
             if !resampled.getattr("empty")?.is_truthy()? {
                 let r = (|| -> PyResult<()> {
@@ -329,7 +328,7 @@ pub fn ph_accumulated_gains_and_resample<'py>(
                         o.fmt(&out.getattr("shape")?)?
                     ),
                 )?;
-                rename_accumulated(&out, benchmark_symbols_yf)?;
+                let out = rename_accumulated(&out, benchmark_symbols_yf)?;
                 let denom = out
                     .get_item("Cumulative Net Flow")?
                     .call_method1("replace", (0, f64::NAN))?;
@@ -362,8 +361,7 @@ pub fn ph_accumulated_gains_and_resample<'py>(
                 Err(e) => return Err(e),
             };
         } else {
-            resampled = results.clone();
-            rename_accumulated(&resampled, benchmark_symbols_yf)?;
+            resampled = rename_accumulated(&results, benchmark_symbols_yf)?;
         }
 
         let keep = PyList::empty(py);
@@ -397,13 +395,10 @@ pub fn ph_accumulated_gains_and_resample<'py>(
         let names = PyDict::new(py);
         names.set_item("value", "Portfolio Value")?;
         names.set_item("daily_gain", "Portfolio Daily Gain")?;
-        out.call_method(
+        out = out.call_method(
             "rename",
             (),
-            Some(&kwargs(
-                py,
-                &[("columns", names.as_any()), ("inplace", &tru(py))],
-            )?),
+            Some(&kwargs(py, &[("columns", names.as_any())])?),
         )?;
         log(
             py,
@@ -424,15 +419,12 @@ pub fn ph_accumulated_gains_and_resample<'py>(
             )?;
         }
         if interval.ne("D")? && has(&out, "daily_return")? {
-            out.call_method(
+            out = out.call_method(
                 "drop",
                 (),
                 Some(&kwargs(
                     py,
-                    &[
-                        ("columns", PyList::new(py, ["daily_return"])?.as_any()),
-                        ("inplace", &tru(py)),
-                    ],
+                    &[("columns", PyList::new(py, ["daily_return"])?.as_any())],
                 )?),
             )?;
         }
@@ -810,7 +802,6 @@ impl<'py> Daily<'_, 'py> {
                 ));
             }
             let utc = self.kw(&[("utc", &tru(py))])?;
-            let inplace = self.kw(&[("inplace", &tru(py))])?;
             let columns = df.getattr("columns")?;
             if columns.contains("Date")? {
                 setitem(
@@ -818,15 +809,15 @@ impl<'py> Daily<'_, 'py> {
                     "Date",
                     crate::pyhelp::to_datetime(pd, &df.get_item("Date")?, Some(&utc))?,
                 )?;
-                df.call_method("set_index", ("Date",), Some(&inplace))?;
+                df = df.call_method1("set_index", ("Date",))?;
             } else if columns.contains("index")? {
-                rename_inplace(&df, "index", "Date")?;
+                df = renamed(&df, "index", "Date")?;
                 setitem(
                     &df,
                     "Date",
                     crate::pyhelp::to_datetime(pd, &df.get_item("Date")?, Some(&utc))?,
                 )?;
-                df.call_method("set_index", ("Date",), Some(&inplace))?;
+                df = df.call_method1("set_index", ("Date",))?;
             } else if !df
                 .getattr("index")?
                 .is_instance(&pd.getattr("DatetimeIndex")?)?
@@ -854,7 +845,7 @@ impl<'py> Daily<'_, 'py> {
                 )?;
                 df = df.get_item(pd.call_method1("notnull", (df.getattr("index")?,))?)?;
             }
-            df.call_method("sort_index", (), Some(&inplace))?;
+            df = df.call_method0("sort_index")?;
             let missing = PyList::empty(py);
             for c in ["value", "net_flow", "daily_return", "daily_gain"] {
                 if !df.getattr("columns")?.contains(c)? {

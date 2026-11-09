@@ -537,8 +537,8 @@ pub fn pl_portfolio_summary<'py>(
         };
         let kw = PyDict::new(py);
         kw.set_item("by", PyList::new(py, by)?)?;
-        kw.set_item("inplace", true)?;
-        fifo_input.call_method("sort_values", (), Some(&kw))?;
+        // A new frame, not inplace=True (gone in pandas 4); a local copy.
+        let fifo_input = fifo_input.call_method("sort_values", (), Some(&kw))?;
 
         // Cached on the transactions themselves when the caller wants caching.
         let fingerprint = if db_mtime.gt(0)? {
@@ -1024,9 +1024,9 @@ pub fn pl_portfolio_summary<'py>(
         )?;
         kw.set_item("ascending", PyList::new(py, [true, false])?)?;
         kw.set_item("na_position", "last")?;
-        kw.set_item("inplace", true)?;
-        match full.call_method("sort_values", (), Some(&kw)) {
-            Ok(_) => {}
+        // A new frame, not inplace=True (gone in pandas 4); `full` is local.
+        let full = match full.call_method("sort_values", (), Some(&kw)) {
+            Ok(sorted) => sorted,
             Err(e) if e.is_instance_of::<PyKeyError>(py) => {
                 has_warnings = true;
                 log(
@@ -1034,9 +1034,10 @@ pub fn pl_portfolio_summary<'py>(
                     "warning",
                     "Warning: Could not sort summary DataFrame by Account/Market Value.",
                 )?;
+                full
             }
             Err(e) => return Err(e),
-        }
+        };
 
         let agg = m.getattr("_calculate_aggregate_metrics")?.call(
             (),

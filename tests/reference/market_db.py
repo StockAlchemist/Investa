@@ -866,7 +866,7 @@ class MarketDatabase:
 
         if not df.empty:
             df["date"] = pd.to_datetime(df["date"])
-            df.set_index("date", inplace=True)
+            df = df.set_index("date")
             # Rename columns to standard YF format for compatibility
             df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
 
@@ -961,7 +961,7 @@ class MarketDatabase:
             # Group by symbol and process each
             for sym, group in df_all.groupby("symbol"):
                 df = group.drop(columns=["symbol"])
-                df.set_index("date", inplace=True)
+                df = df.set_index("date")
                 df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
 
                 # FORCE NUMERIC
@@ -1073,7 +1073,7 @@ class MarketDatabase:
             df["timestamp"] = pd.to_datetime(
                 df["timestamp"], format="ISO8601", errors="coerce", utc=True
             )
-            df.set_index("timestamp", inplace=True)
+            df = df.set_index("timestamp")
             df.index.name = "Date"  # Standardize name for portfolio_logic compatibility
 
             # Rename columns to standard YF format
@@ -1167,7 +1167,7 @@ class MarketDatabase:
 
         if not df.empty:
             df["date"] = pd.to_datetime(df["date"])
-            df.set_index("date", inplace=True)
+            df = df.set_index("date")
             df.columns = [
                 "price"
             ]  # Map to 'price' which is expected by portfolio_logic
@@ -1226,7 +1226,7 @@ class MarketDatabase:
 
         if not df.empty:
             df["date"] = pd.to_datetime(df["date"])
-            df.set_index("date", inplace=True)
+            df = df.set_index("date")
             df.columns = ["price"]
         return df
 

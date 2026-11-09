@@ -269,18 +269,16 @@ pub fn pa_transactions_to_holdings<'py>(
             .add(dt.getattr("month")?)?
             .call_method1("astype", (np.getattr("int64")?,))?;
         setitem(&splits, "__split_ym", ym)?;
-        splits.call_method(
+        // New frames below, not inplace=True (gone in pandas 4); both are local.
+        let splits = splits.call_method(
             "sort_values",
             (),
             Some(&kw(
                 py,
-                &[
-                    (
-                        "by",
-                        PyList::new(py, ["Date", "Symbol", "__split_priority"])?.into_any(),
-                    ),
-                    ("inplace", tru(py, true)),
-                ],
+                &[(
+                    "by",
+                    PyList::new(py, ["Date", "Symbol", "__split_priority"])?.into_any(),
+                )],
             )?),
         )?;
         let deduped = splits
@@ -320,11 +318,7 @@ pub fn pa_transactions_to_holdings<'py>(
                 Some(&kw(py, &[("ignore_index", tru(py, true))])?),
             )?
             .call_method("sort_values", (), Some(&kw(py, &[("by", by.clone())])?))?;
-        df.call_method(
-            "sort_values",
-            (),
-            Some(&kw(py, &[("by", by), ("inplace", tru(py, true))])?),
-        )?;
+        df = df.call_method("sort_values", (), Some(&kw(py, &[("by", by)])?))?;
         df = df
             .call_method(
                 "reset_index",

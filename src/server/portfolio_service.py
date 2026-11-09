@@ -1273,10 +1273,10 @@ async def _calculate_historical_performance_internal(
                 f"DEBUG_INDEX: Index is {type(daily_df.index)}. Columns: {daily_df.columns}"
             )
             if "Date" in daily_df.columns:
-                daily_df.set_index("Date", inplace=True)
+                daily_df = daily_df.set_index("Date")
                 logging.info("DEBUG_INDEX: Set index to 'Date'")
             elif "date" in daily_df.columns:
-                daily_df.set_index("date", inplace=True)
+                daily_df = daily_df.set_index("date")
                 daily_df.index.name = "Date"  # Standardize name
                 logging.info("DEBUG_INDEX: Set index to 'date'")
             else:
@@ -1380,7 +1380,7 @@ async def _calculate_historical_performance_internal(
         # Standardize for internal consumers (like portfolio health)
         df_ret = daily_df.copy()
         if "Portfolio Value" in df_ret.columns:
-            df_ret.rename(columns={"Portfolio Value": "value"}, inplace=True)
+            df_ret = df_ret.rename(columns={"Portfolio Value": "value"})
         df_ret.index.name = "date"
         return df_ret.reset_index()
 

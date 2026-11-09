@@ -155,18 +155,17 @@ def _calculate_accumulated_gains_and_resample(
 
         if interval in ["D", "1d"]:
             final_df_resampled = results_df
-            final_df_resampled.rename(
+            final_df_resampled = final_df_resampled.rename(
                 columns={
                     "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
                 },
-                inplace=True,
             )
             for bm_symbol in benchmark_symbols_yf:
                 accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
                 accum_col_final = f"{bm_symbol} Accumulated Gain"
                 if accum_col_daily in final_df_resampled.columns:
-                    final_df_resampled.rename(
-                        columns={accum_col_daily: accum_col_final}, inplace=True
+                    final_df_resampled = final_df_resampled.rename(
+                        columns={accum_col_daily: accum_col_final}
                     )
 
             # --- FIX: Shift timestamp to Market Close (16:00 EST) ---
@@ -230,18 +229,17 @@ def _calculate_accumulated_gains_and_resample(
 
                 # --- FIX: Use Daily Accumulated Gain directly ---
                 # This ensures TWR is consistent across all timeframes.
-                final_df_resampled.rename(
+                final_df_resampled = final_df_resampled.rename(
                     columns={
                         "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
                     },
-                    inplace=True,
                 )
                 for bm_symbol in benchmark_symbols_yf:
                     accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
                     accum_col_final = f"{bm_symbol} Accumulated Gain"
                     if accum_col_daily in final_df_resampled.columns:
-                        final_df_resampled.rename(
-                            columns={accum_col_daily: accum_col_final}, inplace=True
+                        final_df_resampled = final_df_resampled.rename(
+                            columns={accum_col_daily: accum_col_final}
                         )
 
                 # --- NEW: NO LONGER recalculating Absolute ROI here, it's summed/lasted from daily ---
@@ -266,18 +264,17 @@ def _calculate_accumulated_gains_and_resample(
                 final_df_resampled = results_df
         else:
             final_df_resampled = results_df
-            final_df_resampled.rename(
+            final_df_resampled = final_df_resampled.rename(
                 columns={
                     "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
                 },
-                inplace=True,
             )
             for bm_symbol in benchmark_symbols_yf:
                 accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
                 accum_col_final = f"{bm_symbol} Accumulated Gain"
                 if accum_col_daily in final_df_resampled.columns:
-                    final_df_resampled.rename(
-                        columns={accum_col_daily: accum_col_final}, inplace=True
+                    final_df_resampled = final_df_resampled.rename(
+                        columns={accum_col_daily: accum_col_final}
                     )
 
         columns_to_keep = [
@@ -304,9 +301,8 @@ def _calculate_accumulated_gains_and_resample(
         ]
 
         final_df_output = final_df_resampled[columns_to_keep].copy()
-        final_df_output.rename(
+        final_df_output = final_df_output.rename(
             columns={"value": "Portfolio Value", "daily_gain": "Portfolio Daily Gain"},
-            inplace=True,
         )
         # --- ADDED: Log final output DataFrame shape and tail ---
         logging.debug(
@@ -316,7 +312,7 @@ def _calculate_accumulated_gains_and_resample(
             f"Final final_df_output tail:\n{final_df_output.tail().to_string()}"
         )
         if interval != "D" and "daily_return" in final_df_output.columns:
-            final_df_output.drop(columns=["daily_return"], inplace=True)
+            final_df_output = final_df_output.drop(columns=["daily_return"])
 
         # --- ADDED: Filter final output based on requested date range ---
         if start_date_filter and end_date_filter:

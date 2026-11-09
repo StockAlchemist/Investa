@@ -144,7 +144,7 @@ def convert_csv_headers_to_cleaned_format(
                     f"Column '{original_raw_header}' (normalized: '{normalized_header_from_df}') not in standard map or desired order. Will be kept if not explicitly dropped."
                 )
 
-        df.rename(columns=rename_map, inplace=True)
+        df = df.rename(columns=rename_map)
         logging.info(f"Applied column renames based on standard map: {rename_map}")
 
         # Reorder columns: desired ones first (from DESIRED_CLEANED_COLUMN_ORDER),

@@ -1559,14 +1559,7 @@ pub fn mdb_get_ohlcv<'py>(
             "date",
             pd.call_method1("to_datetime", (df.get_item("date")?,))?,
         )?;
-        df.call_method(
-            "set_index",
-            ("date",),
-            Some(&kw(
-                py,
-                &[("inplace", true.into_pyobject(py)?.to_owned().into_any())],
-            )?),
-        )?;
+        let df = df.call_method1("set_index", ("date",))?; // a new frame: inplace=True is gone in pandas 4
         df.setattr("columns", PyList::new(py, OHLCV_NAMES)?)?;
         numeric_columns(&df, &OHLCV_NAMES)?;
         return adjusted(py, slf, df, symbol, adjust);
@@ -1683,14 +1676,7 @@ pub fn mdb_get_ohlcv_batch<'py>(
                     &[("columns", PyList::new(py, ["symbol"])?.into_any())],
                 )?),
             )?;
-            df.call_method(
-                "set_index",
-                ("date",),
-                Some(&kw(
-                    py,
-                    &[("inplace", true.into_pyobject(py)?.to_owned().into_any())],
-                )?),
-            )?;
+            let df = df.call_method1("set_index", ("date",))?; // a new frame: inplace=True is gone in pandas 4
             df.setattr("columns", PyList::new(py, OHLCV_NAMES)?)?;
             numeric_columns(&df, &OHLCV_NAMES)?;
             let df = if needs_work.contains(&sym)? {
@@ -1732,7 +1718,8 @@ pub fn mdb_get_intraday<'py>(
     let start = start_ts.call_method0("isoformat")?;
     let end = end_ts.call_method0("isoformat")?;
     let params = PyTuple::new(py, [symbol.clone(), interval.clone(), start, end])?.into_any();
-    let df = with_conn(py, slf, |conn| read_frame(conn, query, params))?.expect("no CM swallows");
+    let mut df =
+        with_conn(py, slf, |conn| read_frame(conn, query, params))?.expect("no CM swallows");
     if !df.getattr("empty")?.is_truthy()? {
         let pd = py.import("pandas")?;
         let stamps = crate::pyhelp::to_datetime(
@@ -1748,14 +1735,7 @@ pub fn mdb_get_intraday<'py>(
             )?),
         )?;
         setitem(&df, "timestamp", stamps)?;
-        df.call_method(
-            "set_index",
-            ("timestamp",),
-            Some(&kw(
-                py,
-                &[("inplace", true.into_pyobject(py)?.to_owned().into_any())],
-            )?),
-        )?;
+        df = df.call_method1("set_index", ("timestamp",))?; // a new frame: inplace=True is gone in pandas 4
         df.getattr("index")?.setattr("name", "Date")?;
         df.setattr("columns", PyList::new(py, OHLCV_NAMES)?)?;
         numeric_columns(&df, &OHLCV_NAMES)?;
@@ -1848,7 +1828,8 @@ fn priced_series<'py>(
     query: &str,
     params: Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let df = with_conn(py, slf, |conn| read_frame(conn, query, params))?.expect("no CM swallows");
+    let mut df =
+        with_conn(py, slf, |conn| read_frame(conn, query, params))?.expect("no CM swallows");
     if !df.getattr("empty")?.is_truthy()? {
         let pd = py.import("pandas")?;
         setitem(
@@ -1856,14 +1837,7 @@ fn priced_series<'py>(
             "date",
             pd.call_method1("to_datetime", (df.get_item("date")?,))?,
         )?;
-        df.call_method(
-            "set_index",
-            ("date",),
-            Some(&kw(
-                py,
-                &[("inplace", true.into_pyobject(py)?.to_owned().into_any())],
-            )?),
-        )?;
+        df = df.call_method1("set_index", ("date",))?; // a new frame: inplace=True is gone in pandas 4
         df.setattr("columns", PyList::new(py, ["price"])?)?;
     }
     Ok(df)

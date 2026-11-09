@@ -315,7 +315,7 @@ def _process_transactions_to_holdings(
 
         # Sort by Date, Symbol, Priority
         # We want to keep the highest priority (lowest rank) for each symbol/month
-        splits_df.sort_values(by=["Date", "Symbol", "__split_priority"], inplace=True)
+        splits_df = splits_df.sort_values(by=["Date", "Symbol", "__split_priority"])
 
         # Drop duplicates based on Symbol and Year-Month
         deduped_splits = splits_df.drop_duplicates(
@@ -328,7 +328,7 @@ def _process_transactions_to_holdings(
             [other_df.copy(), deduped_splits.copy()], ignore_index=True
         ).sort_values(by=["Date", "original_index"])
         # Ensure 'Date' and 'original_index' are used for sorting
-        df.sort_values(by=["Date", "original_index"], inplace=True)
+        df = df.sort_values(by=["Date", "original_index"])
         # Force consolidation and new index to avoid Numba memory view issues
         df = df.reset_index(drop=True).copy()
         n = len(df)  # UPDATE: n must reflect the new size after deduplication
@@ -903,8 +903,8 @@ def _build_summary_rows(
                         (priced["Symbol"] == symbol) & account_mask
                     ].copy()
                     if not fallback_tx.empty:
-                        fallback_tx.sort_values(
-                            by=["Date", "original_index"], inplace=True, ascending=True
+                        fallback_tx = fallback_tx.sort_values(
+                            by=["Date", "original_index"], ascending=True
                         )
                         last_tx_row = fallback_tx.iloc[-1]
                         last_tx_price = pd.to_numeric(
@@ -2862,7 +2862,7 @@ def extract_dividend_history(
             "TaxAmountDisplayCurrency",
         ],
     )
-    df_dividends.sort_values(by="Date", ascending=False, inplace=True)
+    df_dividends = df_dividends.sort_values(by="Date", ascending=False)
     logging.info(f"Extracted {len(df_dividends)} dividend records.")
     if not df_dividends.empty:
         logging.debug(
@@ -3244,7 +3244,7 @@ def calculate_fifo_lots_and_gains(
         return pd.DataFrame(columns=output_columns), open_lots
 
     df_gains = pd.DataFrame(realized_gains_records, columns=output_columns)
-    df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
+    df_gains = df_gains.sort_values(by=["Date", "Symbol", "Account"])
 
     return df_gains, open_lots
 
@@ -3297,7 +3297,7 @@ def extract_realized_capital_gains_history(
     # The original logic filtered AFTER calculation. We will follow that for compatibility.
     # But we MUST process ALL accounts for the calculation itself.
     transactions_to_process = all_transactions_df.copy()
-    transactions_to_process.sort_values(by=["Date", "original_index"], inplace=True)
+    transactions_to_process = transactions_to_process.sort_values(by=["Date", "original_index"])
 
     # 2. Call core logic
     df_gains, _ = calculate_fifo_lots_and_gains(

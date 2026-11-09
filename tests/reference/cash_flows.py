@@ -88,8 +88,8 @@ def get_cash_flows_for_symbol_account(
         return [], []
     symbol_account_tx = symbol_account_tx_filtered.copy()
     dates_flows = defaultdict(float)
-    symbol_account_tx.sort_values(
-        by=["Date", "original_index"], inplace=True, ascending=True
+    symbol_account_tx = symbol_account_tx.sort_values(
+        by=["Date", "original_index"], ascending=True
     )
 
     last_seen_price = None
@@ -294,7 +294,7 @@ def get_cash_flows_for_mwr(
         return [], []
     acc_tx_copy = account_transactions.copy()
     dates_flows = defaultdict(float)
-    acc_tx_copy.sort_values(by=["Date", "original_index"], inplace=True, ascending=True)
+    acc_tx_copy = acc_tx_copy.sort_values(by=["Date", "original_index"], ascending=True)
 
     # Pre-calculate the scope of accounts for "Internal vs External" flow detection.
     # Transfers between accounts WITHIN this scope are 0-flow (internal).

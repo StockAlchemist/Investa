@@ -43,7 +43,7 @@ def get_ohlcv(
 
     if not df.empty:
         df["date"] = pd.to_datetime(df["date"])
-        df.set_index("date", inplace=True)
+        df = df.set_index("date")
         # Rename columns to standard YF format for compatibility
         df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
 
@@ -115,7 +115,7 @@ def get_ohlcv_batch(
         # Group by symbol and process each
         for sym, group in df_all.groupby("symbol"):
             df = group.drop(columns=["symbol"])
-            df.set_index("date", inplace=True)
+            df = df.set_index("date")
             df.columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
 
             # FORCE NUMERIC

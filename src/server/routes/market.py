@@ -320,7 +320,7 @@ def get_market_history(
             return []
 
         # Combine all indices into one DataFrame
-        combined_df = pd.concat(dfs, axis=1)
+        combined_df = pd.concat(dfs, axis=1, sort=True)
         combined_df = combined_df.sort_index()
 
         # Reset index to get dates as a column
@@ -447,7 +447,7 @@ def get_stock_history(
         # Merge on index (Date)
 
         main_df = hist_data[yf_symbol].copy()
-        main_df.rename(columns={"price": "value", "Volume": "volume"}, inplace=True)
+        main_df = main_df.rename(columns={"price": "value", "Volume": "volume"})
 
         if "value" not in main_df.columns:
             # Fallback if rename failed or price missing
@@ -515,7 +515,7 @@ def get_stock_history(
             if "date" in result_df.columns
             else ("Date" if "Date" in result_df.columns else "index")
         )
-        result_df.rename(columns={date_col: "date"}, inplace=True)
+        result_df = result_df.rename(columns={date_col: "date"})
 
         # Convert date to isoformat
         result_df["date"] = result_df["date"].apply(lambda x: x.isoformat())
@@ -1351,7 +1351,8 @@ def _fetch_closes(
     def _to_closes(frames: list) -> dict:
         if not frames:
             return {}
-        combined = pd.concat(frames, axis=1) if len(frames) > 1 else frames[0]
+        # sort=True: dates sorted, as pandas did by default before 4.
+        combined = pd.concat(frames, axis=1, sort=True) if len(frames) > 1 else frames[0]
         out = {}
         for sym in symbols:
             try:

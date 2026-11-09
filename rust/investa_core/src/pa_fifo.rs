@@ -644,7 +644,7 @@ pub fn pa_fifo_lots_and_gains<'py>(
     let df = pd.getattr("DataFrame")?.call((records,), Some(&kw))?;
     let kw = PyDict::new(py);
     kw.set_item("by", PyList::new(py, ["Date", "Symbol", "Account"])?)?;
-    kw.set_item("inplace", true)?;
-    df.call_method("sort_values", (), Some(&kw))?;
+    // A new frame, not inplace=True (gone in pandas 4).
+    let df = df.call_method("sort_values", (), Some(&kw))?;
     Ok((df, open_lots))
 }
