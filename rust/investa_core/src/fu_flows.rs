@@ -186,12 +186,18 @@ impl CashFlowLedger {
                     .rich_compare(account, CompareOp::Eq)?,
             )?;
         }
-        // Legacy transfers name the account in the Note, read as a regex.
+        // Legacy transfers name the account in the Note. The name is plain
+        // text: read as a regex, `E*Trade` matched any note with "trade" in it
+        // ("TD Ameritrade"), and `IBKR (1)` was a group (fixed 9 Nov 2026).
         if columns.contains("Note")? {
             let note = df.get_item("Note")?;
             let contains_kw = kwargs(
                 py,
-                &[("case", &pybool(py, false)), ("na", &pybool(py, false))],
+                &[
+                    ("case", &pybool(py, false)),
+                    ("na", &pybool(py, false)),
+                    ("regex", &pybool(py, false)),
+                ],
             )?;
             let rhs = match self._transfer_notes_naming(py, &df, &note, account, &contains_kw)? {
                 Some(rhs) => rhs,
@@ -215,15 +221,14 @@ impl CashFlowLedger {
         Ok(mask)
     }
 
-    /// `df["Note"].str.contains(account, case=False, na=False) & transfer_rows`
-    /// with the regex run on the transfer rows alone (a few dozen of
-    /// thousands): every other row is False after the `&` whatever its note
-    /// says. Taken only where it cannot differ from the full call: an account
-    /// that compiles, both ways, to a pattern with no groups (so the full call
-    /// neither raises nor warns before the transfer rows are read), an object
-    /// Note column of strings and missing values (so the subset passes the
-    /// `.str` accessor's check exactly when the column does), and a plain bool
-    /// transfer mask. `None` sends the caller to the full call.
+    /// `df["Note"].str.contains(account, case=False, na=False, regex=False)
+    /// & transfer_rows` with the search run on the transfer rows alone (a few
+    /// dozen of thousands): every other row is False after the `&` whatever its
+    /// note says. Taken only where it cannot differ from the full call: a
+    /// string account, an object Note column of strings and missing values (so
+    /// the subset passes the `.str` accessor's check exactly when the column
+    /// does), and a plain bool transfer mask. `None` sends the caller to the
+    /// full call.
     fn _transfer_notes_naming<'py>(
         &mut self,
         py: Python<'py>,
@@ -234,13 +239,6 @@ impl CashFlowLedger {
     ) -> PyResult<Option<Bound<'py, PyAny>>> {
         if !account.is_exact_instance_of::<pyo3::types::PyString>() {
             return Ok(None);
-        }
-        let re = py.import("re")?;
-        for flags in [0, re.getattr("IGNORECASE")?.extract::<i64>()?] {
-            match re.call_method1("compile", (account, flags)) {
-                Ok(p) if p.getattr("groups")?.extract::<i64>()? == 0 => {}
-                _ => return Ok(None),
-            }
         }
         let np = py.import("numpy")?;
         let object = np.call_method1("dtype", ("O",))?;

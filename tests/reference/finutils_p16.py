@@ -624,10 +624,11 @@ class CashFlowLedger:
         else:
             mask = df["Account"] == account
         # Legacy transfers whose Account column is misaligned name the account
-        # in the Note. str.contains reads the account name as a regex.
+        # in the Note. Plain text since 9 Nov 2026 (in the port and here
+        # together): read as a regex, "E*Trade" matched "TD Ameritrade".
         if "Note" in df.columns:
             mask |= (
-                df["Note"].str.contains(account, case=False, na=False)
+                df["Note"].str.contains(account, case=False, na=False, regex=False)
                 & self._transfer_rows()
             )
         mask = mask.to_numpy(dtype=bool)

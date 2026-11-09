@@ -767,3 +767,37 @@ def test_calculate_indicated_dividend_invalid():
     ticker_info = {"dividendRate": "not_a_number"}
     yield_val = calculate_indicated_dividend(ticker_info)
     assert yield_val == 0.0
+
+
+def _transfer_ledger(note, account_from="Sharebuilder", account_to="TD Ameritrade", holder="E*Trade"):
+    rows = [
+        {"Date": "2011-04-07", "Type": "buy", "Symbol": "AAPL", "Quantity": 10.0, "Price/Share": 100.0,
+         "Total Amount": 1000.0, "Commission": 0.0, "Account": holder, "To Account": None,
+         "Local Currency": "USD", "Note": ""},
+        {"Date": "2006-12-19", "Type": "transfer", "Symbol": "AAPL", "Quantity": 5.0, "Price/Share": 80.0,
+         "Total Amount": 0.0, "Commission": 0.0, "Account": account_from, "To Account": account_to,
+         "Local Currency": "USD", "Note": note},
+    ]  # fmt: skip
+    df = pd.DataFrame(rows)
+    df["Date"] = pd.to_datetime(df["Date"])
+    df["original_index"] = range(len(df))
+    return df
+
+
+def test_account_name_in_a_note_is_plain_text_not_a_regex():
+    """Read as a regex, "E*Trade" is any run of E's then "trade", so a
+    Sharebuilder -> TD Ameritrade transfer noted "TO AMERITRADE" was booked into
+    the E*Trade holding's IRR flows (dheematan's AAPL, 2006)."""
+    df = _transfer_ledger("DEL TOA TO AMERITRADE")
+    dates, _ = get_cash_flows_for_symbol_account("AAPL", "E*Trade", df, 1200.0, True, date(2026, 1, 2))
+    assert [d.year for d in dates] == [2011, 2026]
+
+
+def test_a_note_naming_the_account_still_counts():
+    df = _transfer_ledger("Moved to e*trade from old broker", account_to="Somewhere")
+    dates, _ = get_cash_flows_for_symbol_account("AAPL", "E*Trade", df, 1200.0, True, date(2026, 1, 2))
+    assert 2006 in [d.year for d in dates]
+    # Parentheses are text too, not a regex group matching a bare "1".
+    df = _transfer_ledger("ACATS from IBKR 1 to new account", holder="IBKR (1)")
+    dates, _ = get_cash_flows_for_symbol_account("AAPL", "IBKR (1)", df, 1200.0, True, date(2026, 1, 2))
+    assert [d.year for d in dates] == [2011, 2026]
