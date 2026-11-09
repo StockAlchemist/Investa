@@ -40,6 +40,7 @@ from typing import Dict, List, Optional
 
 import config
 from edgar_http import sec_get
+from utils_time import get_est_today
 
 _DERA_URL = (
     "https://www.sec.gov/files/dera/data/financial-statement-data-sets/{quarter}.zip"
@@ -102,7 +103,9 @@ def recent_quarters(count: int = 8, today: Optional[date] = None) -> List[str]:
     bank is silently scored as an industrial, which is a real mis-ranking rather
     than a missing one. Eight quarters is a one-off cost paid to avoid that.
     """
-    today = today or date.today()
+    # The market's day: SEC quarters are New York's, and the server's date runs
+    # up to a day ahead, into the next quarter on its first day (fixed 9 Nov 2026).
+    today = today or get_est_today()
     quarter = (today.month - 1) // 3 + 1
     year = today.year
 

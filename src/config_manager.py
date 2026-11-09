@@ -19,9 +19,8 @@ from typing import Dict, Any, Optional
 
 import config
 from display_config import (
+    default_graph_dates,
     get_column_definitions,
-    DEFAULT_GRAPH_START_DATE,
-    DEFAULT_GRAPH_END_DATE,
 )
 
 
@@ -104,6 +103,7 @@ class ConfigManager:
             else get_database_path(DB_FILENAME)
         )
         default_display_currency = "USD"
+        graph_start, graph_end = default_graph_dates()
 
         return {
             "transactions_file": default_db_path,
@@ -115,8 +115,8 @@ class ConfigManager:
             "fmp_api_key": getattr(config, "DEFAULT_API_KEY", ""),
             "account_currency_map": {"SET": "THB"},
             "default_currency": getattr(config, "DEFAULT_CURRENCY", "USD"),
-            "graph_start_date": DEFAULT_GRAPH_START_DATE.strftime("%Y-%m-%d"),
-            "graph_end_date": DEFAULT_GRAPH_END_DATE.strftime("%Y-%m-%d"),
+            "graph_start_date": graph_start.strftime("%Y-%m-%d"),
+            "graph_end_date": graph_end.strftime("%Y-%m-%d"),
             "graph_interval": config.DEFAULT_GRAPH_INTERVAL,
             "graph_benchmarks": config.DEFAULT_GRAPH_BENCHMARKS,
             "column_visibility": {

@@ -287,15 +287,10 @@ def _calculate_daily_net_cash_flow_vectorized(
                         if price_found > 1e-9:
                             price.loc[sym_mask] = price_found
                         else:
-                            # Final Fail: Log for visibility
-                            try:
-                                with open(
-                                    "/Users/kmatan/.gemini/antigravity/brain/19ed956f-9dc7-40d0-85b1-1aa49c84c1d9/scratch/missing_transfer_prices.txt",
-                                    "a",
-                                ) as f:
-                                    f.write(f"Missing price for transfer: {sym}\n")
-                            except OSError:
-                                pass
+                            # Final Fail: Log for visibility. Logged at debug level
+                            # since 9 Nov 2026 (in the port and here together); it was
+                            # appended to a scratch file in another tool's folder.
+                            logging.debug(f"Missing price for transfer: {sym}")
 
                 value = qty * price
                 local_flow = value * multiplier

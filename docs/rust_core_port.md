@@ -1306,7 +1306,9 @@ A scan of every function in `src/` for code that does not call `investa_core` or
   - A benchmark frame with no `price`/`Adj Close`/`Close` column reuses the previous benchmark's `bm_series`, so it draws the wrong benchmark. If it is the first benchmark, the request raises.
   - The port keeps both, and `test_unbound_variable_quirks_match` pins them.
 - **The worker-failure log never shows the worker's error** (not changed). `_load_or_calculate_daily_results` logs `r.get('error_message', 'Unknown Error')`, but the worker stores the message under `worker_error_msg`, so the sample always reads "Unknown Error".
-- **The vectorized cash-flow pass writes to another tool's scratch file** (not changed). A transfer that neither the price history nor another trade can price appends `Missing price for transfer: <symbol>` to `/Users/kmatan/.gemini/antigravity/brain/19ed956f-…/scratch/missing_transfer_prices.txt`, a path left behind by a debugging session. The directory exists on this machine, so the server really does write there. The port keeps it, and the parity test captures the writes instead of making them. Removing it is a one-line change once you want it gone.
+- **The vectorized cash-flow pass wrote to another tool's scratch file** (fixed 9 Nov 2026). A transfer that neither the price history nor another trade could price appended `Missing price for transfer: <symbol>` to `/Users/kmatan/.gemini/antigravity/brain/19ed956f-…/scratch/missing_transfer_prices.txt`, a path left behind by a debugging session. The directory existed on this machine, so the server really did write there.
+  - The message now goes to the debug log, in `pc_flows.rs` and the oracle together.
+  - The parity test still traps that path, and fails if anything writes there.
 - **A short holding's "Avg Cost (Local)" is the previous long holding's cost basis divided by the short quantity** (not changed). `_build_summary_rows` assigns `cost_basis_display_local` only in the long branch but reads it for every holding with a non-zero quantity. A short row therefore divides whatever the last long holding left behind, and a book whose first non-zero holding is short raises `UnboundLocalError` out of the summary. No real book holds a short, so no one has seen it. The port keeps both behaviours, and `test_short_holding_reads_the_previous_cost_basis` pins them.
 - **A holding's IRR matched its account name against transfer Notes as a regular expression, case-insensitively** (fixed 9 Nov 2026). That was `str.contains(account, case=False)` in `get_cash_flows_for_symbol_account`.
   - `E*Trade` read as any number of E's followed by "trade". So a transfer of the same symbol whose Note contained "trade" anywhere, such as "TD Ameritrade", was pulled into the E*Trade holding's flows.
@@ -1326,9 +1328,10 @@ A scan of every function in `src/` for code that does not call `investa_core` or
   - **On the Thai clock by design:** the Bank of Thailand FX fetch (`bot_fx_provider`) and the Thai fund NAV sync (`fund_nav_sync`), because Bangkok is their own market.
   - **Fetch-window ends:** `routes/market.py`'s 25-year price window ends on `date.today()`, which only reaches into a day with no data yet.
   - **Instants, not dates:** the `datetime.now()` calls in Rust are durations or record timestamps.
-  - **Two still to fix:**
-    - `display_config`'s default graph dates are computed once, at import, on the server's clock. Only `config_manager`'s default settings read them.
-    - `edgar_sic.recent_quarters` picks SEC filing quarters by `date.today()`. It is a quarter off only on the first day of a quarter, before New York reaches it.
+  - **Fixed 9 Nov 2026:**
+    - `display_config`'s default graph dates were computed once, at import, on the server's clock. They are now `default_graph_dates()`, which reads the market's day each time `config_manager` builds its default settings.
+    - `edgar_sic.recent_quarters` picked SEC filing quarters by `date.today()`, a quarter off on the first day of a quarter, before New York reached it. It now uses the market's day.
+    - `tests/test_market_day_defaults.py` pins both.
 - **Known type corner, not reached by real data:** in an MWR transfer into the scope, `-(abs(qty) * price)` stays a NumPy *integer* when both cells were text holding integers, such as "3" and "5". The port makes it a NumPy float with the same value. The loader never produces text-typed numeric columns.
 - **`backtest_projection` raises on a series without dates when a value series is passed** (not changed). It subtracts a `Timedelta` from an integer position. The app only ever passes a dated TWR series, so no user reaches it; the port fails the same way, and the parity test checks that.
 
