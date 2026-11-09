@@ -1168,6 +1168,11 @@ pub fn ph_historical_performance<'py>(
             )?;
         }
         let mut bench_start = full_start_date.clone();
+        let bench_interval = if intraday {
+            interval.clone()
+        } else {
+            pystr(py, "1d")
+        };
         if intraday {
             bench_start = b
                 .getattr("max")?
@@ -1183,7 +1188,9 @@ pub fn ph_historical_performance<'py>(
                     ("start_date", &bench_start),
                     ("end_date", &fetch_end),
                     ("use_cache", &tru(py)),
-                    ("interval", interval),
+                    // Intraday views need intraday bars; every other interval
+                    // resamples daily prices, and Yahoo rejects "W" or "M".
+                    ("interval", &bench_interval),
                 ],
             )?),
         )?;

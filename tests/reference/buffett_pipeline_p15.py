@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -48,6 +47,7 @@ import edgar_sic
 import universe
 from reference.buffett_metrics_p15 import CompanyMetrics, compute_metrics
 from buffett_store import get_store
+from utils_time import get_est_today
 
 # Market-data batch size. Large enough to amortise call overhead, small enough
 # that one failure does not lose a long run's worth of work.
@@ -207,7 +207,8 @@ def fetch_market_data(symbols: Sequence[str]) -> Dict[str, Dict[str, Any]]:
                 f"Rank: share counts {min(start + MARKET_BATCH_SIZE, len(stale))}/{len(stale)}"
             )
         if fetched:
-            db.upsert_share_counts(fetched, date.today())
+            # The market's day (fixed 9 Nov 2026, in the port and here together).
+            db.upsert_share_counts(fetched, get_est_today())
             cached_shares.update(fetched)
 
     for symbol in symbols:

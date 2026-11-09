@@ -2039,13 +2039,14 @@ pub fn mdb_get_share_counts<'py>(
     let cutoff = if max_age_days.is_none() {
         py.None().into_bound(py)
     } else {
-        // `date.today()` as the original has it (not the market's day).
+        // The market's day, the one the counts are stamped with (fixed 9 Nov 2026).
         let dt = py.import("datetime")?;
         let delta = dt
             .getattr("timedelta")?
             .call((), Some(&kw(py, &[("days", max_age_days.clone())])?))?;
-        dt.getattr("date")?
-            .call_method0("today")?
+        py.import("utils_time")?
+            .getattr("get_est_today")?
+            .call0()?
             .sub(delta)?
             .call_method0("isoformat")?
     };

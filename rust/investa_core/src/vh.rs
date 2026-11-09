@@ -23,6 +23,28 @@ fn vh(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
 }
 
 /// `_percentile_of`: the share of the history at or below `value`, in percent.
+/// `day` moved back `years` whole years; 29 February lands on the 28th in a
+/// year without one. (A bare `replace(year=...)` raised there, which emptied
+/// every company's bands on a leap day; fixed 9 Nov 2026.)
+fn years_before<'py>(
+    py: Python<'py>,
+    day: &Bound<'py, PyAny>,
+    years: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let year = day.getattr("year")?.sub(years)?;
+    match day.call_method("replace", (), Some(&kwargs(py, &[("year", &year)])?)) {
+        Err(e) if e.is_instance_of::<pyo3::exceptions::PyValueError>(py) => {
+            let day28 = 28i64.into_pyobject(py)?.into_any();
+            day.call_method(
+                "replace",
+                (),
+                Some(&kwargs(py, &[("year", &year), ("day", &day28)])?),
+            )
+        }
+        r => r,
+    }
+}
+
 #[pyfunction]
 pub fn vh_percentile_of<'py>(
     py: Python<'py>,
@@ -167,14 +189,7 @@ pub fn vh_observations<'py>(
     let edgar = py.import("edgar_provider")?;
     let date_t = m.getattr("date")?;
     let years = m.getattr("BAND_YEARS")?;
-    let earliest = today.call_method(
-        "replace",
-        (),
-        Some(&kwargs(
-            py,
-            &[("year", &today.getattr("year")?.sub(&years)?)],
-        )?),
-    )?;
+    let earliest = years_before(py, today, &years)?;
     let history = PyDict::new(py);
     let earnings = PyList::empty(py);
     let fcf_list = PyList::empty(py);
@@ -254,10 +269,11 @@ pub fn vh_bands<'py>(
     let m = vh(py)?;
     let o = Ops::new(py)?;
     let np = py.import("numpy")?;
+    // The market's day, not the server's (fixed 9 Nov 2026).
     let today = if today.is_truthy()? {
         today.clone()
     } else {
-        m.getattr("date")?.call_method0("today")?
+        m.getattr("get_est_today")?.call0()?
     };
     let fs = o.fmt(symbol)?;
     let measured = (|| -> PyResult<Option<(Bound<'py, PyAny>, Bound<'py, PyDict>)>> {
@@ -280,14 +296,7 @@ pub fn vh_bands<'py>(
             return Ok(None);
         }
         let years = m.getattr("BAND_YEARS")?;
-        let start = today.call_method(
-            "replace",
-            (),
-            Some(&kwargs(
-                py,
-                &[("year", &today.getattr("year")?.sub(&years)?.sub(1)?)],
-            )?),
-        )?;
+        let start = years_before(py, &today, &years.add(1)?)?;
         let prices = m.getattr("_load_prices")?.call1((symbol, start, &today))?;
         if prices.is_none() {
             return Ok(None);

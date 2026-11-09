@@ -3655,7 +3655,10 @@ def generate_cash_interest_events(
 
     logging.info(f"GenCashInterest: Aggregated Balances: {dict(account_usd_balances)}")
 
-    today = date.today()
+    # The market's day (fixed 9 Nov 2026, in the port and here together).
+    from utils_time import get_est_today
+
+    today = get_est_today()
 
     # --- Generate Events per Account (Consolidated) ---
     for account, balance_usd in account_usd_balances.items():

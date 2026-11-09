@@ -142,3 +142,12 @@ def test_market_signal_and_helpers_match(caplog, monkeypatch):
         assert new.ranking_age_days(finished, date(2024, 6, 14)) == ref.ranking_age_days(finished, date(2024, 6, 14))
     for d in (date(2024, 1, 15), date(2024, 12, 3), date(2024, 2, 10)):
         assert new._next_month_end(d) == ref._next_month_end(d)
+
+
+@pytest.mark.parametrize("mod", [new, ref], ids=["port", "reference"])
+def test_ranking_age_counts_on_the_market_day(monkeypatch, mod):
+    """On the Bangkok host the server's date is up to a day ahead of New York,
+    which aged a run finished late on a US day by one day too many."""
+    monkeypatch.setattr(mod, "get_est_today", lambda: date(2024, 6, 13))
+    assert mod.ranking_age_days("2024-06-13T22:30:00") == 0
+    assert mod.ranking_age_days("2024-06-10T09:00:00") == 3

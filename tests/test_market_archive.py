@@ -326,6 +326,17 @@ def test_share_counts_past_the_age_limit_are_not_served(db):
     assert db.get_share_counts(["AAA"]) == {"AAA": 1.0}  # no limit, still there
 
 
+def test_share_counts_age_on_the_market_day(db, monkeypatch):
+    """The counts are stamped with the market's day, so they are aged by it
+    too; the server's clock ran up to a day ahead on the Bangkok host."""
+    import utils_time
+
+    monkeypatch.setattr(utils_time, "get_est_today", lambda: date(2024, 6, 13))
+    db.upsert_share_counts({"AAA": 1.0}, date(2024, 6, 1))
+    db.upsert_share_counts({"BBB": 2.0}, date(2024, 5, 1))
+    assert db.get_share_counts(["AAA", "BBB"], max_age_days=30) == {"AAA": 1.0}
+
+
 def test_share_counts_update_in_place(db):
     db.upsert_share_counts({"AAA": 1.0}, date(2024, 1, 2))
     db.upsert_share_counts({"AAA": 2.0}, date(2024, 6, 2))

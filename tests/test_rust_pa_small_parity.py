@@ -226,3 +226,16 @@ def test_analyzer_helpers_match(caplog, seed):
             ),
             "interest",
         )
+
+
+@pytest.mark.parametrize("which", ["port", "reference"])
+def test_cash_interest_starts_in_the_market_month(monkeypatch, which):
+    """On 1 June in Bangkok New York is still on 31 May; the server's date
+    started the projection in June and dropped May's payment."""
+    import utils_time
+
+    mod = new_pa if which == "port" else ref_pa
+    monkeypatch.setattr(utils_time, "get_est_today", lambda: dt.date(2024, 5, 31))
+    rows = [{"Symbol": "$CASH", "Account": "IBKR", "Market Value (USD)": 100000.0, "Name": "Cash"}]
+    events = mod.generate_cash_interest_events(rows, {"IBKR": 4.5}, {}, dt.date(2024, 1, 1), dt.date(2024, 7, 31))
+    assert [e["dividend_date"] for e in events] == ["2024-05-01", "2024-06-01", "2024-07-01"]

@@ -670,10 +670,11 @@ pub fn st_ranking_age_days<'py>(
         }
         Err(e) => return Err(e),
     };
+    // The market's day, as the allocation's `as_of` (fixed 9 Nov 2026).
     let today = if today.is_truthy()? {
         today.clone()
     } else {
-        m.getattr("date")?.call_method0("today")?
+        m.getattr("get_est_today")?.call0()?
     };
     let zero = m.getattr("timedelta")?.call1((0,))?;
     py.import("builtins")?

@@ -3917,7 +3917,12 @@ def calculate_historical_performance(
             start_date=benchmark_fetch_start,
             end_date=fetch_end_date,
             use_cache=True,
-            interval=interval,  # FIX: Pass interval to ensure intraday data is fetched for 1d view
+            # FIX: Pass interval to ensure intraday data is fetched for 1d view.
+            # Fixed 9 Nov 2026 in the port and here together: any other interval
+            # resamples daily prices, and Yahoo rejects "W" or "M".
+            interval=interval
+            if interval in ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
+            else "1d",
             # We don't pass a monolithic cache_key here, allowing per-symbol caching
         )
 

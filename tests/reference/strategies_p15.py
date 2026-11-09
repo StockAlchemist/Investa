@@ -800,7 +800,9 @@ def ranking_age_days(
         finished = datetime.fromisoformat(str(finished_at)).date()
     except (TypeError, ValueError):
         return None
-    return max((today or date.today()) - finished, timedelta(0)).days
+    # The market's day, as the allocation's as_of (fixed 9 Nov 2026, in the
+    # port and here together).
+    return max((today or get_est_today()) - finished, timedelta(0)).days
 
 
 def build_allocation(
