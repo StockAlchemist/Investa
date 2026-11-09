@@ -896,16 +896,11 @@ pub fn dl_convert_csv_headers<'py>(
                 )?;
             }
         }
-        df.call_method(
+        // A new frame, not inplace=True (deprecated in pandas 3.1, removed in 4).
+        let df = df.call_method(
             "rename",
             (),
-            Some(&kw(
-                py,
-                &[
-                    ("columns", rename.clone().into_any()),
-                    ("inplace", truth(py, true)),
-                ],
-            )?),
+            Some(&kw(py, &[("columns", rename.clone().into_any())])?),
         )?;
         log(
             py,

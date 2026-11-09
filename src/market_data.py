@@ -4140,7 +4140,7 @@ class MarketDataProvider:
                             df_filtered["price"] = pd.to_numeric(
                                 df_filtered["price"], errors="coerce"
                             )
-                            df_filtered.dropna(subset=["price"], inplace=True)
+                            df_filtered = df_filtered.dropna(subset=["price"])
                             df_filtered = df_filtered[df_filtered["price"] > 1e-6]
 
                         if not df_filtered.empty:
@@ -4239,13 +4239,11 @@ class MarketDataProvider:
                                     df_filt = filter_date_range(df_rec)
                                     if not df_filt.empty:
                                         df_cln = df_filt[["Close"]].copy()
-                                        df_cln.rename(
-                                            columns={"Close": "price"}, inplace=True
-                                        )
+                                        df_cln = df_cln.rename(columns={"Close": "price"})
                                         df_cln["price"] = pd.to_numeric(
                                             df_cln["price"], errors="coerce"
                                         )
-                                        df_cln.dropna(subset=["price"], inplace=True)
+                                        df_cln = df_cln.dropna(subset=["price"])
                                         df_cln = df_cln[df_cln["price"] > 1e-6]
                                         if not df_cln.empty:
                                             historical_data[symbol] = (
@@ -4697,12 +4695,12 @@ class MarketDataProvider:
             # --- FIX: Support legacy cache keys (Close/Adj Close) ---
             if "price" not in df_temp.columns and not df_temp.empty:
                 if "Close" in df_temp.columns:
-                    df_temp.rename(columns={"Close": "price"}, inplace=True)
+                    df_temp = df_temp.rename(columns={"Close": "price"})
                 elif "Adj Close" in df_temp.columns:
-                    df_temp.rename(columns={"Adj Close": "price"}, inplace=True)
+                    df_temp = df_temp.rename(columns={"Adj Close": "price"})
                 elif len(df_temp.columns) == 1:
                     # Fallback to first column
-                    df_temp.rename(columns={df_temp.columns[0]: "price"}, inplace=True)
+                    df_temp = df_temp.rename(columns={df_temp.columns[0]: "price"})
 
             if "price" in df_temp.columns:
                 df_temp["price"] = pd.to_numeric(df_temp["price"], errors="coerce")

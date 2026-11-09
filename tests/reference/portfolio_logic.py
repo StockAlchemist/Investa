@@ -525,7 +525,7 @@ def _prepare_historical_fx_rates(
             # Concat into a wide DataFrame
             master_fx_df = pd.concat(fx_series_list, axis=1)
             # --- IMPROVE: Handle NaNs in FX data (holidays, weekends) ---
-            master_fx_df.sort_index(inplace=True)
+            master_fx_df = master_fx_df.sort_index()
             master_fx_df = master_fx_df.ffill().bfill()
 
             # --- ADDED: Normalize column names (e.g. USDTHB=X -> THB) ---
@@ -550,7 +550,7 @@ def _prepare_historical_fx_rates(
                     rename_map[col] = final_code
 
             if rename_map:
-                master_fx_df.rename(columns=rename_map, inplace=True)
+                master_fx_df = master_fx_df.rename(columns=rename_map)
                 logging.debug(f"Normalized FX columns: {rename_map}")
 
             # 2. Reindex to cover all transaction dates (ffill AND bfill)
@@ -1217,9 +1217,9 @@ def calculate_portfolio_summary(
         # This matches the logic in strict capital gains extraction
         fifo_input_df = all_transactions_df_cleaned.copy()
         if "original_index" in fifo_input_df.columns:
-            fifo_input_df.sort_values(by=["Date", "original_index"], inplace=True)
+            fifo_input_df = fifo_input_df.sort_values(by=["Date", "original_index"])
         else:
-            fifo_input_df.sort_values(by=["Date"], inplace=True)
+            fifo_input_df = fifo_input_df.sort_values(by=["Date"])
 
         # BN-08: Cache FIFO results. `db_mtime > 0` still marks a caller that
         # wants caching (the server); the key is the transactions themselves.
@@ -1592,11 +1592,10 @@ def calculate_portfolio_summary(
                 f"Warning: Error during numeric conversion of summary columns: {e}"
             )
         try:
-            full_summary_df.sort_values(
+            full_summary_df = full_summary_df.sort_values(
                 by=["Account", f"Market Value ({display_currency})"],
                 ascending=[True, False],
                 na_position="last",
-                inplace=True,
             )
         except KeyError:
             has_warnings = True

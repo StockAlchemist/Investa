@@ -122,17 +122,8 @@ pub fn ph_unadjust_prices<'py>(
             out.set_item(yf_symbol, &unadj)?;
             continue;
         }
-        unadj.call_method(
-            "sort_index",
-            (),
-            Some(&kwargs(
-                py,
-                &[(
-                    "inplace",
-                    &pyo3::types::PyBool::new(py, true).to_owned().into_any(),
-                )],
-            )?),
-        )?;
+        // A new frame, not inplace=True (gone in pandas 4); `unadj` is a copy.
+        let unadj = unadj.call_method0("sort_index")?;
 
         let factor = pd.getattr("Series")?.call(
             (1.0,),

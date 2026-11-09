@@ -453,9 +453,9 @@ fn stock_row<'py>(
                 if !fallback_tx.getattr("empty")?.is_truthy()? {
                     let kw = PyDict::new(py);
                     kw.set_item("by", PyList::new(py, ["Date", "original_index"])?)?;
-                    kw.set_item("inplace", true)?;
                     kw.set_item("ascending", true)?;
-                    fallback_tx.call_method("sort_values", (), Some(&kw))?;
+                    // A new frame, not inplace=True (gone in pandas 4); a local copy.
+                    let fallback_tx = fallback_tx.call_method("sort_values", (), Some(&kw))?;
                     let last_tx_row = fallback_tx.getattr("iloc")?.get_item(-1)?;
                     let kw = PyDict::new(py);
                     kw.set_item("errors", "coerce")?;

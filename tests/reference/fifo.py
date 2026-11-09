@@ -353,6 +353,6 @@ def calculate_fifo_lots_and_gains(
         return pd.DataFrame(columns=output_columns), dict(holdings_long)
 
     df_gains = pd.DataFrame(realized_gains_records, columns=output_columns)
-    df_gains.sort_values(by=["Date", "Symbol", "Account"], inplace=True)
+    df_gains = df_gains.sort_values(by=["Date", "Symbol", "Account"])
 
     return df_gains, dict(holdings_long)

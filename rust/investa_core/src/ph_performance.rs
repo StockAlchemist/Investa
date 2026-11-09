@@ -476,7 +476,7 @@ pub fn ph_historical_performance<'py>(
         )?),
     )?;
     let p = unpack(&prep, 17)?;
-    let txs = p[0].clone();
+    let mut txs = p[0].clone();
     let ignored_reasons = &p[3];
     let symbols_all = &p[7];
     let fx_pairs = &p[8];
@@ -519,15 +519,14 @@ pub fn ph_historical_performance<'py>(
                     )?),
                 )?,
             )?;
-            txs.call_method(
+            // A new frame, not inplace=True (gone in pandas 4); nothing else
+            // holds the prepared frame.
+            txs = txs.call_method(
                 "dropna",
                 (),
                 Some(&kwargs(
                     py,
-                    &[
-                        ("subset", PyList::new(py, ["Date"])?.as_any()),
-                        ("inplace", &tru(py)),
-                    ],
+                    &[("subset", PyList::new(py, ["Date"])?.as_any())],
                 )?),
             )?;
         }

@@ -584,7 +584,8 @@ pub fn pa_dividend_history<'py>(
             &[("columns", PyList::new(py, DIVIDEND_COLUMNS)?.into_any())],
         )?),
     )?;
-    df.call_method(
+    // A new frame, not inplace=True (gone in pandas 4); `df` is local.
+    let df = df.call_method(
         "sort_values",
         (),
         Some(&kw(
@@ -594,10 +595,6 @@ pub fn pa_dividend_history<'py>(
                 (
                     "ascending",
                     pyo3::types::PyBool::new(py, false).to_owned().into_any(),
-                ),
-                (
-                    "inplace",
-                    pyo3::types::PyBool::new(py, true).to_owned().into_any(),
                 ),
             ],
         )?),
@@ -692,22 +689,16 @@ pub fn pa_realized_gains_history<'py>(
             )?),
         );
     }
-    let txs = all_transactions_df.call_method0("copy")?;
-    txs.call_method(
+    // A sorted copy, not inplace=True (gone in pandas 4).
+    let txs = all_transactions_df.call_method(
         "sort_values",
         (),
         Some(&kw(
             py,
-            &[
-                (
-                    "by",
-                    PyList::new(py, ["Date", "original_index"])?.into_any(),
-                ),
-                (
-                    "inplace",
-                    pyo3::types::PyBool::new(py, true).to_owned().into_any(),
-                ),
-            ],
+            &[(
+                "by",
+                PyList::new(py, ["Date", "original_index"])?.into_any(),
+            )],
         )?),
     )?;
     let fifo = pa(py)?.getattr("calculate_fifo_lots_and_gains")?;

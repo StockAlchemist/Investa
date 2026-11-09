@@ -86,7 +86,7 @@ def _fetch_factor_data(
                 f"Could not fetch data for {ticker}. Factor analysis may be inaccurate."
             )
 
-    returns_df.dropna(inplace=True)
+    returns_df = returns_df.dropna()
 
     if returns_df.empty:
         logging.error("No factor data available after fetching.")

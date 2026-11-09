@@ -177,7 +177,7 @@ def _unadjust_prices(
         if unadj_df.empty:  # Check if empty after index conversion/filtering
             unadjusted_prices_yf[yf_symbol] = unadj_df
             continue
-        unadj_df.sort_index(inplace=True)  # Ensure chronological order
+        unadj_df = unadj_df.sort_index()  # Ensure chronological order
 
         # --- Calculate Forward Split Factor ---
         forward_split_factor = pd.Series(1.0, index=unadj_df.index, dtype=float)
@@ -1590,12 +1590,12 @@ def _load_or_calculate_daily_results(
                 # Handle index restoration
                 if "Date" in daily_df.columns:
                     daily_df["Date"] = pd.to_datetime(daily_df["Date"], utc=True)
-                    daily_df.set_index("Date", inplace=True)
+                    daily_df = daily_df.set_index("Date")
                 elif "index" in daily_df.columns:
                     # Fallback: 'reset_index' might have named it 'index' if original name was None
-                    daily_df.rename(columns={"index": "Date"}, inplace=True)
+                    daily_df = daily_df.rename(columns={"index": "Date"})
                     daily_df["Date"] = pd.to_datetime(daily_df["Date"], utc=True)
-                    daily_df.set_index("Date", inplace=True)
+                    daily_df = daily_df.set_index("Date")
                 elif not isinstance(daily_df.index, pd.DatetimeIndex):
                     # Fallback: try to convert index if it looks like dates (unlikely for feather if reset)
                     # But if we didn't reset index on save, feather might have saved it if supported.
@@ -1614,7 +1614,7 @@ def _load_or_calculate_daily_results(
                     )
                     daily_df = daily_df[pd.notnull(daily_df.index)]
 
-                daily_df.sort_index(inplace=True)
+                daily_df = daily_df.sort_index()
 
                 # --- FIX: Filter cached data by requested date range ---
                 # The cache might contain more data than requested (e.g. if key collision or logic change)
@@ -2385,8 +2385,8 @@ def _load_or_calculate_daily_results(
             try:
                 daily_df = pd.DataFrame(successful_results)
                 daily_df["Date"] = pd.to_datetime(daily_df["Date"], utc=True)
-                daily_df.set_index("Date", inplace=True)
-                daily_df.sort_index(inplace=True)
+                daily_df = daily_df.set_index("Date")
+                daily_df = daily_df.sort_index()
                 cols_to_numeric = ["value", "net_flow"]
                 # Benchmarks removed from here, added later in main function
                 for col in cols_to_numeric:
@@ -2983,18 +2983,17 @@ def _calculate_accumulated_gains_and_resample(
 
         if interval in ["D", "1d"]:
             final_df_resampled = results_df
-            final_df_resampled.rename(
+            final_df_resampled = final_df_resampled.rename(
                 columns={
                     "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
                 },
-                inplace=True,
             )
             for bm_symbol in benchmark_symbols_yf:
                 accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
                 accum_col_final = f"{bm_symbol} Accumulated Gain"
                 if accum_col_daily in final_df_resampled.columns:
-                    final_df_resampled.rename(
-                        columns={accum_col_daily: accum_col_final}, inplace=True
+                    final_df_resampled = final_df_resampled.rename(
+                        columns={accum_col_daily: accum_col_final}
                     )
 
             # --- FIX: Shift timestamp to Market Close (16:00 EST) ---
@@ -3058,18 +3057,17 @@ def _calculate_accumulated_gains_and_resample(
 
                 # --- FIX: Use Daily Accumulated Gain directly ---
                 # This ensures TWR is consistent across all timeframes.
-                final_df_resampled.rename(
+                final_df_resampled = final_df_resampled.rename(
                     columns={
                         "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
                     },
-                    inplace=True,
                 )
                 for bm_symbol in benchmark_symbols_yf:
                     accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
                     accum_col_final = f"{bm_symbol} Accumulated Gain"
                     if accum_col_daily in final_df_resampled.columns:
-                        final_df_resampled.rename(
-                            columns={accum_col_daily: accum_col_final}, inplace=True
+                        final_df_resampled = final_df_resampled.rename(
+                            columns={accum_col_daily: accum_col_final}
                         )
 
                 # --- NEW: NO LONGER recalculating Absolute ROI here, it's summed/lasted from daily ---
@@ -3094,18 +3092,17 @@ def _calculate_accumulated_gains_and_resample(
                 final_df_resampled = results_df
         else:
             final_df_resampled = results_df
-            final_df_resampled.rename(
+            final_df_resampled = final_df_resampled.rename(
                 columns={
                     "Portfolio Accumulated Gain Daily": "Portfolio Accumulated Gain"
                 },
-                inplace=True,
             )
             for bm_symbol in benchmark_symbols_yf:
                 accum_col_daily = f"{bm_symbol} Accumulated Gain Daily"
                 accum_col_final = f"{bm_symbol} Accumulated Gain"
                 if accum_col_daily in final_df_resampled.columns:
-                    final_df_resampled.rename(
-                        columns={accum_col_daily: accum_col_final}, inplace=True
+                    final_df_resampled = final_df_resampled.rename(
+                        columns={accum_col_daily: accum_col_final}
                     )
 
         columns_to_keep = [
@@ -3132,9 +3129,8 @@ def _calculate_accumulated_gains_and_resample(
         ]
 
         final_df_output = final_df_resampled[columns_to_keep].copy()
-        final_df_output.rename(
+        final_df_output = final_df_output.rename(
             columns={"value": "Portfolio Value", "daily_gain": "Portfolio Daily Gain"},
-            inplace=True,
         )
         # --- ADDED: Log final output DataFrame shape and tail ---
         logging.debug(
@@ -3145,7 +3141,7 @@ def _calculate_accumulated_gains_and_resample(
                 f"Final final_df_output tail:\n{final_df_output.tail().to_string()}"
             )
         if interval != "D" and "daily_return" in final_df_output.columns:
-            final_df_output.drop(columns=["daily_return"], inplace=True)
+            final_df_output = final_df_output.drop(columns=["daily_return"])
 
         # --- ADDED: Filter final output based on requested date range ---
         if start_date_filter and end_date_filter:
@@ -3485,8 +3481,8 @@ def calculate_historical_performance(
             transactions_df_effective["Date"] = pd.to_datetime(
                 transactions_df_effective["Date"], errors="coerce", utc=True
             )
-            transactions_df_effective.dropna(
-                subset=["Date"], inplace=True
+            transactions_df_effective = transactions_df_effective.dropna(
+                subset=["Date"]
             )  # Drop rows where date conversion failed
 
         if transactions_df_effective.empty:

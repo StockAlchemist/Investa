@@ -545,10 +545,11 @@ pub fn pl_prepare_historical_fx<'py>(
         let kw = PyDict::new(py);
         kw.set_item("axis", 1)?;
         let mut master = pd.call_method("concat", (&series_list,), Some(&kw))?;
-        let kw = PyDict::new(py);
-        kw.set_item("inplace", true)?;
-        master.call_method("sort_index", (), Some(&kw))?;
-        master = master.call_method0("ffill")?.call_method0("bfill")?;
+        // New frames, not inplace=True (gone in pandas 4); `master` is local.
+        master = master
+            .call_method0("sort_index")?
+            .call_method0("ffill")?
+            .call_method0("bfill")?;
 
         // Normalise the column names (USDTHB=X -> THB).
         let rename_map = PyDict::new(py);
@@ -575,8 +576,7 @@ pub fn pl_prepare_historical_fx<'py>(
         if rename_map.is_truthy()? {
             let kw = PyDict::new(py);
             kw.set_item("columns", &rename_map)?;
-            kw.set_item("inplace", true)?;
-            master.call_method("rename", (), Some(&kw))?;
+            master = master.call_method("rename", (), Some(&kw))?;
             log(
                 py,
                 "debug",

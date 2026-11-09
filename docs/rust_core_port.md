@@ -1222,7 +1222,12 @@ Most of the summary's extra time is `.tolist()` and row selection on pyarrow-bac
 
 ### Left as they are
 
-- **pandas 3.1 deprecations, which only break under pandas 4.** About 20 calls behind the `src/` wrappers pass `inplace=` (`sort_values`, `set_index`, `rename`, `drop`, `sort_index`). One `pd.concat` relies on the default sort of DatetimeIndexes. Replacing `inplace=` changes which frame a caller sees mutated, so it is its own change.
+- **pandas 3.1 deprecations, which only break under pandas 4.**
+  - **`inplace=` (fixed 9 Nov 2026).** All 83 calls are now reassignments: 15 in `src/`, 21 in the Rust core and 47 in the frozen oracles. The methods were `dropna`, `rename`, `set_index`, `sort_values`, `sort_index` and `drop`. `fillna`, `replace` and `ffill` keep their `inplace`.
+    - Every receiver was checked to be a local frame or a copy, so no caller sees a different frame.
+    - The one trap was Rust scoping. A `let df = df.set_index(...)` inside an `if` block is dropped at the block's end. In `market_db`'s FX/fund-NAV read (`priced_series`) and its intraday read, the outer `df` was then returned without its index. The Thai fund-NAV tests caught that; both now assign to the outer binding.
+    - **Checks:** the full suite passes with the deprecation raised as an error. All three books' summary rows, metrics, account metrics and daily history (Jan 2024 – Nov 2026) are identical to the pre-change build, on one replayed market tape. The run's warning count fell from about 16,800 to about 4,000.
+  - **Still open:** one `pd.concat` relies on the default sort of DatetimeIndexes.
 - **Weekly history fetched its benchmarks with `interval="W"`** (fixed 9 Nov 2026). Yahoo does not accept it under any yfinance version, and `"M"` and `"ME"` failed the same way. The benchmark series came back empty, and while the US market was open, four retries also cost about 4 s per request. This predates the upgrade.
   - These histories resample daily prices, so the benchmark is now fetched at `"1d"` unless the view is intraday. The fix is in `ph_performance.rs` and the frozen oracle together.
   - No client sends these intervals today: the dashboard asks `/history` for `1d` or an intraday interval, and the Returns chart resamples daily data itself. `/history` still accepts them.

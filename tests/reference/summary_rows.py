@@ -240,8 +240,8 @@ def _build_summary_rows(
                         & (transactions_df["Date"].dt.date <= report_date)
                     ].copy()
                     if not fallback_tx.empty:
-                        fallback_tx.sort_values(
-                            by=["Date", "original_index"], inplace=True, ascending=True
+                        fallback_tx = fallback_tx.sort_values(
+                            by=["Date", "original_index"], ascending=True
                         )
                         last_tx_row = fallback_tx.iloc[-1]
                         last_tx_price = pd.to_numeric(
