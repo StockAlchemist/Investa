@@ -2491,7 +2491,7 @@ class MarketDataProvider:
                 else:
                     # Concatenate all chunks
                     # Note: axis=1 for columns (different symbols)
-                    df = pd.concat(all_dfs, axis=1)
+                    df = pd.concat(all_dfs, axis=1, sort=True)  # dates sorted, as pandas did by default before 4
 
                 if df.empty:
                     msg = "Combined batch price fetch resulted in empty DataFrame."

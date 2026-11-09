@@ -523,7 +523,7 @@ def _prepare_historical_fx_rates(
 
         if fx_series_list:
             # Concat into a wide DataFrame
-            master_fx_df = pd.concat(fx_series_list, axis=1)
+            master_fx_df = pd.concat(fx_series_list, axis=1, sort=True)  # explicit for pandas 4 (9 Nov 2026)
             # --- IMPROVE: Handle NaNs in FX data (holidays, weekends) ---
             master_fx_df = master_fx_df.sort_index()
             master_fx_df = master_fx_df.ffill().bfill()

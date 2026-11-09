@@ -6,6 +6,12 @@ addopts = "--cov=src --cov-report=term-missing"
 testpaths = ["tests"]
 # Resolve both application modules and repository scripts in local and CI tests.
 pythonpath = [".", "src"]
+# pandas 4 removes `inplace=` and the default date sort in concat. Both were
+# removed from the code on 9 Nov 2026; these keep them from coming back.
+filterwarnings = [
+    "error:The inplace keyword:pandas.errors.Pandas4Warning",
+    "error:Sorting by default when concatenating:pandas.errors.Pandas4Warning",
+]
 
 [tool.mypy]
 # Gradual adoption: only the files listed here are checked, and they must stay

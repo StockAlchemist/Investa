@@ -172,6 +172,13 @@ fn aligned<'py>(
     if inner {
         kw.push(("join", &join));
     }
+    // An outer join of two date indexes was sorted by default; pandas 4 stops
+    // doing that, so ask for it, and only then, as before.
+    let dt = py.import("pandas")?.getattr("DatetimeIndex")?;
+    let sort = pyo3::types::PyBool::new(py, true).to_owned().into_any();
+    if !inner && a.getattr("index")?.is_instance(&dt)? && b.getattr("index")?.is_instance(&dt)? {
+        kw.push(("sort", &sort));
+    }
     py.import("pandas")?
         .getattr("concat")?
         .call((PyList::new(py, [a, b])?,), Some(&kwargs(py, &kw)?))?

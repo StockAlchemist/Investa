@@ -215,8 +215,8 @@ def run_factor_regression(
 
     # Align indices and drop NaNs
     aligned_data = pd.concat(
-        [portfolio_returns_monthly, factor_data_monthly], axis=1
-    ).dropna()
+        [portfolio_returns_monthly, factor_data_monthly], axis=1, sort=True
+    ).dropna()  # sort=True: as pandas did by default for dates before 4
 
     # Check for sufficient data points (at least 6 months recommended for any meaningful regression)
     if len(aligned_data) < 6:

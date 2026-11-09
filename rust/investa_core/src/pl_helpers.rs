@@ -544,6 +544,7 @@ pub fn pl_prepare_historical_fx<'py>(
     if series_list.is_truthy()? {
         let kw = PyDict::new(py);
         kw.set_item("axis", 1)?;
+        kw.set_item("sort", true)?; // pandas 4 no longer sorts date indexes by default
         let mut master = pd.call_method("concat", (&series_list,), Some(&kw))?;
         // New frames, not inplace=True (gone in pandas 4); `master` is local.
         master = master

@@ -320,7 +320,7 @@ def get_market_history(
             return []
 
         # Combine all indices into one DataFrame
-        combined_df = pd.concat(dfs, axis=1)
+        combined_df = pd.concat(dfs, axis=1, sort=True)
         combined_df = combined_df.sort_index()
 
         # Reset index to get dates as a column
@@ -1351,7 +1351,8 @@ def _fetch_closes(
     def _to_closes(frames: list) -> dict:
         if not frames:
             return {}
-        combined = pd.concat(frames, axis=1) if len(frames) > 1 else frames[0]
+        # sort=True: dates sorted, as pandas did by default before 4.
+        combined = pd.concat(frames, axis=1, sort=True) if len(frames) > 1 else frames[0]
         out = {}
         for sym in symbols:
             try:
