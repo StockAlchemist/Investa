@@ -16,7 +16,8 @@ gated by that comparison.
 So both halves matter and are asserted separately: the in-memory SWR entry must
 be skipped (or a second forced call would be served from the first), and
 `use_daily_results_cache=False` must reach `calculate_historical_performance`
-(or the recompute reads the feather and market data still cannot move it).
+(or the recompute reads the feather and market data still cannot move it). Since
+10 Nov 2026 the feather is off for every request, forced or not.
 """
 
 import asyncio
@@ -74,7 +75,16 @@ def test_an_unforced_second_call_is_served_from_the_cache(calls):
     call(force=False)
     call(force=False)
     assert len(calls) == 1
-    assert calls[0]["use_daily_results_cache"] is True
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_the_on_disk_daily_results_cache_is_never_read(calls, force):
+    """Forced or not. The feather's key carries no market data, so even an
+    ordinary request was served a series built from yesterday's corrected-away
+    prices — the summary's YTD read 7.2543% against a fresh 7.2641% on
+    10 Nov 2026. The replay it saved is ~0.13 s of a ~10 s run."""
+    call(force=force)
+    assert calls[0]["use_daily_results_cache"] is False
 
 
 def test_forcing_recomputes_every_time(calls):
@@ -82,12 +92,6 @@ def test_forcing_recomputes_every_time(calls):
     call(force=True)
     call(force=True)
     assert len(calls) == 3, "a forced run must not be served the SWR entry"
-
-
-def test_forcing_also_disables_the_on_disk_daily_results_cache(calls):
-    """The half that made a 999.0 exchange rate invisible."""
-    call(force=True)
-    assert calls[0]["use_daily_results_cache"] is False
 
 
 def test_a_forced_run_does_not_poison_the_cache_for_everyone_else(calls):

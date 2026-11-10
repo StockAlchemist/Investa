@@ -220,7 +220,6 @@ def trigger_background_precalculation(current_user: User):
                     account_currency_map=acc_curr,
                     default_currency=DEFAULT_CURRENCY,
                     use_raw_data_cache=True,
-                    use_daily_results_cache=True,
                     num_processes=None,
                     include_accounts=None,
                     worker_signals=None,
@@ -440,17 +439,17 @@ async def _get_historical_performance_cached(
     previous result instantly and refreshes in the background, while concurrent
     callers coalesce onto one computation (prevents the thundering-herd effect).
 
-    `force` skips **both** caches on this path — the in-memory SWR entry and the
-    on-disk daily-results feather. It has to skip both to mean anything: the
-    feather's key is built from the transactions, the dates and the display
-    settings, and carries no component of the market data the series is computed
-    from. So a rate or a bar corrected in the archive today is invisible until
-    the key moves of its own accord tomorrow, when `end_date` rolls.
+    `force` skips the in-memory SWR entry, so the golden gate (two runs on the
+    same day) is never handed the same frame twice.
 
-    That is tolerable for a dashboard and fatal for the golden gate, which
-    compares two runs on the same day: without this it hands back the same
-    cached frame twice and reports "unchanged" whatever happened underneath. It
-    is how a 999.0 exchange rate produced a bit-identical portfolio value.
+    The on-disk daily-results feather is not used on this path at all. Its key
+    is built from the transactions, the dates and the display settings, with no
+    component of the market data the series is computed from, so a rate or a bar
+    corrected in the archive today stayed invisible until `end_date` rolled the
+    key tomorrow: it is how a 999.0 exchange rate produced a bit-identical
+    portfolio value, and how the summary's YTD read 7.2543% against a fresh
+    7.2641% on 10 Nov 2026. The replay it saved costs ~0.13 s; the ~10 s of a
+    history run is the price sync, which runs either way.
     """
     # Create a unique key for the request parameters and data state. Freshness is
     # tracked per entry by the SWR cache, so no time bucket goes in the key; a
@@ -520,7 +519,9 @@ async def _get_historical_performance_cached(
                 user_excluded_symbols=user_excluded_symbols,
                 original_csv_file_path=original_csv_file_path,
                 account_cash_mode_map=account_cash_mode_map,  # PASSING IT HERE
-                use_daily_results_cache=not force,
+                # Never the on-disk daily-results cache: see
+                # calculate_historical_performance.
+                use_daily_results_cache=False,
             )
 
         return await run_in_threadpool(run_calc)
