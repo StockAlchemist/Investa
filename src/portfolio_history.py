@@ -506,7 +506,12 @@ def calculate_historical_performance(
     account_currency_map: Dict,
     default_currency: str,
     use_raw_data_cache: bool = True,
-    use_daily_results_cache: bool = True,
+    # Off: the on-disk daily-results cache is keyed without market data, so a
+    # close corrected in the archive (or today's own bar, once written) stayed
+    # invisible until the date rolled; and the replay it saves costs ~0.13 s
+    # against ~10 s of price sync that runs either way. The in-memory SWR
+    # cache in server/portfolio_service is what spares the repeat work.
+    use_daily_results_cache: bool = False,
     num_processes: Optional[int] = None,
     include_accounts: Optional[List[str]] = None,
     worker_signals: Optional[Any] = None,
