@@ -48,7 +48,12 @@ def _intraday_frame(stamps, closes, extra_symbol=None):
 
 @pytest.fixture
 def provider(tmp_path):
-    mdp = MarketDataProvider(current_cache_file=str(tmp_path / "quotes.json"))
+    # A scratch archive: the quote path consults it, and the real one holds
+    # today's genuine closes, which are newer than every bar these tests draw.
+    mdp = MarketDataProvider(
+        current_cache_file=str(tmp_path / "quotes.json"),
+        db_path=str(tmp_path / "market.db"),
+    )
     with (
         patch.object(
             MarketDataProvider,

@@ -154,3 +154,42 @@ def test_todays_own_archived_bar_is_not_its_own_previous_close(provider):
     quote = _quote(provider, _daily_frame([(THU, THU_CLOSE), (MON, MON_PRICE)]))
 
     assert quote["change"] == pytest.approx(MON_PRICE - FRI_CLOSE)
+
+
+# --- The newest session, closeless in the download -------------------------
+#
+# The other end of the window. Yahoo sometimes serves the newest session with
+# OHLC and volume but a null Close; the quote path drops that row and prices the
+# holding a session behind. On a weekend no 1m bar is left to correct it: on
+# Sunday 2026-08-30, 63 of 77 symbols were priced at Thursday's close and the
+# portfolio read 1,916,092 against a true 1,943,167. The archive held Friday.
+
+
+def test_a_closeless_newest_bar_is_priced_from_the_archive(provider):
+    """Friday's row came back without a close; the archive's Friday is the price."""
+    _archive(provider, [(THU, THU_CLOSE), (FRI, FRI_CLOSE)])
+    quote = _quote(provider, _daily_frame([(THU, THU_CLOSE), (FRI, float("nan"))]))
+
+    assert quote["price"] == pytest.approx(FRI_CLOSE)
+    # Friday's move, measured against Thursday.
+    assert quote["change"] == pytest.approx(FRI_CLOSE - THU_CLOSE)
+    assert quote["source"] == "archive_daily_close"
+    assert quote["sparkline_7d"][-1] == pytest.approx(FRI_CLOSE)
+
+
+def test_an_archive_two_sessions_ahead_measures_against_its_own_previous(provider):
+    """The download stops at Thursday; the archive has Friday and Monday."""
+    _archive(provider, [(THU, THU_CLOSE), (FRI, FRI_CLOSE), (MON, MON_PRICE)])
+    quote = _quote(provider, _daily_frame([(THU, THU_CLOSE)]))
+
+    assert quote["price"] == pytest.approx(MON_PRICE)
+    assert quote["change"] == pytest.approx(MON_PRICE - FRI_CLOSE)
+
+
+def test_a_lagging_archive_never_drags_the_price_back(provider):
+    """The download is ahead of the archive: the download's close stands."""
+    _archive(provider, [(THU, THU_CLOSE)])
+    quote = _quote(provider, _daily_frame([(THU, THU_CLOSE), (FRI, FRI_CLOSE)]))
+
+    assert quote["price"] == pytest.approx(FRI_CLOSE)
+    assert quote["source"] != "archive_daily_close"

@@ -2530,6 +2530,7 @@ class MarketDataProvider:
                             prev_close = None
                             sparkline = []
                             sparkline_1m = []
+                            price_from_archive = False
 
                             # Handle yf.download structure using robust helper
                             sym_df = _extract_ticker_from_df(df, yf_sym)
@@ -2634,6 +2635,55 @@ class MarketDataProvider:
                                                 prev_close = float(arch_close)
                                                 prev_date = arch_date
 
+                                        # The other end of the window: Yahoo
+                                        # sometimes serves the newest session
+                                        # with OHLC and volume but a null Close,
+                                        # and the dropna above discards the
+                                        # whole row. The quote then falls back a
+                                        # session, and over a weekend no 1m bar
+                                        # is left to correct it: on Sunday
+                                        # 2026-08-30, 63 of 77 symbols were
+                                        # priced at Thursday's close, valuing
+                                        # the portfolio at 1,916,092 against a
+                                        # true 1,943,167. The archive already
+                                        # held Friday's closes, so a session it
+                                        # holds past the download's last one
+                                        # is the price, and the day change is
+                                        # measured against the session before
+                                        # it.
+                                        archived = archive_closes.get(yf_sym, ())
+                                        newer = sorted(
+                                            (d, c) for d, c in archived if d > last_date
+                                        )
+                                        if newer:
+                                            new_date, new_close = newer[-1]
+                                            before = [
+                                                (d, c)
+                                                for d, c in archived
+                                                if last_date <= d < new_date
+                                            ]
+                                            logging.info(
+                                                f"{yf_sym}: download ends {last_date} at {last_val}; "
+                                                f"archive holds {new_date} at {new_close} — pricing from the archive"
+                                            )
+                                            prev_date, prev_close = (
+                                                max(before)
+                                                if before
+                                                else (last_date, last_val)
+                                            )
+                                            prev_close = float(prev_close)
+                                            price = float(new_close)
+                                            last_date = new_date
+                                            is_today = new_date >= now_utc
+                                            price_from_archive = True
+                                            sparkline = (
+                                                sparkline + [float(c) for _, c in newer]
+                                            )[-7:]
+                                            sparkline_1m = (
+                                                sparkline_1m
+                                                + [float(c) for _, c in newer]
+                                            )[-22:]
+
                                         daily_session_dates[internal_sym] = last_date
 
                                         logging.debug(
@@ -2670,9 +2720,13 @@ class MarketDataProvider:
                                     "exchange": meta.get("exchange"),
                                     "fullExchangeName": meta.get("fullExchangeName"),
                                     "quoteType": meta.get("quoteType"),
-                                    "source": "yf_batch_download_stale_safe"
-                                    if not is_today
-                                    else "yf_batch_download",
+                                    "source": "archive_daily_close"
+                                    if price_from_archive
+                                    else (
+                                        "yf_batch_download_stale_safe"
+                                        if not is_today
+                                        else "yf_batch_download"
+                                    ),
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "dividendRate": fund.get("dividendRate", 0),
                                     "trailingAnnualDividendRate": fund.get(
