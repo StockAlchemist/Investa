@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { ArrowUpRight, ArrowDownRight, TrendingUp, Calendar, Target, AlertTriangle, Trophy, Skull } from 'lucide-react';
 import { AssetChangeData, PortfolioSummary, RiskMetrics } from '../../lib/api';
 import { cn } from '../../lib/utils';
+import { marketToday } from '../../lib/market_time';
 
 interface KpiStripProps {
     data: AssetChangeData | null;
@@ -67,16 +68,21 @@ export default function KpiStrip({ data, summary, riskMetrics = null, benchmarks
         const portfolioMonthly = getMonthlyReturns(data, 'Portfolio');
         const sumMetrics = summary?.metrics;
 
-        // YTD: prefer backend metric, fallback to summing current-year monthly returns.
-        let ytd: number | null = sumMetrics?.ytd_return ?? null;
+        // YTD: the risk-metrics TWR (a fraction) — the figure the Dashboard's
+        // YTD card shows, and identical to this year's annual bar. Without it,
+        // COMPOUND the market year's monthly returns: adding them overstates a
+        // volatile year (+9.92% summed vs +7.25% real for 2026).
+        const riskYtd = riskMetrics?.['YTD Return'];
+        let ytd: number | null = riskYtd != null ? riskYtd * 100 : (sumMetrics?.ytd_return ?? null);
         if (ytd == null && portfolioMonthly.length > 0) {
-            const currentYear = new Date().getFullYear();
-            const ytdMonths = portfolioMonthly.filter(m => new Date(m.date).getFullYear() === currentYear);
-            ytd = ytdMonths.reduce((s, m) => s + m.value, 0);
+            const marketYear = marketToday().slice(0, 4);
+            const ytdMonths = portfolioMonthly.filter(m => m.date.slice(0, 4) === marketYear);
+            if (ytdMonths.length > 0) {
+                ytd = ytdMonths.reduce((acc, m) => acc * (1 + m.value / 100), 1) * 100 - 100;
+            }
         }
 
-        // 1Y: sum of last 12 monthly returns (compounded would be more correct, but additive matches the existing
-        // monthly bar chart semantics).
+        // 1Y: last 12 monthly returns, compounded.
         const last12 = portfolioMonthly.slice(-12);
         const oneYear = last12.length > 0
             ? last12.reduce((acc, m) => acc * (1 + m.value / 100), 1) * 100 - 100

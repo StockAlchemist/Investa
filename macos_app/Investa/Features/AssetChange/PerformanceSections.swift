@@ -221,14 +221,11 @@ struct ReturnsChart: View {
         bars.first { $0.date == label }?.iso ?? label
     }
 
-    /// The same bucket named in full. An axis may drop the year; a tooltip has
-    /// the room to keep it.
+    /// The same bucket named in full — and, for the period still running,
+    /// named as far as it has got ("2026 YTD", "Nov 2026 MTD"). An axis may
+    /// drop the year; a tooltip has the room to keep it.
     private func tooltipTitle(_ iso: String, period: String) -> String {
-        switch period {
-        case "Y": return String(iso.prefix(4))
-        case "M": return MarketTime.monthYear(iso)
-        default: return MarketTime.formatted(iso)
-        }
+        MarketTime.returnPeriodTitle(iso, period: period)
     }
 
     private var distinctDates: [String] {

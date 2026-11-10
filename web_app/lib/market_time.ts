@@ -117,6 +117,55 @@ export function formatCalendarDayMonth(iso: string | null | undefined): string {
     return `${pad2(d.getUTCDate())} ${shortMonth(d)}`;
 }
 
+/** `MMM YYYY` — a month with no day of its own ("Nov 2026"). */
+export function formatCalendarMonthYear(iso: string | null | undefined): string {
+    const day = calendarDay(iso);
+    if (!day) return typeof iso === 'string' ? iso : '';
+    const d = new Date(`${day}T00:00:00Z`);
+    if (isNaN(d.getTime())) return day;
+    return `${shortMonth(d)} ${d.getUTCFullYear()}`;
+}
+
+/** A returns bucket: annual, monthly, weekly or daily. */
+export type ReturnPeriod = 'Y' | 'M' | 'W' | 'D';
+
+/**
+ * The name of a returns bar, from the period-end date the API labels it with
+ * (31 Dec for a year, the month-end for a month, the week's last day).
+ *
+ * A finished period is named for itself: `2025`, `Oct 2026`, `06 Nov 2026`.
+ * One still running is named as far as it has got: `2026 YTD`, `Nov 2026 MTD`,
+ * `Week of 09 Nov 2026 WTD`. The bare label would print a day that hasn't
+ * happened yet ("31 Dec 2026"). "Running" is judged on the market clock: the
+ * period ends on or after today in New York.
+ */
+export function returnPeriodTitle(
+    iso: string | null | undefined,
+    period: ReturnPeriod,
+    today: string = marketToday(),
+): string {
+    const day = calendarDay(iso);
+    if (!day) return typeof iso === 'string' ? iso : '';
+    const running = day >= today;
+    switch (period) {
+        case 'Y':
+            return running ? `${day.slice(0, 4)} YTD` : day.slice(0, 4);
+        case 'M': {
+            const month = formatCalendarMonthYear(day);
+            return running ? `${month} MTD` : month;
+        }
+        case 'W': {
+            if (!running) return formatCalendarDate(day);
+            // Back from the label to the Monday that opened the week.
+            const end = new Date(`${day}T00:00:00Z`);
+            end.setUTCDate(end.getUTCDate() - ((end.getUTCDay() + 6) % 7));
+            return `Week of ${formatCalendarDate(end.toISOString().slice(0, 10))} WTD`;
+        }
+        default:
+            return formatCalendarDate(day);
+    }
+}
+
 function pad2(n: number): string {
     return String(n).padStart(2, '0');
 }

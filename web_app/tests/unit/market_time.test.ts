@@ -5,6 +5,7 @@ import {
     isWithinMarketMonths,
     marketDayDiff,
     marketToday,
+    returnPeriodTitle,
 } from '../../lib/market_time';
 
 /** 02:00 UTC on Jul 30 2026 — already Jul 30 in Bangkok, still Jul 29 in New York. */
@@ -131,5 +132,34 @@ describe('formatCalendarDate', () => {
         const requested = spy.mock.calls[0][1] as Intl.DateTimeFormatOptions;
         spy.mockRestore();
         expect(requested.timeZone).toBe('UTC');
+    });
+});
+
+describe('returnPeriodTitle', () => {
+    const today = '2026-11-10';
+
+    it('names a year still running "YTD", a finished one by its number', () => {
+        expect(returnPeriodTitle('2026-12-31', 'Y', today)).toBe('2026 YTD');
+        expect(returnPeriodTitle('2025-12-31', 'Y', today)).toBe('2025');
+    });
+
+    it('names a month still running "MTD", a finished one MMM YYYY', () => {
+        expect(returnPeriodTitle('2026-11-30', 'M', today)).toMatch(/^\S+ 2026 MTD$/);
+        expect(returnPeriodTitle('2026-10-31', 'M', today)).toMatch(/^\S+ 2026$/);
+    });
+
+    it('names a week still running from its Monday, a finished one by its last day', () => {
+        // Weeks are labelled by their Friday; 13 Nov 2026's week opened on 09 Nov.
+        expect(returnPeriodTitle('2026-11-13', 'W', today)).toMatch(/^Week of 09 \S+ 2026 WTD$/);
+        expect(returnPeriodTitle('2026-11-06', 'W', today)).toMatch(/^06 \S+ 2026$/);
+    });
+
+    it('treats a period ending today as still running', () => {
+        expect(returnPeriodTitle('2026-12-31', 'Y', '2026-12-31')).toBe('2026 YTD');
+        expect(returnPeriodTitle('2026-12-31', 'Y', '2027-01-01')).toBe('2026');
+    });
+
+    it('leaves days alone', () => {
+        expect(returnPeriodTitle('2026-11-09', 'D', today)).toMatch(/^09 \S+ 2026$/);
     });
 });

@@ -137,4 +137,32 @@ final class MarketTimeLongTermTests: XCTestCase {
         XCTAssertEqual(MarketTime.daysUntilLongTerm("2025-03-10", from: day("2026-03-11")), 0)
         XCTAssertNil(MarketTime.daysUntilLongTerm("not a date", from: day("2026-03-11")))
     }
+
+    // MARK: Returns bar titles
+
+    func testRunningYearIsYTDAndAFinishedOneItsNumber() {
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-12-31", period: "Y", today: "2026-11-10"), "2026 YTD")
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2025-12-31", period: "Y", today: "2026-11-10"), "2025")
+    }
+
+    func testRunningMonthIsMTD() {
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-11-30", period: "M", today: "2026-11-10"), "Nov 2026 MTD")
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-10-31", period: "M", today: "2026-11-10"), "Oct 2026")
+    }
+
+    func testRunningWeekIsNamedFromItsMonday() {
+        // Weeks are labelled by their Friday; 13 Nov 2026's week opened on 09 Nov.
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-11-13", period: "W", today: "2026-11-10"),
+                       "Week of 09 Nov 2026 WTD")
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-11-06", period: "W", today: "2026-11-10"), "06 Nov 2026")
+    }
+
+    func testPeriodEndingTodayIsStillRunning() {
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-12-31", period: "Y", today: "2026-12-31"), "2026 YTD")
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-12-31", period: "Y", today: "2027-01-01"), "2026")
+    }
+
+    func testDaysAreLeftAlone() {
+        XCTAssertEqual(MarketTime.returnPeriodTitle("2026-11-09", period: "D", today: "2026-11-10"), "09 Nov 2026")
+    }
 }
