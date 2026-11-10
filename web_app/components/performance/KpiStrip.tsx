@@ -68,12 +68,13 @@ export default function KpiStrip({ data, summary, riskMetrics = null, benchmarks
         const portfolioMonthly = getMonthlyReturns(data, 'Portfolio');
         const sumMetrics = summary?.metrics;
 
-        // YTD: the risk-metrics TWR (a fraction) — the figure the Dashboard's
-        // YTD card shows, and identical to this year's annual bar. Without it,
-        // COMPOUND the market year's monthly returns: adding them overstates a
-        // volatile year (+9.92% summed vs +7.25% real for 2026).
+        // YTD: the summary's TWR (percent) — the Dashboard card's figure, and
+        // identical to this year's annual bar — or the same value from risk
+        // metrics (a fraction). Without either, COMPOUND the market year's
+        // monthly returns: adding them overstates a volatile year (+9.92%
+        // summed vs +7.25% real for 2026).
         const riskYtd = riskMetrics?.['YTD Return'];
-        let ytd: number | null = riskYtd != null ? riskYtd * 100 : (sumMetrics?.ytd_return ?? null);
+        let ytd: number | null = sumMetrics?.ytd_return ?? (riskYtd != null ? riskYtd * 100 : null);
         if (ytd == null && portfolioMonthly.length > 0) {
             const marketYear = marketToday().slice(0, 4);
             const ytdMonths = portfolioMonthly.filter(m => m.date.slice(0, 4) === marketYear);
