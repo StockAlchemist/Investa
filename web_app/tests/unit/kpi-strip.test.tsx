@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import KpiStrip from '@/components/performance/KpiStrip';
-import type { AssetChangeData, RiskMetrics } from '@/lib/api';
+import type { AssetChangeData, PortfolioSummary, RiskMetrics } from '@/lib/api';
 
 describe('KpiStrip', () => {
     const mockData: AssetChangeData = {
@@ -112,7 +112,14 @@ describe('KpiStrip', () => {
             expect(ytdTile()).toBe('+7.25%');
         });
 
-        it('prefers the risk-metrics YTD, as the Dashboard card does', () => {
+        it('prefers the summary YTD, then the same figure from risk metrics', () => {
+            const summary = { metrics: { ytd_return: 7.264051225444201 } } as unknown as PortfolioSummary;
+            const risk = { 'YTD Return': 0.05 } as RiskMetrics;
+            render(<KpiStrip data={ytdData} summary={summary} riskMetrics={risk} benchmarks={[]} />);
+            expect(ytdTile()).toBe('+7.26%');
+        });
+
+        it('takes the risk-metrics YTD when the summary has none', () => {
             const risk = { 'YTD Return': 0.07254306252507203 } as RiskMetrics;
             render(<KpiStrip data={ytdData} summary={null} riskMetrics={risk} benchmarks={[]} />);
             expect(ytdTile()).toBe('+7.25%');

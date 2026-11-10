@@ -57,16 +57,19 @@ final class PortfolioRuntimeTests: XCTestCase {
         XCTAssertFalse(paths.contains { $0.contains("projection") || $0.contains("risk_metrics") })
     }
 
-    func testYTDCardLoadsWithoutRiskAnalytics() async throws {
+    /// The YTD card reads the summary's `ytd_return`. It used to fetch
+    /// `/risk_metrics` for it even with Risk Analytics hidden — the summary
+    /// field was declared and never set — so it must no longer ask.
+    func testYTDCardReadsTheSummaryWithoutRiskMetrics() async throws {
         var riskRequests: [URL] = []
         MockURLProtocol.requestHandler = { request in
             let path = request.url!.path
             let body: String
             if path.hasSuffix("/risk_metrics") {
                 riskRequests.append(request.url!)
-                body = "{\"YTD Return\":0.182}"
+                body = "{\"YTD Return\":0.05}"
             } else if path.hasSuffix("/summary") || path.hasSuffix("/summary/headline") {
-                body = "{\"metrics\":{\"market_value\":100}}"
+                body = "{\"metrics\":{\"market_value\":100,\"ytd_return\":18.2}}"
             } else { body = "[]" }
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
         }
@@ -75,7 +78,13 @@ final class PortfolioRuntimeTests: XCTestCase {
         model.reload(currency: "USD", accounts: ["Taxable"], period: .oneYear,
                      showClosed: false, benchmarks: [], visibleItems: ["ytdReturn"])
         await settled(model)
-        XCTAssertEqual(model.risk?.ytdReturn, 0.182)
+        XCTAssertEqual(model.metrics?.ytdReturn, 18.2)
+        XCTAssertTrue(riskRequests.isEmpty)
+
+        // Risk Analytics still loads its own figures, for the same slice.
+        model.reload(currency: "USD", accounts: ["Taxable"], period: .oneYear,
+                     showClosed: false, benchmarks: [], visibleItems: ["ytdReturn", "riskMetrics"])
+        await settled(model)
         XCTAssertEqual(riskRequests.count, 1)
         let request = try XCTUnwrap(riskRequests.first)
         let query = URLComponents(url: request, resolvingAgainstBaseURL: false)?.queryItems ?? []

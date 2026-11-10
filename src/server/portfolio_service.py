@@ -533,6 +533,32 @@ async def _get_historical_performance_cached(
     )
 
 
+def ytd_twr_return(daily_df: Optional[pd.DataFrame], today: date) -> Optional[float]:
+    """Year-to-date time-weighted return, as a fraction, from a daily history.
+
+    The TWR index at its newest point over its value at the last session of
+    the previous market year; an account opened this year is measured from
+    its first point. This is the figure the 2026 annual bar and the compounded
+    monthly returns agree on, and the one `/risk_metrics` ("YTD Return") and
+    the summary (`ytd_return`, in percent) both ship, so neither can drift
+    from the other. None when the series is missing or unusable.
+    """
+    if daily_df is None or daily_df.empty:
+        return None
+    if "Portfolio Accumulated Gain" not in daily_df.columns:
+        return None
+    twr = daily_df["Portfolio Accumulated Gain"]
+    index = daily_df.index
+    if not pd.api.types.is_datetime64_any_dtype(index):
+        index = pd.to_datetime(index)
+    prior = twr[index.year < today.year]
+    current = twr.iloc[-1]
+    base = prior.iloc[-1] if not prior.empty else twr.iloc[0]
+    if not base or not base > 0 or pd.isna(current):
+        return None
+    return float(current / base - 1.0)
+
+
 def _previous_trading_day(d: date) -> date:
     """The last NYSE session strictly before ``d`` (falls back to the prior day)."""
     try:
@@ -869,6 +895,7 @@ async def _calculate_portfolio_summary_internal(
     # graph and is already cached in-memory, so it's fast after first load.
     annualized_twr = None
     cumulative_twr = None
+    ytd_return = None
     history_pending = False
     if not df.empty and not all_selected_closed:
         try:
@@ -908,6 +935,7 @@ async def _calculate_portfolio_summary_internal(
                             final_twr_factor = float(twr_part)
                         except ValueError:
                             final_twr_factor = None
+                ytd_return = ytd_twr_return(hist_daily_df, hist_end_date)
                 if final_twr_factor is not None and final_twr_factor > 0:
                     days = (hist_end_date - hist_min_date).days
                     cumulative_twr = (final_twr_factor - 1) * 100.0
@@ -925,6 +953,9 @@ async def _calculate_portfolio_summary_internal(
     if overall_summary_metrics:
         overall_summary_metrics["annualized_twr"] = annualized_twr
         overall_summary_metrics["cumulative_twr"] = cumulative_twr
+        overall_summary_metrics["ytd_return"] = (
+            ytd_return * 100.0 if ytd_return is not None else None
+        )
 
         if not all_selected_closed:
             # --- NEW: Calculate Historical Dividend Metrics ---

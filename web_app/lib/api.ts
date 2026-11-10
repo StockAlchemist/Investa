@@ -205,7 +205,7 @@ export interface PortfolioSummary {
         volatility_ann?: number;
         sharpe_ratio?: number;
         beta?: number;
-        ytd_return?: number;
+        ytd_return?: number; // YTD TWR in percent; /risk_metrics ships the same figure as a fraction
         // True when every account in the current selection has a closure date <= today.
         // The backend sets rate-of-return metrics to null in that case to avoid the
         // residual-dividend TWR inflation bug; the frontend renders "Closed" instead.

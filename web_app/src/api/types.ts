@@ -3462,6 +3462,8 @@ export interface components {
             cumulative_twr?: number | null;
             /** Annualized Twr */
             annualized_twr?: number | null;
+            /** Ytd Return */
+            ytd_return?: number | null;
             /** Portfolio Mwr */
             portfolio_mwr?: number | null;
             /**

@@ -552,8 +552,13 @@ function DashboardInner({
                 return <MetricCard title="Total Dividends" value={m?.dividends ?? 0} valueClassName="text-[22px]" containerClassName="h-full" isHero currency={currency} isLoading={isLoading} isRefreshing={isRefreshing} icon={DollarSign} accentColor={themeColor} variant={variant} />;
             case 'dividendYield':
                 return <MetricCard title="Dividend Yield" value={m?.dividend_return_cumulative != null ? `${Math.abs(m.dividend_return_cumulative).toFixed(2)}%` : '-'} subValue={m?.dividend_return_annualized != null ? `${Math.abs(m.dividend_return_annualized).toFixed(2)}% p.a.` : undefined} subValueClassName={subBadge(m?.dividend_return_annualized)} isCurrency={false} colorClass={pos(m?.dividend_return_cumulative ?? null)} isLoading={isLoading} isRefreshing={isRefreshing} icon={Percent} accentColor={themeColor} variant={variant} />;
-            case 'ytdReturn':
-                return <MetricCard title="YTD Return" value={riskMetrics?.['YTD Return'] != null ? `${(riskMetrics['YTD Return'] * 100).toFixed(2)}%` : m?.ytd_return != null ? `${m.ytd_return.toFixed(2)}%` : '-'} isCurrency={false} colorClass={pos((riskMetrics?.['YTD Return'] ?? m?.ytd_return ?? 0))} isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={TrendingUp} accentColor={themeColor} variant={variant} />;
+            case 'ytdReturn': {
+                // The summary's YTD TWR (percent). Risk metrics carry the same
+                // figure, from the same helper, as a fraction.
+                const riskYtd = riskMetrics?.['YTD Return'];
+                const ytd: number | null = m?.ytd_return ?? (riskYtd != null ? riskYtd * 100 : null);
+                return <MetricCard title="YTD Return" value={ytd != null ? `${ytd.toFixed(2)}%` : '-'} isCurrency={false} colorClass={pos(ytd ?? 0)} isLoading={isLoading || (ytd == null && riskMetricsLoading)} isRefreshing={isRefreshing} icon={TrendingUp} accentColor={themeColor} variant={variant} />;
+            }
             case 'maxDrawdown': {
                 const maxDD = riskMetrics?.['Max Drawdown'] != null ? riskMetrics['Max Drawdown'] * 100 : m?.max_drawdown;
                 return <MetricCard title="Max Drawdown" value={maxDD != null ? `${maxDD.toFixed(2)}%` : '-'} isCurrency={false} colorClass="text-down" isLoading={isLoading || riskMetricsLoading} isRefreshing={isRefreshing} icon={TrendingDown} accentColor={themeColor} variant={variant} />;

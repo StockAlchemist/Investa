@@ -240,9 +240,10 @@ struct DashboardView: View {
     private var metricGrid: some View {
         let m = viewModel.metrics
         func pct(_ v: Double?) -> String? { v == nil ? nil : Fmt.percent(v, includeSign: true) }
-        // YTD Return: prefer the risk-metrics value (a fraction), fall back to the
-        // summary metric (already a percent) — mirrors the web Dashboard.
-        let ytdReturn: Double? = viewModel.risk?.ytdReturn.map { $0 * 100 } ?? m?.ytdReturn
+        // YTD Return: the summary's YTD TWR (a percent); risk metrics carry the
+        // same figure, from the same backend helper, as a fraction — mirrors
+        // the web Dashboard.
+        let ytdReturn: Double? = m?.ytdReturn ?? viewModel.risk?.ytdReturn.map { $0 * 100 }
         let byId: [String: MetricCard] = [
             "totalReturn": MetricCard(
                 title: "Total Return",

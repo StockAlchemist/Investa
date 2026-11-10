@@ -19,6 +19,8 @@ class PortfolioMetrics(BaseModel):
     cash_balance: float | None = None
     cumulative_twr: float | None = None
     annualized_twr: float | None = None
+    # Year-to-date TWR in percent, on the market clock's year.
+    ytd_return: float | None = None
     portfolio_mwr: float | None = None
     all_selected_closed: bool = False
     closed_accounts: list[str] = Field(default_factory=list)

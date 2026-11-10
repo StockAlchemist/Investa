@@ -41,6 +41,7 @@ from server.portfolio_service import (
     _compute_raw_summary,
     _filter_closed_positions,
     _get_historical_performance_cached,
+    ytd_twr_return,
 )
 from server.route_utils import clean_nans, get_mdp
 from utils_time import get_est_today
@@ -651,31 +652,11 @@ async def get_risk_metrics(
             benchmark_values=benchmark_values,
         )
 
-        # --- FIX: Calculate YTD Return from daily_df ---
+        # The same YTD the summary ships, from the same helper.
         try:
-            if not daily_df.empty:
-                import pandas as pd
-
-                # Ensure index is datetime for filtering
-                if not pd.api.types.is_datetime64_any_dtype(daily_df.index):
-                    daily_df.index = pd.to_datetime(daily_df.index)
-
-                current_year = get_est_today().year
-                prev_year_data = daily_df[daily_df.index.year < current_year]
-
-                if not prev_year_data.empty:
-                    prev_year_twr = prev_year_data["Portfolio Accumulated Gain"].iloc[
-                        -1
-                    ]
-                    current_twr = portfolio_values.iloc[-1]
-                    if prev_year_twr and prev_year_twr > 0:
-                        metrics["YTD Return"] = (current_twr / prev_year_twr) - 1.0
-                else:
-                    # Account started this year
-                    current_twr = portfolio_values.iloc[-1]
-                    start_twr = portfolio_values.iloc[0]
-                    if start_twr > 0:
-                        metrics["YTD Return"] = (current_twr / start_twr) - 1.0
+            ytd = ytd_twr_return(daily_df, get_est_today())
+            if ytd is not None:
+                metrics["YTD Return"] = ytd
         except Exception as ytd_e:
             logging.error(f"Error calculating YTD Return in risk_metrics: {ytd_e}")
 
