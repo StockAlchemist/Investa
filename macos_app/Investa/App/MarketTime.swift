@@ -297,6 +297,37 @@ enum MarketTime {
         monthYearFormatter.string(from: day)
     }
 
+    /// The name of a returns bar, from the period-end date the API labels it
+    /// with (31 Dec for a year `"Y"`, the month-end for `"M"`, the week's last
+    /// day for `"W"`; `"D"` is a day).
+    ///
+    /// A finished period is named for itself: `2025`, `Oct 2026`, `06 Nov 2026`.
+    /// One still running is named as far as it has got: `2026 YTD`,
+    /// `Nov 2026 MTD`, `Week of 09 Nov 2026 WTD` — the bare label would print a
+    /// day that hasn't happened yet ("31 Dec 2026"). "Running" is judged on the
+    /// market clock: the period ends on or after today in New York. Mirrors the
+    /// web's `returnPeriodTitle`.
+    static func returnPeriodTitle(_ iso: String, period: String, today: String = todayISO()) -> String {
+        guard let end = calendarDay(iso) else { return iso }
+        let day = String(iso.prefix(10))
+        let running = day >= String(today.prefix(10))
+        switch period {
+        case "Y":
+            let year = String(day.prefix(4))
+            return running ? "\(year) YTD" : year
+        case "M":
+            return running ? "\(monthYear(end)) MTD" : monthYear(end)
+        case "W":
+            guard running else { return formatted(end) }
+            // Back from the label to the Monday that opened the week.
+            let weekday = utcCalendar.component(.weekday, from: end)   // 1 = Sunday
+            let monday = utcCalendar.date(byAdding: .day, value: -((weekday + 5) % 7), to: end) ?? end
+            return "Week of \(formatted(monday)) WTD"
+        default:
+            return formatted(end)
+        }
+    }
+
     /// The calendar year of a day produced by `calendarDay(_:)`, read back in the
     /// same zone it was built in.
     static func year(_ day: Date) -> String {

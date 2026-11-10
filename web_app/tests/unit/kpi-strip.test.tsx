@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import KpiStrip from '@/components/performance/KpiStrip';
-import type { AssetChangeData } from '@/lib/api';
+import type { AssetChangeData, RiskMetrics } from '@/lib/api';
 
 describe('KpiStrip', () => {
     const mockData: AssetChangeData = {
@@ -74,5 +74,48 @@ describe('KpiStrip', () => {
         expect(screen.getByText('Best Month')).toBeInTheDocument();
         expect(screen.getByText('Worst Month')).toBeInTheDocument();
         expect(screen.getByText('Max DD')).toBeInTheDocument();
+    });
+
+    describe('YTD', () => {
+        // dheematan's 2026 monthly TWR returns (Dec 2025 belongs to last year).
+        // Summed they make +9.92%; compounded they make +7.25%, the 2026 annual
+        // bar and the risk-metrics YTD.
+        const months2026 = [2.907020011758177, -4.685547213290975, -5.789581156794565,
+            17.91476013952742, 5.132544411435558, -7.451215008679368, 4.464400825611636,
+            3.022301272299943, 2.1280774785926715, -10.032951548301172, 2.307572488182963];
+        const ytdData: AssetChangeData = {
+            M: [
+                { Date: '2025-12-31', 'Portfolio M-Return': 0.020308379222711004 },
+                ...months2026.map((v, i) => ({
+                    Date: `2026-${String(i + 1).padStart(2, '0')}-28`,
+                    'Portfolio M-Return': v,
+                })),
+            ],
+            Y: [], W: [], D: [],
+        };
+        const ytdTile = () => screen.getByText('YTD').nextElementSibling?.textContent;
+
+        afterEach(() => vi.useRealTimers());
+
+        it('compounds the market year’s months instead of adding them', () => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(new Date('2026-11-10T12:00:00Z'));
+            render(<KpiStrip data={ytdData} summary={null} benchmarks={[]} />);
+            expect(ytdTile()).toBe('+7.25%');
+        });
+
+        it('takes the year from the market clock, not the device', () => {
+            // 1 Jan 2027 06:00 in Bangkok is still 31 Dec 2026 in New York.
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(new Date('2026-12-31T23:00:00Z'));
+            render(<KpiStrip data={ytdData} summary={null} benchmarks={[]} />);
+            expect(ytdTile()).toBe('+7.25%');
+        });
+
+        it('prefers the risk-metrics YTD, as the Dashboard card does', () => {
+            const risk = { 'YTD Return': 0.07254306252507203 } as RiskMetrics;
+            render(<KpiStrip data={ytdData} summary={null} riskMetrics={risk} benchmarks={[]} />);
+            expect(ytdTile()).toBe('+7.25%');
+        });
     });
 });

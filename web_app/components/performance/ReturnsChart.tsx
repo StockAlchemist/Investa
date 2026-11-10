@@ -4,7 +4,7 @@ import { Minus, Plus } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { AssetChangeData } from '../../lib/api';
 import { formatCurrency, cn } from '../../lib/utils';
-import { formatCalendarDate } from '../../lib/market_time';
+import { formatCalendarDayMonth, formatCalendarMonthYear, returnPeriodTitle } from '../../lib/market_time';
 
 interface ReturnsChartProps {
     data: AssetChangeData | null;
@@ -150,9 +150,9 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                             tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
                             tickFormatter={(val) => {
                                 if (!val || typeof val !== 'string') return '';
-                                const datePart = val.split(' ')[0];
-                                if (period === 'Y') return datePart.split('-')[0];
-                                return datePart;
+                                if (period === 'Y') return val.slice(0, 4);
+                                if (period === 'M') return formatCalendarMonthYear(val);
+                                return formatCalendarDayMonth(val);
                             }}
                             axisLine={{ stroke: 'hsl(var(--border))' }}
                         />
@@ -202,8 +202,8 @@ export default function ReturnsChart({ data, currency }: ReturnsChartProps) {
                                 return (
                                     <div className="bg-background/98 backdrop-blur-2xl p-3 rounded-xl border border-border/60 shadow-2xl">
                                         <p className="font-medium text-foreground mb-1 text-sm">
-                                            {typeof label === 'string' && !isNaN(Date.parse(label))
-                                                ? formatCalendarDate(label)
+                                            {typeof label === 'string'
+                                                ? returnPeriodTitle(label, period)
                                                 : label}
                                         </p>
                                         <div className="space-y-1">
