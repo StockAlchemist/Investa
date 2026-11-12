@@ -38,6 +38,17 @@ enum TabLayout {
         LayoutItem("sectorContribution", "Sector Contribution", group: "Risk & Attribution"),
         LayoutItem("topContributors", "Top Contributors", group: "Risk & Attribution"),
     ]
+    /// The Dashboard's compact metric cards, in the web's `DEFAULT_ITEMS` order
+    /// (Total Return, Unrealized G/L, Realized Gain, Total TWR, IRR, Total
+    /// Dividends, Dividend Yield, YTD Return, Cash Balance, FX, Fees, Taxes).
+    /// Derived from `performanceItems` rather than listed again, so the native
+    /// grid cannot drift from the web's as a second hand-kept list once did.
+    static let metricCardIds: Set<String> = [
+        "totalReturn", "unrealizedGL", "realizedGain", "annualTWR", "mwr",
+        "ytdDividends", "dividendYield", "ytdReturn", "cashBalance", "fxGL", "fees", "taxes",
+    ]
+    static let metricCardOrder: [String] = performanceItems.map(\.id).filter { metricCardIds.contains($0) }
+
     static let performanceInitialVisible: Set<String> = [
         "portfolioHero", "todayStrip", "cashBalance", "annualTWR", "performanceGraph",
     ]

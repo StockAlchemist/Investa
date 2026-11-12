@@ -233,8 +233,7 @@ struct DashboardView: View {
                             onSelectSymbol: { appState.openStock($0) })
     }
 
-    private let metricOrder = ["cashBalance", "annualTWR", "totalReturn", "unrealizedGL", "realizedGain", "mwr",
-                                "ytdDividends", "dividendYield", "ytdReturn", "fxGL", "fees", "taxes"]
+    private var metricOrder: [String] { TabLayout.metricCardOrder }
 
     // Compact metric grid: the web's 12 scalar cards, filtered by Layout visibility, in order.
     private var metricGrid: some View {
