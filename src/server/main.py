@@ -234,13 +234,49 @@ if __name__ == "__main__":
         "%(asctime)s - " + log_config["formatters"]["default"]["fmt"]
     )
 
+    import socket
+    import sys
+
+    # 8800, not 8000: 8000 belongs to Tuva's daemon on this machine (and its
+    # fallbacks run 8000–8050). INVESTA_PORT overrides; PORT is what Cloud Run
+    # injects into the container.
+    port = int(os.getenv("INVESTA_PORT") or os.getenv("PORT") or 8800)
+
+    # Loopback gets its own socket as well as the wildcard one. On macOS a
+    # wildcard listener does not own 127.0.0.1: another process may still bind
+    # 127.0.0.1:<port> with SO_REUSEADDR, and from then on every loopback
+    # connection reaches it instead of us. The web app proxies to
+    # http://127.0.0.1:<port>, so that silently swaps the backend under it —
+    # Tuva's daemon did exactly this when both used 8000 (every /api/* call
+    # from the web app answered 404 while the LAN and Tailscale addresses
+    # still worked). Holding the exact loopback address makes such a probe
+    # fail, so the other program moves to its own fallback port; and if it
+    # got there first, we refuse to start rather than run half-reachable.
+    def _listen(host: str) -> socket.socket:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, port))
+        sock.listen(2048)
+        sock.set_inheritable(True)
+        return sock
+
+    try:
+        sockets = [_listen("127.0.0.1"), _listen("0.0.0.0")]
+    except OSError as exc:
+        sys.exit(
+            f"ERROR: cannot listen on port {port} ({exc.strerror}). Another "
+            f"program holds it; find it with: lsof -nP -iTCP:{port} -sTCP:LISTEN"
+        )
+
     # reload=False for debugging stability vs potential thread deadlock issues with StatReload
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(
-        "server.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=False,
-        workers=1,
-        log_config=log_config,
+    server = uvicorn.Server(
+        uvicorn.Config(
+            "server.main:app",
+            host="0.0.0.0",
+            port=port,
+            reload=False,
+            workers=1,
+            log_config=log_config,
+        )
     )
+    server.run(sockets=sockets)

@@ -123,7 +123,7 @@ struct LoginView: View {
                     }
                 }
             }
-            TextField("http://localhost:8000/api", text: $serverURL)
+            TextField("http://localhost:8800/api", text: $serverURL)
                 .textFieldStyle(.roundedBorder)
                 #if os(macOS)
                 .frame(width: 360)

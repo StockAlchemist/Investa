@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "node scripts/start-standalone.cjs",
     "lint": "eslint",
-    "generate:api": "npx openapi-typescript@7.13.0 http://localhost:8000/openapi.json -o src/api/types.ts",
+    "generate:api": "npx openapi-typescript@7.13.0 http://localhost:8800/openapi.json -o src/api/types.ts",
     "generate:api:offline": "python3 ../scripts/export_openapi.py --out /tmp/investa-openapi.json && npx openapi-typescript@7.13.0 /tmp/investa-openapi.json -o src/api/types.ts && rm /tmp/investa-openapi.json",
     "check:api-drift": "python3 ../scripts/export_openapi.py --out /tmp/investa-openapi.json && npx openapi-typescript@7.13.0 /tmp/investa-openapi.json -o /tmp/investa-types-fresh.ts && diff -q src/api/types.ts /tmp/investa-types-fresh.ts && echo '✓ API types are up to date' || (echo '✗ API types out of date — run: npm run generate:api:offline' && exit 1)",
     "test:e2e": "playwright test",

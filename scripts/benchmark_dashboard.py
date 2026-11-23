@@ -42,7 +42,7 @@ def measure(base: str, endpoint: str, query: dict, samples: int, token: str):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", default="http://localhost:8000/api")
+    parser.add_argument("--base", default="http://localhost:8800/api")
     parser.add_argument("--currency", default="USD")
     parser.add_argument("--samples", type=int, default=11)
     args = parser.parse_args()

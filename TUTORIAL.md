@@ -1185,9 +1185,9 @@ The native app connects directly to your Investa backend API, offering real-time
 
 ### Setting up the Native App
 
-1. **Start the Backend:** Ensure your Investa backend is running (e.g., `./start_investa.sh`). The backend serves the API on port `8000`.
+1. **Start the Backend:** Ensure your Investa backend is running (e.g., `./start_investa.sh`). The backend serves the API on port `8800`.
 2. **Open the Project:** Navigate to the `macos_app` folder and open `Investa.xcodeproj` in Xcode 16 or later.
-3. **Configure API URL (If Remote):** If you are running the backend on a different machine (e.g., a home server or via Tailscale), open `Networking/APIConfig.swift` in Xcode and update `baseURL` to match your server's IP or Tailscale address (e.g., `http://your-server-ip:8000`). If running locally on a Mac, `http://localhost:8000` is the default and requires no changes.
+3. **Configure API URL (If Remote):** If you are running the backend on a different machine (e.g., a home server or via Tailscale), open `Networking/APIConfig.swift` in Xcode and update `baseURL` to match your server's IP or Tailscale address (e.g., `http://your-server-ip:8800`). If running locally on a Mac, `http://localhost:8800` is the default and requires no changes.
 4. **Build and Run:** Select your target device (My Mac, iPhone Simulator, or a physical iPad/iPhone) from the top-left dropdown in Xcode and press `Cmd + R` to build and run the application.
 
 *Note: For deploying to a physical iPhone or iPad, you will need to add your free Apple ID to Xcode settings under the Accounts tab to sign the application for local development.*

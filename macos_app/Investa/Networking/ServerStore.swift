@@ -70,7 +70,7 @@ final class ServerStore: ObservableObject {
         persist()
     }
 
-    /// `http://100.127.10.38:8000/api` → `100.127.10.38:8000`.
+    /// `http://100.127.10.38:8800/api` → `100.127.10.38:8800`.
     nonisolated static func defaultName(for url: String) -> String {
         guard let comps = URLComponents(string: url), let host = comps.host else { return url }
         return comps.port.map { "\(host):\($0)" } ?? host

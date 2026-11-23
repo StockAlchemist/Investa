@@ -11,11 +11,11 @@ Investa is a financial portfolio management system: a Next.js 16 / React 19 PWA 
 ## Running the App
 
 ```bash
-# Full stack (backend on :8000, frontend on :3000)
+# Full stack (backend on :8800, frontend on :3000)
 ./start_investa.sh
 
 # Backend only
-cd src && uvicorn server.main:app --reload --port 8000
+cd src && uvicorn server.main:app --reload --port 8800
 
 # Frontend only
 cd web_app && npm run dev
@@ -107,6 +107,7 @@ AUTH_SECRET_KEY=...   # JWT signing key (optional; auto-generated to data/config
 CORS_ALLOW_ORIGINS=... # Extra CORS origins, comma-separated (local/LAN/own tailnet covered by default; a Cloud Run frontend goes here)
 INVESTA_TAILNET=...    # Your tailnet, e.g. tail1234.ts.net (optional; read from the tailscale CLI, else any *.ts.net is allowed)
 INVESTA_LOG_LEVEL=...  # Application log level (default WARNING; set INFO/DEBUG when debugging)
+INVESTA_PORT=...       # Backend port (default 8800; 8000 is left to Tuva's daemon on the server Mac)
 INVESTA_WEBHOOK_SECRET=... # Enables POST /webhook/refresh (optional; the webhook is off while unset)
 ```
 

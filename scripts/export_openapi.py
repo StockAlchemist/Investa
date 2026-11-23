@@ -3,7 +3,7 @@
 Dump the FastAPI app's OpenAPI schema to stdout (or a file with --out).
 
 Used by `npm run generate:api:offline` so TypeScript types can be regenerated
-without needing a backend running on :8000.
+without needing a backend running on :8800.
 
 Usage:
     python scripts/export_openapi.py > openapi.json

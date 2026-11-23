@@ -6,7 +6,7 @@ const getApiBaseUrl = () => {
         return process.env.NEXT_PUBLIC_API_URL;
     }
     if (typeof window !== 'undefined') return '/api';
-    return 'http://localhost:8000/api';
+    return 'http://localhost:8800/api';
 };
 
 export const API_BASE_URL = getApiBaseUrl();

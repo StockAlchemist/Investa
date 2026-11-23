@@ -220,7 +220,7 @@ better scheduling responsiveness, not faster financial math or live provider cal
 
 ## Quick Usage
 
-**Run the full stack (backend on :8000, frontend on :3000):**
+**Run the full stack (backend on :8800, frontend on :3000):**
 
 ```bash
 ./start_investa.sh

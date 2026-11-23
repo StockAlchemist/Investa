@@ -35,7 +35,7 @@ and a card per model whose parameters can be edited in place to re-blend live.
 Auth → networking → models → SwiftUI + Swift Charts throughout.
 
 The app is a **client**; it does not bundle the Python backend. Run the backend
-separately and point the app at it (default `http://localhost:8000/api`, editable
+separately and point the app at it (default `http://localhost:8800/api`, editable
 from the login screen's "Server" button).
 
 ## Build & run
@@ -53,7 +53,7 @@ xcodegen generate
 
 # 3. Start the backend (from the repo root, in another terminal)
 ./start_investa.sh
-# or: cd src && uvicorn server.main:app --reload --port 8000
+# or: cd src && uvicorn server.main:app --reload --port 8800
 
 # 4a. Open in Xcode and Run (⌘R)
 open Investa.xcodeproj

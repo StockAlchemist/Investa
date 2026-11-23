@@ -44,7 +44,7 @@ export function normalizeServerUrl(input: string): string | null {
 }
 
 /**
- * The backend's address (`…:8000/api`) is what the native apps save, so it is
+ * The backend's address (`…:8800/api`) is what the native apps save, so it is
  * the one people reach for — but it serves JSON, not the app.
  */
 export function looksLikeApiUrl(input: string): boolean {

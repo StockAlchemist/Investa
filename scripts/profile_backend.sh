@@ -11,7 +11,7 @@
 #   scripts/profile_backend.sh dump               # one-shot stack dump of all threads
 #
 # Typical session:
-#   1. Start the backend:   cd src && uvicorn server.main:app --port 8000
+#   1. Start the backend:   cd src && uvicorn server.main:app --port 8800
 #   2. In another terminal: scripts/profile_backend.sh record 30
 #   3. While it records, exercise the app (load the dashboard, run the screener,
 #      open a stock detail — whatever feels slow).
@@ -28,7 +28,7 @@ cd "$(dirname "$0")/.."   # repo root
 PROFILE_DIR="profiles"
 mkdir -p "$PROFILE_DIR"
 
-PORT="${INVESTA_BACKEND_PORT:-8000}"
+PORT="${INVESTA_BACKEND_PORT:-8800}"
 
 # Find the uvicorn/backend PID listening on $PORT.
 PID="$(lsof -ti:"$PORT" -sTCP:LISTEN 2>/dev/null | head -n1 || true)"

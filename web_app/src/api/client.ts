@@ -4,7 +4,7 @@ import type { paths } from './types';
 // Detect the base URL similarly to how lib/api.ts did it.
 const getApiBaseUrl = () => {
     const configured = process.env.NEXT_PUBLIC_API_URL;
-    const url = configured || (typeof window !== 'undefined' ? '' : 'http://localhost:8000');
+    const url = configured || (typeof window !== 'undefined' ? '' : 'http://localhost:8800');
     return url.replace(/\/api\/?$/, '');
 };
 

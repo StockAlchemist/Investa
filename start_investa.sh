@@ -1,7 +1,10 @@
 #!/bin/bash
 
 # Starts both the Backend Server and the Web App concurrently.
-# Automatically cleans up existing processes on ports 8000 and 3000.
+# Automatically cleans up existing Investa processes on ports 8800 and 3000.
+#
+# The backend listens on 8800 (INVESTA_PORT overrides). Not 8000: that is
+# Tuva's daemon's port on this machine, with fallbacks across 8000–8050.
 #
 # By default the frontend is served as an optimized production build
 # (rebuilt automatically when sources change). Pass --dev for the
@@ -11,6 +14,11 @@
 cd "$(dirname "$0")"
 
 DEV_MODE=0
+
+# Read by the backend (src/server/main.py) and, through API_URL, by the web
+# app's /api rewrite, which Next bakes into the production build.
+export INVESTA_PORT="${INVESTA_PORT:-8800}"
+export API_URL="http://127.0.0.1:$INVESTA_PORT"
 if [ "$1" = "--dev" ]; then
     DEV_MODE=1
 fi
@@ -54,14 +62,38 @@ pids_on_port() {
         }' | sort -u
 }
 
-# Backend (8000), frontend (3000) and its fallback port (3001).
-for port_role in 8000:backend 3000:frontend 3001:frontend; do
-    port=${port_role%%:*}
-    pids=$(pids_on_port "$port")
-    if [ -n "$pids" ]; then
-        echo "Killing existing ${port_role#*:} on port $port..."
-        kill -9 $pids
+# Is $1 one of ours? Matched on the command line. Only ours are killed: when
+# the backend still used 8000 this sweep killed Tuva's daemon by port, and its
+# supervisor respawned it onto 127.0.0.1:8000, where it shadowed the backend
+# for the web app.
+is_investa_pid() {
+    ps -o command= -p "$1" 2>/dev/null |
+        grep -Eq 'src/server/main\.py|server\.main:app|next-server|start-standalone|next (dev|start)'
+}
+
+# A backend started before the move to 8800 may still be holding 8000. Reap
+# it if it is ours; anything else on 8000 is none of our business.
+for pid in $(pids_on_port 8000); do
+    if is_investa_pid "$pid"; then
+        echo "Killing old backend on port 8000 (PID $pid)..."
+        kill -9 "$pid"
     fi
+done
+
+# Backend, frontend (3000) and its fallback port (3001).
+for port_role in "$INVESTA_PORT:backend" 3000:frontend 3001:frontend; do
+    port=${port_role%%:*}
+    for pid in $(pids_on_port "$port"); do
+        if is_investa_pid "$pid"; then
+            echo "Killing existing ${port_role#*:} on port $port (PID $pid)..."
+            kill -9 "$pid"
+        else
+            echo "ERROR: port $port is held by another program, not Investa:"
+            echo "  PID $pid: $(ps -o command= -p "$pid" 2>/dev/null | cut -c1-160)"
+            echo "Quit it (or move it to another port) and run this script again."
+            exit 1
+        fi
+    done
 done
 
 # The ranking worker listens on nothing, so it cannot be found by port. Left
@@ -92,7 +124,7 @@ start_backend() {
     if [ -n "$TS_IP" ] && [ "$TS_IP" != "Tailscale not found." ]; then
         echo "Tailscale IP: $TS_IP"
         echo "Web App: http://$TS_IP:3000"
-        echo "API:     http://$TS_IP:8000/api/"
+        echo "API:     http://$TS_IP:$INVESTA_PORT/api/"
         
         # Check for Tailscale Serve (HTTPS)
         if command -v tailscale &> /dev/null; then
@@ -107,7 +139,7 @@ start_backend() {
     if [ -n "$LOCAL_IP" ]; then
         echo "Local IP:     $LOCAL_IP"
         echo "Web App: http://$LOCAL_IP:3000"
-        echo "API:     http://$LOCAL_IP:8000/api/"
+        echo "API:     http://$LOCAL_IP:$INVESTA_PORT/api/"
     fi
 
     if [ -z "$TS_IP" ] && [ -z "$LOCAL_IP" ]; then
@@ -163,11 +195,13 @@ if [ "$DEV_MODE" = "1" ]; then
     npm run dev -- -H 0.0.0.0 &
 else
     # Production mode. Rebuild when sources changed since the last web build.
+    # The marker records the API_URL the build was made with: the /api rewrite
+    # is fixed at build time, so a new backend port needs a new build.
     BUILD_MARKER=".next/.investa-web-build"
-    if [ ! -f "$BUILD_MARKER" ] || [ -n "$(find app components context lib src public package.json next.config.ts tailwind.config.ts postcss.config.mjs tsconfig.json -newer "$BUILD_MARKER" -print -quit 2>/dev/null)" ]; then
+    if [ ! -f "$BUILD_MARKER" ] || [ "$(cat "$BUILD_MARKER")" != "$API_URL" ] || [ -n "$(find app components context lib src public package.json next.config.ts tailwind.config.ts postcss.config.mjs tsconfig.json -newer "$BUILD_MARKER" -print -quit 2>/dev/null)" ]; then
         echo "Building Web App (production)..."
         if npm run build; then
-            touch "$BUILD_MARKER"
+            echo "$API_URL" > "$BUILD_MARKER"
         elif [ -f "$BUILD_MARKER" ]; then
             echo "WARNING: Frontend build failed — serving the previous production build."
         else

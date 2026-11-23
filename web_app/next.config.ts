@@ -6,7 +6,7 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
 });
 
-const API_URL = process.env.API_URL || "http://127.0.0.1:8000";
+const API_URL = process.env.API_URL || "http://127.0.0.1:8800";
 
 const extraDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || "")
   .split(",")

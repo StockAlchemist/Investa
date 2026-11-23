@@ -4,6 +4,12 @@ import SwiftUI
 struct InvestaApp: App {
     @StateObject private var auth = AuthViewModel()
 
+    init() {
+        // Before anything reads the backend address (AuthViewModel does, and
+        // is created after this).
+        APIConfig.migrateLegacyPortIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             // Publishes `\.appFontScale` from the width of the window, so every

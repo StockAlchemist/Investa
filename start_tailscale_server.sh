@@ -17,7 +17,7 @@ TS_IP=$(get_tailscale_ip)
 echo "=================================================="
 if [ -n "$TS_IP" ] && [ "$TS_IP" != "Tailscale not found." ]; then
     echo "Tailscale IP: $TS_IP"
-    echo "You can access the API at: http://$TS_IP:8000/api/"
+    echo "You can access the API at: http://$TS_IP:8800/api/"
 else
     echo "Tailscale IP not found. Server will still run on 0.0.0.0"
 fi

@@ -15,14 +15,14 @@ fi
 tailscale serve reset
 
 # Map / to Frontend (3000)
-# Map /api to Backend (8000)
+# Map /api to Backend (8800)
 # Using --bg to run in background (persist)
 
 echo "Mapping root (/) to localhost:3000..."
 tailscale serve --bg http://localhost:3000
 
-echo "Mapping /api to localhost:8000..."
-tailscale serve --bg --set-path /api http://localhost:8000
+echo "Mapping /api to localhost:8800..."
+tailscale serve --bg --set-path /api http://localhost:8800
 
 echo "=================================================="
 echo "Tailscale Serve Configured!"
